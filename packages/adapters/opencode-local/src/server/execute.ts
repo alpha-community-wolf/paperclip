@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { AdapterExecutionContext, AdapterExecutionResult } from "@paperclipai/adapter-utils";
+import type { AdapterExecutionContext, AdapterExecutionResult, AdapterSkill } from "@paperclipai/adapter-utils";
 import {
   asString,
   asNumber,
@@ -41,10 +41,6 @@ function parseModelProvider(model: string | null): string | null {
   return trimmed.slice(0, trimmed.indexOf("/")).trim() || null;
 }
 
-function claudeSkillsHome(): string {
-  return path.join(os.homedir(), ".claude", "skills");
-}
-
 async function resolvePaperclipSkillsDir(): Promise<string | null> {
   for (const candidate of PAPERCLIP_SKILLS_CANDIDATES) {
     const isDir = await fs.stat(candidate).then((s) => s.isDirectory()).catch(() => false);
@@ -53,33 +49,33 @@ async function resolvePaperclipSkillsDir(): Promise<string | null> {
   return null;
 }
 
-async function ensureOpenCodeSkillsInjected(onLog: AdapterExecutionContext["onLog"]) {
-  const skillsDir = await resolvePaperclipSkillsDir();
-  if (!skillsDir) return;
+async function buildSkillsDir(skills?: AdapterSkill[]): Promise<string> {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-opencode-skills-"));
+  const target = path.join(tmp, ".claude", "skills");
+  await fs.mkdir(target, { recursive: true });
 
-  const skillsHome = claudeSkillsHome();
-  await fs.mkdir(skillsHome, { recursive: true });
+  if (skills && skills.length > 0) {
+    for (const skill of skills) {
+      const stat = await fs.stat(skill.path).catch(() => null);
+      if (stat?.isDirectory()) {
+        await fs.symlink(skill.path, path.join(target, skill.name));
+      }
+    }
+    return tmp;
+  }
+
+  const skillsDir = await resolvePaperclipSkillsDir();
+  if (!skillsDir) return tmp;
   const entries = await fs.readdir(skillsDir, { withFileTypes: true });
   for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
-    const source = path.join(skillsDir, entry.name);
-    const target = path.join(skillsHome, entry.name);
-    const existing = await fs.lstat(target).catch(() => null);
-    if (existing) continue;
-
-    try {
-      await fs.symlink(source, target);
-      await onLog(
-        "stderr",
-        `[paperclip] Injected OpenCode skill "${entry.name}" into ${skillsHome}\n`,
-      );
-    } catch (err) {
-      await onLog(
-        "stderr",
-        `[paperclip] Failed to inject OpenCode skill "${entry.name}" into ${skillsHome}: ${err instanceof Error ? err.message : String(err)}\n`,
+    if (entry.isDirectory()) {
+      await fs.symlink(
+        path.join(skillsDir, entry.name),
+        path.join(target, entry.name),
       );
     }
   }
+  return tmp;
 }
 
 export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult> {
@@ -109,7 +105,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const effectiveWorkspaceCwd = useConfiguredInsteadOfAgentHome ? "" : workspaceCwd;
   const cwd = effectiveWorkspaceCwd || configuredCwd || process.cwd();
   await ensureAbsoluteDirectory(cwd, { createIfMissing: true });
-  await ensureOpenCodeSkillsInjected(onLog);
+  const skillsDir = await buildSkillsDir(ctx.skills);
 
   const envConfig = parseObject(config.env);
   const hasExplicitApiKey =
@@ -249,6 +245,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     if (resumeSessionId) args.push("--session", resumeSessionId);
     if (model) args.push("--model", model);
     if (variant) args.push("--variant", variant);
+    args.push("--add-dir", skillsDir);
     if (extraArgs.length > 0) args.push(...extraArgs);
     return args;
   };
@@ -265,6 +262,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         env: redactEnvForLogs(env),
         prompt,
         context,
+        skillsInjected: ctx.skills?.map((s) => s.name),
       });
     }
 
@@ -350,21 +348,25 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     };
   };
 
-  const initial = await runAttempt(sessionId);
-  const initialFailed =
-    !initial.proc.timedOut && ((initial.proc.exitCode ?? 0) !== 0 || Boolean(initial.parsed.errorMessage));
-  if (
-    sessionId &&
-    initialFailed &&
-    isOpenCodeUnknownSessionError(initial.proc.stdout, initial.rawStderr)
-  ) {
-    await onLog(
-      "stderr",
-      `[paperclip] OpenCode session "${sessionId}" is unavailable; retrying with a fresh session.\n`,
-    );
-    const retry = await runAttempt(null);
-    return toResult(retry, true);
-  }
+  try {
+    const initial = await runAttempt(sessionId);
+    const initialFailed =
+      !initial.proc.timedOut && ((initial.proc.exitCode ?? 0) !== 0 || Boolean(initial.parsed.errorMessage));
+    if (
+      sessionId &&
+      initialFailed &&
+      isOpenCodeUnknownSessionError(initial.proc.stdout, initial.rawStderr)
+    ) {
+      await onLog(
+        "stderr",
+        `[paperclip] OpenCode session "${sessionId}" is unavailable; retrying with a fresh session.\n`,
+      );
+      const retry = await runAttempt(null);
+      return toResult(retry, true);
+    }
 
-  return toResult(initial);
+    return toResult(initial);
+  } finally {
+    fs.rm(skillsDir, { recursive: true, force: true }).catch(() => {});
+  }
 }

@@ -242,6 +242,37 @@ PATCH /api/agents/{agentId}/instructions-path
 | List agents                           | `GET /api/companies/:companyId/agents`                                                     |
 | Dashboard                             | `GET /api/companies/:companyId/dashboard`                                                  |
 | Search issues                         | `GET /api/companies/:companyId/issues?q=search+term`                                       |
+| List company skills                   | `GET /api/companies/:companyId/skills`                                                     |
+| Install company/agent skill           | `POST /api/companies/:companyId/skills`                                                    |
+| List agent's enabled skills           | `GET /api/agents/:agentId/skills`                                                          |
+| Assign company skill to agent         | `POST /api/agents/:agentId/skills/:skillId/assign`                                         |
+| Unassign company skill from agent     | `DELETE /api/agents/:agentId/skills/:skillId/assign`                                       |
+
+## Skills
+
+Paperclip manages skills in three tiers. At invocation time, the adapter injects only the skills enabled for that agent — visible in the run detail's "Skills" field.
+
+| Tier | Default access | How installed |
+|------|---------------|---------------|
+| **Built-in (core)** | Always injected, cannot disable | `paperclip`, `paperclip-create-agent`, `para-memory-files` |
+| **Built-in (optional)** | Not enabled by default, togglable per-agent | `create-agent-adapter`, `pr-report`, `release`, `release-changelog` — assign via `POST /api/agents/{agentId}/skills/{skillId}/assign` |
+| **Company** | Not enabled per-agent by default | Installed at company level via `POST /api/companies/{companyId}/skills` or CLI install via `POST /api/companies/{companyId}/skills/install`, then toggled on per-agent |
+| **Agent** | Always enabled for owning agent | Installed in the agent's working directory at `.agents/skills/{name}/SKILL.md` or `.claude/skills/{name}/SKILL.md` — auto-discovered from filesystem |
+
+To check what skills are available to you: `GET /api/agents/me/skills` (returns core built-in + assigned optional/company + agent-local skills).
+
+Agent-local skills don't need API registration — place a valid `SKILL.md` in `.agents/skills/{name}/` inside your working directory and Paperclip discovers them automatically.
+
+### CLI Skill Install (Board Only)
+
+Board users can install skills via shell commands:
+
+```
+POST /api/companies/{companyId}/skills/install
+{ "command": "npx skills add vercel-labs/agent-skills" }
+```
+
+The server runs the command, discovers any new `SKILL.md` directories created, and registers them as company skills. Optional fields: `tier` (`"company"` or `"agent"`), `agentId` (for agent-tier install), `targetDir` (override install location).
 
 ## Searching Issues
 

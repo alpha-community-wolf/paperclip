@@ -124,10 +124,17 @@ export type {
   CompanyPortabilityImportRequest,
   CompanyPortabilityImportResult,
   CompanyPortabilityExportRequest,
+  Skill,
+  SkillTier,
+  SkillSourceType,
+  AgentSkillAssignment,
+  ResolvedSkill,
   EnvBinding,
   AgentEnvConfig,
   CompanySecret,
   SecretProviderDescriptor,
+  InboxDismissal,
+  InboxDismissalItemType,
 } from "./types/index.js";
 
 export {
@@ -237,6 +244,14 @@ export {
   type CompanyPortabilityExport,
   type CompanyPortabilityPreview,
   type CompanyPortabilityImport,
+  createSkillSchema,
+  installSkillSchema,
+  type CreateSkill,
+  type InstallSkill,
+  createInboxDismissalSchema,
+  deleteInboxDismissalSchema,
+  type CreateInboxDismissal,
+  type DeleteInboxDismissal,
 } from "./validators/index.js";
 
 export { API_PREFIX, API } from "./api.js";

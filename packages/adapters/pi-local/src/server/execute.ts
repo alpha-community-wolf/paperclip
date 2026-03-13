@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { AdapterExecutionContext, AdapterExecutionResult } from "@paperclipai/adapter-utils";
+import type { AdapterExecutionContext, AdapterExecutionResult, AdapterSkill } from "@paperclipai/adapter-utils";
 import {
   asString,
   asNumber,
@@ -58,34 +58,40 @@ async function resolvePaperclipSkillsDir(): Promise<string | null> {
   return null;
 }
 
-async function ensurePiSkillsInjected(onLog: AdapterExecutionContext["onLog"]) {
-  const skillsDir = await resolvePaperclipSkillsDir();
-  if (!skillsDir) return;
+/**
+ * Create a tmpdir with agent/skills/ containing symlinks to the resolved
+ * skills for this agent. When `skills` is provided (from the server's skill
+ * resolution), only those skills are symlinked. Falls back to symlinking
+ * everything from the repo's `skills/` directory for backward compatibility.
+ * Returns the base path for PI_CODING_AGENT_DIR.
+ */
+async function buildSkillsDir(skills?: AdapterSkill[]): Promise<string> {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-pi-skills-"));
+  const target = path.join(tmp, "agent", "skills");
+  await fs.mkdir(target, { recursive: true });
 
-  const piSkillsHome = path.join(os.homedir(), ".pi", "agent", "skills");
-  await fs.mkdir(piSkillsHome, { recursive: true });
-  
+  if (skills && skills.length > 0) {
+    for (const skill of skills) {
+      const stat = await fs.stat(skill.path).catch(() => null);
+      if (stat?.isDirectory()) {
+        await fs.symlink(skill.path, path.join(target, skill.name));
+      }
+    }
+    return tmp;
+  }
+
+  const skillsDir = await resolvePaperclipSkillsDir();
+  if (!skillsDir) return tmp;
   const entries = await fs.readdir(skillsDir, { withFileTypes: true });
   for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
-    const source = path.join(skillsDir, entry.name);
-    const target = path.join(piSkillsHome, entry.name);
-    const existing = await fs.lstat(target).catch(() => null);
-    if (existing) continue;
-
-    try {
-      await fs.symlink(source, target);
-      await onLog(
-        "stderr",
-        `[paperclip] Injected Pi skill "${entry.name}" into ${piSkillsHome}\n`,
-      );
-    } catch (err) {
-      await onLog(
-        "stderr",
-        `[paperclip] Failed to inject Pi skill "${entry.name}" into ${piSkillsHome}: ${err instanceof Error ? err.message : String(err)}\n`,
+    if (entry.isDirectory()) {
+      await fs.symlink(
+        path.join(skillsDir, entry.name),
+        path.join(target, entry.name),
       );
     }
   }
+  return tmp;
 }
 
 async function ensureSessionsDir(): Promise<string> {
@@ -132,9 +138,9 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   
   // Ensure sessions directory exists
   await ensureSessionsDir();
-  
-  // Inject skills
-  await ensurePiSkillsInjected(onLog);
+
+  // Build skills dir (tmpdir with filtered or repo skills)
+  const skillsDir = await buildSkillsDir(ctx.skills);
 
   // Build environment
   const envConfig = parseObject(config.env);
@@ -142,6 +148,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     typeof envConfig.PAPERCLIP_API_KEY === "string" && envConfig.PAPERCLIP_API_KEY.trim().length > 0;
   const env: Record<string, string> = { ...buildPaperclipEnv(agent) };
   env.PAPERCLIP_RUN_ID = runId;
+  env.PI_CODING_AGENT_DIR = skillsDir;
   
   const wakeTaskId =
     (typeof context.taskId === "string" && context.taskId.trim().length > 0 && context.taskId.trim()) ||
@@ -349,6 +356,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         env: redactEnvForLogs(env),
         prompt: userPrompt,
         context,
+        skillsInjected: ctx.skills?.map((s) => s.name),
       });
     }
 
@@ -449,30 +457,34 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     };
   };
 
-  const initial = await runAttempt(sessionPath);
-  const initialFailed =
-    !initial.proc.timedOut && ((initial.proc.exitCode ?? 0) !== 0 || initial.parsed.errors.length > 0);
-  
-  if (
-    canResumeSession &&
-    initialFailed &&
-    isPiUnknownSessionError(initial.proc.stdout, initial.rawStderr)
-  ) {
-    await onLog(
-      "stderr",
-      `[paperclip] Pi session "${runtimeSessionId}" is unavailable; retrying with a fresh session.\n`,
-    );
-    const newSessionPath = buildSessionPath(agent.id, new Date().toISOString());
-    try {
-      await fs.writeFile(newSessionPath, "", { flag: "wx" });
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== "EEXIST") {
-        throw err;
-      }
-    }
-    const retry = await runAttempt(newSessionPath);
-    return toResult(retry, true);
-  }
+  try {
+    const initial = await runAttempt(sessionPath);
+    const initialFailed =
+      !initial.proc.timedOut && ((initial.proc.exitCode ?? 0) !== 0 || initial.parsed.errors.length > 0);
 
-  return toResult(initial);
+    if (
+      canResumeSession &&
+      initialFailed &&
+      isPiUnknownSessionError(initial.proc.stdout, initial.rawStderr)
+    ) {
+      await onLog(
+        "stderr",
+        `[paperclip] Pi session "${runtimeSessionId}" is unavailable; retrying with a fresh session.\n`,
+      );
+      const newSessionPath = buildSessionPath(agent.id, new Date().toISOString());
+      try {
+        await fs.writeFile(newSessionPath, "", { flag: "wx" });
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== "EEXIST") {
+          throw err;
+        }
+      }
+      const retry = await runAttempt(newSessionPath);
+      return toResult(retry, true);
+    }
+
+    return toResult(initial);
+  } finally {
+    fs.rm(skillsDir, { recursive: true, force: true }).catch(() => {});
+  }
 }

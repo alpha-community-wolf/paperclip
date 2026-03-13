@@ -53,6 +53,7 @@ export type { LiveEvent } from "./live.js";
 export type { DashboardSummary } from "./dashboard.js";
 export type { ActivityEvent } from "./activity.js";
 export type { SidebarBadges } from "./sidebar-badges.js";
+export type { InboxDismissal, InboxDismissalItemType } from "./inbox-dismissal.js";
 export type {
   CompanyMembership,
   PrincipalPermissionGrant,
@@ -60,6 +61,13 @@ export type {
   JoinRequest,
   InstanceUserRoleGrant,
 } from "./access.js";
+export type {
+  Skill,
+  SkillTier,
+  SkillSourceType,
+  AgentSkillAssignment,
+  ResolvedSkill,
+} from "./skill.js";
 export type {
   CompanyPortabilityInclude,
   CompanyPortabilitySecretRequirement,

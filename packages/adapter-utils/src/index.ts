@@ -7,6 +7,7 @@ export type {
   AdapterExecutionResult,
   AdapterInvocationMeta,
   AdapterExecutionContext,
+  AdapterSkill,
   AdapterEnvironmentCheckLevel,
   AdapterEnvironmentCheck,
   AdapterEnvironmentTestStatus,

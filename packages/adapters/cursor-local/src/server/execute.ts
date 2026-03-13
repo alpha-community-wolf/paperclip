@@ -3,7 +3,11 @@ import type { Dirent } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { AdapterExecutionContext, AdapterExecutionResult } from "@paperclipai/adapter-utils";
+import type {
+  AdapterExecutionContext,
+  AdapterExecutionResult,
+  AdapterSkill,
+} from "@paperclipai/adapter-utils";
 import {
   asString,
   asNumber,
@@ -88,6 +92,41 @@ async function resolvePaperclipSkillsDir(): Promise<string | null> {
     if (isDir) return candidate;
   }
   return null;
+}
+
+/**
+ * Create a tmpdir with `.cursor/skills/` containing symlinks to the resolved
+ * skills for this agent. When `skills` is provided (from the server's skill
+ * resolution), only those skills are symlinked. Falls back to symlinking
+ * everything from the repo's `skills/` directory for backward compatibility.
+ */
+async function buildSkillsDir(skills?: AdapterSkill[]): Promise<string> {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-cursor-skills-"));
+  const target = path.join(tmp, ".cursor", "skills");
+  await fs.mkdir(target, { recursive: true });
+
+  if (skills && skills.length > 0) {
+    for (const skill of skills) {
+      const stat = await fs.stat(skill.path).catch(() => null);
+      if (stat?.isDirectory()) {
+        await fs.symlink(skill.path, path.join(target, skill.name));
+      }
+    }
+    return target;
+  }
+
+  const skillsDir = await resolvePaperclipSkillsDir();
+  if (!skillsDir) return target;
+  const entries = await fs.readdir(skillsDir, { withFileTypes: true });
+  for (const entry of entries) {
+    if (entry.isDirectory()) {
+      await fs.symlink(
+        path.join(skillsDir, entry.name),
+        path.join(target, entry.name),
+      );
+    }
+  }
+  return target;
 }
 
 type EnsureCursorSkillsInjectedOptions = {
@@ -175,7 +214,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const effectiveWorkspaceCwd = useConfiguredInsteadOfAgentHome ? "" : workspaceCwd;
   const cwd = effectiveWorkspaceCwd || configuredCwd || process.cwd();
   await ensureAbsoluteDirectory(cwd, { createIfMissing: true });
-  await ensureCursorSkillsInjected(onLog);
+  const skillsDir = await buildSkillsDir(ctx.skills);
+  await ensureCursorSkillsInjected(onLog, { skillsDir });
 
   const envConfig = parseObject(config.env);
   const hasExplicitApiKey =
@@ -350,6 +390,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         env: redactEnvForLogs(env),
         prompt,
         context,
+        skillsInjected: ctx.skills?.map((s) => s.name),
       });
     }
 

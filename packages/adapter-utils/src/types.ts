@@ -92,6 +92,13 @@ export interface AdapterInvocationMeta {
   env?: Record<string, string>;
   prompt?: string;
   context?: Record<string, unknown>;
+  skillsInjected?: string[];
+}
+
+export interface AdapterSkill {
+  name: string;
+  tier: string;
+  path: string;
 }
 
 export interface AdapterExecutionContext {
@@ -103,6 +110,7 @@ export interface AdapterExecutionContext {
   onLog: (stream: "stdout" | "stderr", chunk: string) => Promise<void>;
   onMeta?: (meta: AdapterInvocationMeta) => Promise<void>;
   authToken?: string;
+  skills?: AdapterSkill[];
 }
 
 export interface AdapterModel {

@@ -42,6 +42,7 @@ import { getUIAdapter } from "../adapters";
 import { ClaudeLocalAdvancedFields } from "../adapters/claude-local/config-fields";
 import { MarkdownEditor } from "./MarkdownEditor";
 import { ChoosePathButton } from "./PathInstructionsModal";
+import { AgentSkillsSection } from "./AgentSkillsSection";
 import { OpenCodeLogoIcon } from "./OpenCodeLogoIcon";
 
 /* ---- Create mode values ---- */
@@ -214,10 +215,18 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
 
   /** Mark field dirty in overlay */
   function mark(group: keyof Omit<Overlay, "adapterType">, field: string, value: unknown) {
-    setOverlay((prev) => ({
-      ...prev,
-      [group]: { ...prev[group], [field]: value },
-    }));
+    setOverlay((prev) => {
+      const nextGroup = { ...prev[group] } as Record<string, unknown>;
+      if (value === undefined) {
+        delete nextGroup[field];
+      } else {
+        nextGroup[field] = value;
+      }
+      return {
+        ...prev,
+        [group]: nextGroup,
+      };
+    });
   }
 
   /** Build accumulated patch and send to parent */
@@ -501,12 +510,14 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                   }
                   set!(nextValues);
                 } else {
-                  // Clear all adapter config and explicitly blank out model + effort/mode keys
-                  // so the old adapter's values don't bleed through via eff()
+                  // Preserve shared local adapter fields (cwd/instructions/workspace paths)
+                  // when switching adapters, while resetting model/thinking defaults.
                   setOverlay((prev) => ({
                     ...prev,
                     adapterType: t,
                     adapterConfig: {
+                      ...config,
+                      ...prev.adapterConfig,
                       model:
                         t === "codex_local"
                           ? DEFAULT_CODEX_LOCAL_MODEL
@@ -854,6 +865,12 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
             </div>
           </CollapsibleSection>
           </div>
+        </div>
+      )}
+
+      {props.mode === "edit" && selectedCompanyId && (
+        <div className={cards ? "rounded-md border border-border p-4" : "border-b border-border pb-6"}>
+          <AgentSkillsSection agentId={props.agent.id} companyId={selectedCompanyId} />
         </div>
       )}
 
