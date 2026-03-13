@@ -34,7 +34,7 @@ export function PiLocalConfigFields({
           onCommit={(v) =>
             isCreate
               ? set!({ instructionsFilePath: v })
-              : mark("adapterConfig", "instructionsFilePath", v || undefined)
+              : mark("adapterConfig", "instructionsFilePath", v.trim().length > 0 ? v : null)
           }
           immediate
           className={inputClass}

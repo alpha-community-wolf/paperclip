@@ -205,6 +205,7 @@ export function ProjectDetail() {
   const [fieldSaveStates, setFieldSaveStates] = useState<Partial<Record<ProjectConfigFieldKey, ProjectFieldSaveState>>>({});
   const fieldSaveRequestIds = useRef<Partial<Record<ProjectConfigFieldKey, number>>>({});
   const fieldSaveTimers = useRef<Partial<Record<ProjectConfigFieldKey, ReturnType<typeof setTimeout>>>>({});
+  const [projectActionError, setProjectActionError] = useState<string | null>(null);
   const routeProjectRef = projectId ?? "";
   const routeCompanyId = useMemo(() => {
     if (!companyPrefix) return null;
@@ -242,6 +243,44 @@ export function ProjectDetail() {
     mutationFn: (data: Record<string, unknown>) =>
       projectsApi.update(projectLookupRef, data, resolvedCompanyId ?? lookupCompanyId),
     onSuccess: invalidateProject,
+  });
+
+  const archiveProject = useMutation({
+    mutationFn: async () => {
+      await projectsApi.update(
+        projectLookupRef,
+        { archivedAt: new Date().toISOString() },
+        resolvedCompanyId ?? lookupCompanyId,
+      );
+    },
+    onSuccess: () => {
+      setProjectActionError(null);
+      invalidateProject();
+      if (resolvedCompanyId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.sidebarBadges(resolvedCompanyId) });
+      }
+      navigate("/projects");
+    },
+    onError: (error: Error) => {
+      setProjectActionError(error.message || "Failed to archive project.");
+    },
+  });
+
+  const deleteProject = useMutation({
+    mutationFn: async () => {
+      await projectsApi.remove(projectLookupRef, resolvedCompanyId ?? lookupCompanyId);
+    },
+    onSuccess: () => {
+      setProjectActionError(null);
+      invalidateProject();
+      if (resolvedCompanyId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.sidebarBadges(resolvedCompanyId) });
+      }
+      navigate("/projects");
+    },
+    onError: (error: Error) => {
+      setProjectActionError(error.message || "Failed to delete project.");
+    },
   });
 
   const uploadImage = useMutation({
@@ -347,6 +386,24 @@ export function ProjectDetail() {
     }
   };
 
+  const handleArchiveProject = async () => {
+    setProjectActionError(null);
+    const confirmed = window.confirm(
+      `Archive project "${project.name}"? It will be hidden from active project lists.`,
+    );
+    if (!confirmed) return;
+    await archiveProject.mutateAsync();
+  };
+
+  const handleDeleteProject = async () => {
+    setProjectActionError(null);
+    const confirmed = window.confirm(
+      `Permanently delete "${project.name}"? This cannot be undone and may fail if related records still reference it.`,
+    );
+    if (!confirmed) return;
+    await deleteProject.mutateAsync();
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-start gap-3">
@@ -399,6 +456,11 @@ export function ProjectDetail() {
             onUpdate={(data) => updateProject.mutate(data)}
             onFieldUpdate={updateProjectField}
             getFieldSaveState={(field) => fieldSaveStates[field] ?? "idle"}
+            onArchiveProject={handleArchiveProject}
+            onDeleteProject={handleDeleteProject}
+            isArchivingProject={archiveProject.isPending}
+            isDeletingProject={deleteProject.isPending}
+            projectActionError={projectActionError}
           />
         </div>
       )}

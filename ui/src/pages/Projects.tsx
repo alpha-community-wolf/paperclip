@@ -27,6 +27,7 @@ export function Projects() {
     queryFn: () => projectsApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
+  const activeProjects = (projects ?? []).filter((project) => !project.archivedAt);
 
   if (!selectedCompanyId) {
     return <EmptyState icon={Hexagon} message="Select a company to view projects." />;
@@ -47,7 +48,7 @@ export function Projects() {
 
       {error && <p className="text-sm text-destructive">{error.message}</p>}
 
-      {projects && projects.length === 0 && (
+      {projects && activeProjects.length === 0 && (
         <EmptyState
           icon={Hexagon}
           message="No projects yet."
@@ -56,9 +57,9 @@ export function Projects() {
         />
       )}
 
-      {projects && projects.length > 0 && (
+      {projects && activeProjects.length > 0 && (
         <div className="border border-border">
-          {projects.map((project) => (
+          {activeProjects.map((project) => (
             <EntityRow
               key={project.id}
               title={project.name}

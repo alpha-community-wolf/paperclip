@@ -128,6 +128,8 @@ export type {
   AgentEnvConfig,
   CompanySecret,
   SecretProviderDescriptor,
+  InboxDismissal,
+  InboxDismissalItemType,
 } from "./types/index.js";
 
 export {
@@ -237,6 +239,10 @@ export {
   type CompanyPortabilityExport,
   type CompanyPortabilityPreview,
   type CompanyPortabilityImport,
+  createInboxDismissalSchema,
+  deleteInboxDismissalSchema,
+  type CreateInboxDismissal,
+  type DeleteInboxDismissal,
 } from "./validators/index.js";
 
 export { API_PREFIX, API } from "./api.js";

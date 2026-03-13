@@ -241,7 +241,8 @@ export function Inbox() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [allCategoryFilter, setAllCategoryFilter] = useState<InboxCategoryFilter>("everything");
   const [allApprovalFilter, setAllApprovalFilter] = useState<InboxApprovalFilter>("all");
-  const { dismissed, dismiss } = useDismissedInboxItems();
+  const { dismissed, dismiss } = useDismissedInboxItems(selectedCompanyId);
+  const [optimisticallyDismissedRunIds, setOptimisticallyDismissedRunIds] = useState<Set<string>>(new Set());
 
   const pathSegment = location.pathname.split("/").pop() ?? "recent";
   const tab: InboxTab =
@@ -347,8 +348,11 @@ export function Inbox() {
   }, [issues]);
 
   const failedRuns = useMemo(
-    () => getLatestFailedRunsByAgent(heartbeatRuns ?? []).filter((r) => !dismissed.has(`run:${r.id}`)),
-    [heartbeatRuns, dismissed],
+    () =>
+      getLatestFailedRunsByAgent(heartbeatRuns ?? []).filter(
+        (r) => !dismissed.has(`run:${r.id}`) && !optimisticallyDismissedRunIds.has(r.id),
+      ),
+    [heartbeatRuns, dismissed, optimisticallyDismissedRunIds],
   );
 
   const allApprovals = useMemo(
@@ -730,7 +734,10 @@ export function Inbox() {
                   issueById={issueById}
                   agentName={agentName(run.agentId)}
                   issueLinkState={issueLinkState}
-                  onDismiss={() => dismiss(`run:${run.id}`)}
+                  onDismiss={() => {
+                    setOptimisticallyDismissedRunIds((prev) => new Set(prev).add(run.id));
+                    dismiss(`run:${run.id}`);
+                  }}
                 />
               ))}
             </div>

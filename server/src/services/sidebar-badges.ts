@@ -6,11 +6,32 @@ import type { SidebarBadges } from "@paperclipai/shared";
 const ACTIONABLE_APPROVAL_STATUSES = ["pending", "revision_requested"];
 const FAILED_HEARTBEAT_STATUSES = ["failed", "timed_out"];
 
+export function computeSidebarInboxCount(input: {
+  approvals: number;
+  failedRuns: number;
+  joinRequests: number;
+  unreadTouchedIssues: number;
+  alerts: number;
+}) {
+  return (
+    input.approvals +
+    input.failedRuns +
+    input.joinRequests +
+    input.unreadTouchedIssues +
+    input.alerts
+  );
+}
+
 export function sidebarBadgeService(db: Db) {
   return {
     get: async (
       companyId: string,
-      extra?: { joinRequests?: number; unreadTouchedIssues?: number },
+      extra?: {
+        joinRequests?: number;
+        unreadTouchedIssues?: number;
+        alerts?: number;
+        dismissedFailedRunIds?: string[];
+      },
     ): Promise<SidebarBadges> => {
       const actionableApprovals = await db
         .select({ count: sql<number>`count(*)` })
@@ -25,6 +46,7 @@ export function sidebarBadgeService(db: Db) {
 
       const latestRunByAgent = await db
         .selectDistinctOn([heartbeatRuns.agentId], {
+          runId: heartbeatRuns.id,
           runStatus: heartbeatRuns.status,
         })
         .from(heartbeatRuns)
@@ -38,17 +60,28 @@ export function sidebarBadgeService(db: Db) {
         )
         .orderBy(heartbeatRuns.agentId, desc(heartbeatRuns.createdAt));
 
-      const failedRuns = latestRunByAgent.filter((row) =>
-        FAILED_HEARTBEAT_STATUSES.includes(row.runStatus),
-      ).length;
+      const dismissedFailedRunIdSet = new Set(extra?.dismissedFailedRunIds ?? []);
+      const failedRuns = latestRunByAgent.filter((row) => {
+        if (!FAILED_HEARTBEAT_STATUSES.includes(row.runStatus)) return false;
+        return !dismissedFailedRunIdSet.has(row.runId);
+      }).length;
 
       const joinRequests = extra?.joinRequests ?? 0;
       const unreadTouchedIssues = extra?.unreadTouchedIssues ?? 0;
+      const alerts = extra?.alerts ?? 0;
       return {
-        inbox: actionableApprovals + failedRuns + joinRequests + unreadTouchedIssues,
+        inbox: computeSidebarInboxCount({
+          approvals: actionableApprovals,
+          failedRuns,
+          joinRequests,
+          unreadTouchedIssues,
+          alerts,
+        }),
         approvals: actionableApprovals,
         failedRuns,
         joinRequests,
+        unreadTouchedIssues,
+        alerts,
       };
     },
   };

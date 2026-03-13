@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "@/lib/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Project } from "@paperclipai/shared";
@@ -34,6 +34,11 @@ interface ProjectPropertiesProps {
   onUpdate?: (data: Record<string, unknown>) => void;
   onFieldUpdate?: (field: ProjectConfigFieldKey, data: Record<string, unknown>) => void;
   getFieldSaveState?: (field: ProjectConfigFieldKey) => ProjectFieldSaveState;
+  onArchiveProject?: () => Promise<void> | void;
+  onDeleteProject?: () => Promise<void> | void;
+  isArchivingProject?: boolean;
+  isDeletingProject?: boolean;
+  projectActionError?: string | null;
 }
 
 export type ProjectFieldSaveState = "idle" | "saving" | "saved" | "error";
@@ -152,7 +157,17 @@ function ProjectStatusPicker({ status, onChange }: { status: string; onChange: (
   );
 }
 
-export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSaveState }: ProjectPropertiesProps) {
+export function ProjectProperties({
+  project,
+  onUpdate,
+  onFieldUpdate,
+  getFieldSaveState,
+  onArchiveProject,
+  onDeleteProject,
+  isArchivingProject = false,
+  isDeletingProject = false,
+  projectActionError = null,
+}: ProjectPropertiesProps) {
   const { selectedCompanyId } = useCompany();
   const queryClient = useQueryClient();
   const [goalOpen, setGoalOpen] = useState(false);
@@ -177,11 +192,21 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
     enabled: !!selectedCompanyId,
   });
 
-  const linkedGoalIds = project.goalIds.length > 0
+  const projectGoalIds = project.goalIds.length > 0
     ? project.goalIds
     : project.goalId
       ? [project.goalId]
       : [];
+  const [linkedGoalIds, setLinkedGoalIds] = useState<string[]>(projectGoalIds);
+
+  useEffect(() => {
+    const nextGoalIds = project.goalIds.length > 0
+      ? project.goalIds
+      : project.goalId
+        ? [project.goalId]
+        : [];
+    setLinkedGoalIds(nextGoalIds);
+  }, [project.goalId, project.goalIds]);
 
   const linkedGoals = project.goals.length > 0
     ? project.goals
@@ -233,12 +258,16 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
 
   const removeGoal = (goalId: string) => {
     if (!onUpdate && !onFieldUpdate) return;
-    commitField("goals", { goalIds: linkedGoalIds.filter((id) => id !== goalId) });
+    const nextGoalIds = linkedGoalIds.filter((id) => id !== goalId);
+    setLinkedGoalIds(nextGoalIds);
+    commitField("goals", { goalIds: nextGoalIds });
   };
 
   const addGoal = (goalId: string) => {
     if ((!onUpdate && !onFieldUpdate) || linkedGoalIds.includes(goalId)) return;
-    commitField("goals", { goalIds: [...linkedGoalIds, goalId] });
+    const nextGoalIds = [...linkedGoalIds, goalId];
+    setLinkedGoalIds(nextGoalIds);
+    commitField("goals", { goalIds: nextGoalIds });
     setGoalOpen(false);
   };
 
@@ -431,14 +460,24 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
                     {goal.title}
                   </Link>
                   {(onUpdate || onFieldUpdate) && (
-                    <button
-                      className="text-muted-foreground hover:text-foreground"
-                      type="button"
-                      onClick={() => removeGoal(goal.id)}
-                      aria-label={`Remove goal ${goal.title}`}
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
+                    <span className="inline-flex items-center gap-1 pl-0.5">
+                      <button
+                        className="text-[10px] text-muted-foreground hover:text-foreground"
+                        type="button"
+                        onClick={() => removeGoal(goal.id)}
+                        aria-label={`Remove goal ${goal.title}`}
+                      >
+                        Remove
+                      </button>
+                      <button
+                        className="text-muted-foreground hover:text-foreground"
+                        type="button"
+                        onClick={() => removeGoal(goal.id)}
+                        aria-label={`Remove goal ${goal.title}`}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
                   )}
                 </span>
               ))}
@@ -954,6 +993,52 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
         )}
 
       </div>
+
+      {(onArchiveProject || onDeleteProject) && (
+        <>
+          <Separator className="my-4" />
+          <div className="space-y-2 py-2">
+            <div className="text-xs text-muted-foreground">Project actions</div>
+            <div className="flex flex-wrap items-center gap-2">
+              {onArchiveProject && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={isArchivingProject || isDeletingProject}
+                  onClick={() => void onArchiveProject()}
+                >
+                  {isArchivingProject ? (
+                    <>
+                      <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                      Archiving...
+                    </>
+                  ) : (
+                    "Archive project"
+                  )}
+                </Button>
+              )}
+              {onDeleteProject && (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  disabled={isDeletingProject || isArchivingProject}
+                  onClick={() => void onDeleteProject()}
+                >
+                  {isDeletingProject ? (
+                    <>
+                      <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                      Deleting...
+                    </>
+                  ) : (
+                    "Delete permanently"
+                  )}
+                </Button>
+              )}
+            </div>
+            {projectActionError && <p className="text-xs text-destructive">{projectActionError}</p>}
+          </div>
+        </>
+      )}
     </div>
   );
 }

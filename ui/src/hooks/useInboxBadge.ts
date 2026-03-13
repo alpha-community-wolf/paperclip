@@ -1,24 +1,75 @@
-import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { accessApi } from "../api/access";
-import { ApiError } from "../api/client";
-import { approvalsApi } from "../api/approvals";
-import { dashboardApi } from "../api/dashboard";
-import { heartbeatsApi } from "../api/heartbeats";
-import { issuesApi } from "../api/issues";
+import { useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { sidebarBadgesApi } from "../api/sidebarBadges";
+import { inboxDismissalsApi } from "../api/inboxDismissals";
 import { queryKeys } from "../lib/queryKeys";
 import {
-  computeInboxBadgeData,
-  getRecentTouchedIssues,
   loadDismissedInboxItems,
   saveDismissedInboxItems,
-  getUnreadTouchedIssues,
 } from "../lib/inbox";
 
-const INBOX_ISSUE_STATUSES = "backlog,todo,in_progress,in_review,blocked,done";
+function parseDismissedKey(key: string): { itemType: "failed_run" | "alert"; itemId: string } | null {
+  if (key.startsWith("run:")) {
+    const itemId = key.slice("run:".length).trim();
+    return itemId ? { itemType: "failed_run", itemId } : null;
+  }
+  if (key.startsWith("alert:")) {
+    const itemId = key.slice("alert:".length).trim();
+    return itemId ? { itemType: "alert", itemId } : null;
+  }
+  return null;
+}
 
-export function useDismissedInboxItems() {
+export function useDismissedInboxItems(companyId?: string | null) {
+  const queryClient = useQueryClient();
   const [dismissed, setDismissed] = useState<Set<string>>(loadDismissedInboxItems);
+
+  const { data: persistedDismissals = [] } = useQuery({
+    queryKey: companyId ? queryKeys.inboxDismissals(companyId) : ["inbox-dismissals", "none"],
+    queryFn: () => inboxDismissalsApi.list(companyId!),
+    enabled: Boolean(companyId),
+  });
+
+  useEffect(() => {
+    if (!companyId) return;
+    const merged = new Set(loadDismissedInboxItems());
+    for (const row of persistedDismissals) {
+      merged.add(row.itemType === "failed_run" ? `run:${row.itemId}` : `alert:${row.itemId}`);
+    }
+    saveDismissedInboxItems(merged);
+    setDismissed(merged);
+  }, [companyId, persistedDismissals]);
+
+  const persistDismiss = useMutation({
+    onMutate: (key) => {
+      if (!companyId) return;
+      queryClient.setQueryData(queryKeys.sidebarBadges(companyId), (current: any) => {
+        if (!current || typeof current !== "object") return current;
+        if (key.startsWith("run:")) {
+          const failedRuns = Math.max(0, Number(current.failedRuns ?? 0) - 1);
+          const inbox = Math.max(0, Number(current.inbox ?? 0) - 1);
+          return { ...current, failedRuns, inbox };
+        }
+        if (key.startsWith("alert:")) {
+          const alerts = Math.max(0, Number(current.alerts ?? 0) - 1);
+          const inbox = Math.max(0, Number(current.inbox ?? 0) - 1);
+          return { ...current, alerts, inbox };
+        }
+        return current;
+      });
+    },
+    mutationFn: async (key: string) => {
+      if (!companyId) return null;
+      const parsed = parseDismissedKey(key);
+      if (!parsed) return null;
+      return inboxDismissalsApi.dismiss(companyId, parsed.itemType, parsed.itemId);
+    },
+    onSettled: () => {
+      if (!companyId) return;
+      queryClient.invalidateQueries({ queryKey: queryKeys.inboxDismissals(companyId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.sidebarBadges(companyId) });
+    },
+  });
 
   useEffect(() => {
     const handleStorage = (event: StorageEvent) => {
@@ -36,73 +87,26 @@ export function useDismissedInboxItems() {
       saveDismissedInboxItems(next);
       return next;
     });
+    if (companyId) persistDismiss.mutate(id);
   };
 
   return { dismissed, dismiss };
 }
 
 export function useInboxBadge(companyId: string | null | undefined) {
-  const { dismissed } = useDismissedInboxItems();
-
-  const { data: approvals = [] } = useQuery({
-    queryKey: queryKeys.approvals.list(companyId!),
-    queryFn: () => approvalsApi.list(companyId!),
+  useDismissedInboxItems(companyId);
+  const { data } = useQuery({
+    queryKey: queryKeys.sidebarBadges(companyId!),
+    queryFn: () => sidebarBadgesApi.get(companyId!),
     enabled: !!companyId,
+    refetchInterval: 15_000,
   });
-
-  const { data: joinRequests = [] } = useQuery({
-    queryKey: queryKeys.access.joinRequests(companyId!),
-    queryFn: async () => {
-      try {
-        return await accessApi.listJoinRequests(companyId!, "pending_approval");
-      } catch (err) {
-        if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
-          return [];
-        }
-        throw err;
-      }
-    },
-    enabled: !!companyId,
-    retry: false,
-  });
-
-  const { data: dashboard } = useQuery({
-    queryKey: queryKeys.dashboard(companyId!),
-    queryFn: () => dashboardApi.summary(companyId!),
-    enabled: !!companyId,
-  });
-
-  const { data: touchedIssues = [] } = useQuery({
-    queryKey: queryKeys.issues.listTouchedByMe(companyId!),
-    queryFn: () =>
-      issuesApi.list(companyId!, {
-        touchedByUserId: "me",
-        status: INBOX_ISSUE_STATUSES,
-      }),
-    enabled: !!companyId,
-  });
-
-  const unreadIssues = useMemo(
-    () => getUnreadTouchedIssues(getRecentTouchedIssues(touchedIssues)),
-    [touchedIssues],
-  );
-
-  const { data: heartbeatRuns = [] } = useQuery({
-    queryKey: queryKeys.heartbeats(companyId!),
-    queryFn: () => heartbeatsApi.list(companyId!),
-    enabled: !!companyId,
-  });
-
-  return useMemo(
-    () =>
-      computeInboxBadgeData({
-        approvals,
-        joinRequests,
-        dashboard,
-        heartbeatRuns,
-        unreadIssues,
-        dismissed,
-      }),
-    [approvals, joinRequests, dashboard, heartbeatRuns, unreadIssues, dismissed],
-  );
+  return data ?? {
+    inbox: 0,
+    approvals: 0,
+    failedRuns: 0,
+    joinRequests: 0,
+    unreadTouchedIssues: 0,
+    alerts: 0,
+  };
 }

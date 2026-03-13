@@ -122,6 +122,13 @@ export {
 } from "./asset.js";
 
 export {
+  createInboxDismissalSchema,
+  deleteInboxDismissalSchema,
+  type CreateInboxDismissal,
+  type DeleteInboxDismissal,
+} from "./inbox-dismissal.js";
+
+export {
   createCompanyInviteSchema,
   createOpenClawInvitePromptSchema,
   acceptInviteSchema,

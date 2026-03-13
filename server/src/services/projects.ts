@@ -18,6 +18,19 @@ type ProjectRow = typeof projects.$inferSelect;
 type ProjectWorkspaceRow = typeof projectWorkspaces.$inferSelect;
 type WorkspaceRuntimeServiceRow = typeof workspaceRuntimeServices.$inferSelect;
 const REPO_ONLY_CWD_SENTINEL = "/__paperclip_repo_only__";
+
+export function isForeignKeyConstraintError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const candidate = error as { code?: unknown; message?: unknown };
+  if (typeof candidate.code === "string") {
+    if (candidate.code === "23503") return true;
+    if (candidate.code === "SQLITE_CONSTRAINT_FOREIGNKEY") return true;
+  }
+  if (typeof candidate.message === "string") {
+    return candidate.message.toLowerCase().includes("foreign key");
+  }
+  return false;
+}
 type CreateWorkspaceInput = {
   name?: string | null;
   cwd?: string | null;
@@ -208,7 +221,7 @@ async function syncGoalLinks(db: Db, projectId: string, companyId: string, goalI
 }
 
 /** Resolve goalIds from input, handling the legacy goalId field. */
-function resolveGoalIds(data: { goalIds?: string[]; goalId?: string | null }): string[] | undefined {
+export function resolveGoalIds(data: { goalIds?: string[]; goalId?: string | null }): string[] | undefined {
   if (data.goalIds !== undefined) return data.goalIds;
   if (data.goalId !== undefined) {
     return data.goalId ? [data.goalId] : [];

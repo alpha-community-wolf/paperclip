@@ -9,6 +9,7 @@ import {
 } from "@paperclipai/shared";
 import { validate } from "../middleware/validate.js";
 import { projectService, logActivity } from "../services/index.js";
+import { isForeignKeyConstraintError } from "../services/projects.js";
 import { conflict } from "../errors.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 
@@ -266,7 +267,19 @@ export function projectRoutes(db: Db) {
       return;
     }
     assertCompanyAccess(req, existing.companyId);
-    const project = await svc.remove(id);
+    let project = null;
+    try {
+      project = await svc.remove(id);
+    } catch (error) {
+      if (isForeignKeyConstraintError(error)) {
+        res.status(409).json({
+          error:
+            "Project cannot be permanently deleted while related issues or cost events exist. Archive it instead.",
+        });
+        return;
+      }
+      throw error;
+    }
     if (!project) {
       res.status(404).json({ error: "Project not found" });
       return;

@@ -3,4 +3,6 @@ export interface SidebarBadges {
   approvals: number;
   failedRuns: number;
   joinRequests: number;
+  unreadTouchedIssues: number;
+  alerts: number;
 }

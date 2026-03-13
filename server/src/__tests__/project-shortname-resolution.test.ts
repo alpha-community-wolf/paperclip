@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveProjectNameForUniqueShortname } from "../services/projects.ts";
+import { resolveGoalIds, resolveProjectNameForUniqueShortname } from "../services/projects.ts";
 
 describe("resolveProjectNameForUniqueShortname", () => {
   it("keeps name when shortname is not used", () => {
@@ -41,5 +41,19 @@ describe("resolveProjectNameForUniqueShortname", () => {
       { id: "p1", name: "growth" },
     ]);
     expect(resolved).toBe("!!!");
+  });
+});
+
+describe("resolveGoalIds", () => {
+  it("prefers explicit goalIds even when empty", () => {
+    expect(resolveGoalIds({ goalIds: [] })).toEqual([]);
+  });
+
+  it("maps legacy goalId to a single-element list", () => {
+    expect(resolveGoalIds({ goalId: "goal-1" })).toEqual(["goal-1"]);
+  });
+
+  it("maps null legacy goalId to empty list", () => {
+    expect(resolveGoalIds({ goalId: null })).toEqual([]);
   });
 });
