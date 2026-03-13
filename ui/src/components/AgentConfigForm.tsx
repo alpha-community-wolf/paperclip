@@ -42,6 +42,7 @@ import { getUIAdapter } from "../adapters";
 import { ClaudeLocalAdvancedFields } from "../adapters/claude-local/config-fields";
 import { MarkdownEditor } from "./MarkdownEditor";
 import { ChoosePathButton } from "./PathInstructionsModal";
+import { AgentSkillsSection } from "./AgentSkillsSection";
 import { OpenCodeLogoIcon } from "./OpenCodeLogoIcon";
 
 /* ---- Create mode values ---- */
@@ -864,6 +865,12 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
             </div>
           </CollapsibleSection>
           </div>
+        </div>
+      )}
+
+      {props.mode === "edit" && selectedCompanyId && (
+        <div className={cards ? "rounded-md border border-border p-4" : "border-b border-border pb-6"}>
+          <AgentSkillsSection agentId={props.agent.id} companyId={selectedCompanyId} />
         </div>
       )}
 

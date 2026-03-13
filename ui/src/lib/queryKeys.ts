@@ -71,6 +71,12 @@ export const queryKeys = {
   runDetail: (runId: string) => ["heartbeat-run", runId] as const,
   liveRuns: (companyId: string) => ["live-runs", companyId] as const,
   runIssues: (runId: string) => ["run-issues", runId] as const,
+  skills: {
+    list: (companyId: string) => ["skills", companyId] as const,
+    detail: (id: string) => ["skills", "detail", id] as const,
+    forAgent: (agentId: string) => ["skills", "agent", agentId] as const,
+    assignmentsForAgent: (agentId: string) => ["skills", "assignments", agentId] as const,
+  },
   inboxDismissals: (companyId: string) => ["inbox-dismissals", companyId] as const,
   org: (companyId: string) => ["org", companyId] as const,
 };

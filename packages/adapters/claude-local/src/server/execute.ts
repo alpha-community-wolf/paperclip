@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { AdapterExecutionContext, AdapterExecutionResult } from "@paperclipai/adapter-utils";
+import type { AdapterExecutionContext, AdapterExecutionResult, AdapterSkill } from "@paperclipai/adapter-utils";
 import type { RunProcessResult } from "@paperclipai/adapter-utils/server-utils";
 import {
   asString,
@@ -42,14 +42,26 @@ async function resolvePaperclipSkillsDir(): Promise<string | null> {
 }
 
 /**
- * Create a tmpdir with `.claude/skills/` containing symlinks to skills from
- * the repo's `skills/` directory, so `--add-dir` makes Claude Code discover
- * them as proper registered skills.
+ * Create a tmpdir with `.claude/skills/` containing symlinks to the resolved
+ * skills for this agent. When `skills` is provided (from the server's skill
+ * resolution), only those skills are symlinked. Falls back to symlinking
+ * everything from the repo's `skills/` directory for backward compatibility.
  */
-async function buildSkillsDir(): Promise<string> {
+async function buildSkillsDir(skills?: AdapterSkill[]): Promise<string> {
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-skills-"));
   const target = path.join(tmp, ".claude", "skills");
   await fs.mkdir(target, { recursive: true });
+
+  if (skills && skills.length > 0) {
+    for (const skill of skills) {
+      const stat = await fs.stat(skill.path).catch(() => null);
+      if (stat?.isDirectory()) {
+        await fs.symlink(skill.path, path.join(target, skill.name));
+      }
+    }
+    return tmp;
+  }
+
   const skillsDir = await resolvePaperclipSkillsDir();
   if (!skillsDir) return tmp;
   const entries = await fs.readdir(skillsDir, { withFileTypes: true });
@@ -336,7 +348,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     extraArgs,
   } = runtimeConfig;
   const billingType = resolveClaudeBillingType(env);
-  const skillsDir = await buildSkillsDir();
+  const skillsDir = await buildSkillsDir(ctx.skills);
 
   // When instructionsFilePath is configured, create a combined temp file that
   // includes both the file content and the path directive, so we only need
@@ -417,6 +429,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         env: redactEnvForLogs(env),
         prompt,
         context,
+        skillsInjected: ctx.skills?.map((s) => s.name),
       });
     }
 

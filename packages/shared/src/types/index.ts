@@ -62,6 +62,13 @@ export type {
   InstanceUserRoleGrant,
 } from "./access.js";
 export type {
+  Skill,
+  SkillTier,
+  SkillSourceType,
+  AgentSkillAssignment,
+  ResolvedSkill,
+} from "./skill.js";
+export type {
   CompanyPortabilityInclude,
   CompanyPortabilitySecretRequirement,
   CompanyPortabilityCompanyManifestEntry,

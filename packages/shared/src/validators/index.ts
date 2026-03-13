@@ -129,6 +129,13 @@ export {
 } from "./inbox-dismissal.js";
 
 export {
+  createSkillSchema,
+  installSkillSchema,
+  type CreateSkill,
+  type InstallSkill,
+} from "./skill.js";
+
+export {
   createCompanyInviteSchema,
   createOpenClawInvitePromptSchema,
   acceptInviteSchema,

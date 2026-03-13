@@ -15,6 +15,8 @@ export { sidebarBadgeService } from "./sidebar-badges.js";
 export { inboxDismissalService } from "./inbox-dismissals.js";
 export { accessService } from "./access.js";
 export { companyPortabilityService } from "./company-portability.js";
+export { skillService } from "./skills.js";
+export { seedBuiltInSkillsForAllCompanies, seedBuiltInSkillsForCompany } from "./skill-seeding.js";
 export { logActivity, type LogActivityInput } from "./activity-log.js";
 export { notifyHireApproved, type NotifyHireApprovedInput } from "./hire-hook.js";
 export { publishLiveEvent, subscribeCompanyLiveEvents } from "./live-events.js";

@@ -33,3 +33,5 @@ export { approvalComments } from "./approval_comments.js";
 export { activityLog } from "./activity_log.js";
 export { companySecrets } from "./company_secrets.js";
 export { companySecretVersions } from "./company_secret_versions.js";
+export { skills } from "./skills.js";
+export { agentSkillAssignments } from "./agent_skill_assignments.js";

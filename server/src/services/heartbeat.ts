@@ -32,6 +32,7 @@ import {
   releaseRuntimeServicesForRun,
 } from "./workspace-runtime.js";
 import { issueService } from "./issues.js";
+import { skillService } from "./skills.js";
 import {
   buildExecutionWorkspaceAdapterConfig,
   parseIssueExecutionWorkspaceSettings,
@@ -1475,6 +1476,8 @@ export function heartbeatService(db: Db) {
           "local agent jwt secret missing or invalid; running without injected PAPERCLIP_API_KEY",
         );
       }
+      const skillsSvc = skillService(db);
+      const resolvedSkills = await skillsSvc.resolveForExecution(agent.id);
       const adapterResult = await adapter.execute({
         runId: run.id,
         agent,
@@ -1484,6 +1487,7 @@ export function heartbeatService(db: Db) {
         onLog,
         onMeta: onAdapterMeta,
         authToken: authToken ?? undefined,
+        skills: resolvedSkills.map((s) => ({ name: s.name, tier: s.tier, path: s.path })),
       });
       const adapterManagedRuntimeServices = adapterResult.runtimeServices
         ? await persistAdapterManagedRuntimeServices({

@@ -2086,6 +2086,14 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
               </ul>
             </div>
           )}
+          {Array.isArray(adapterInvokePayload.skillsInjected) && adapterInvokePayload.skillsInjected.length > 0 && (
+            <div className="text-xs">
+              <span className="text-muted-foreground">Skills: </span>
+              <span className="font-mono">
+                {adapterInvokePayload.skillsInjected.filter((v): v is string => typeof v === "string").join(", ")}
+              </span>
+            </div>
+          )}
           {adapterInvokePayload.prompt !== undefined && (
             <div>
               <div className="text-xs text-muted-foreground mb-1">Prompt</div>

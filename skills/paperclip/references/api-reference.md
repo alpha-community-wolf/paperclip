@@ -524,6 +524,22 @@ Terminal states: `done`, `cancelled`
 | PATCH  | `/api/goals/:goalId`                 | Update goal        |
 | POST   | `/api/companies/:companyId/openclaw/invite-prompt` | Generate OpenClaw invite prompt (CEO/board only) |
 
+### Skills
+
+| Method | Path                                         | Description                                              |
+| ------ | -------------------------------------------- | -------------------------------------------------------- |
+| GET    | `/api/companies/:companyId/skills`           | List all skills for company (built-in + company + agent) |
+| POST   | `/api/companies/:companyId/skills`           | Install a new skill (company or agent tier)              |
+| GET    | `/api/skills/:id`                            | Skill details                                            |
+| DELETE | `/api/skills/:id`                            | Remove a skill (built-in skills cannot be removed)       |
+| GET    | `/api/agents/:agentId/skills`                | List all skills enabled for an agent (resolved view)     |
+| GET    | `/api/agents/:agentId/skill-assignments`     | List company-skill assignments for an agent              |
+| POST   | `/api/agents/:agentId/skills/:skillId/assign`  | Toggle ON a company skill for an agent                 |
+| DELETE | `/api/agents/:agentId/skills/:skillId/assign`  | Toggle OFF a company skill for an agent                |
+| POST   | `/api/companies/:companyId/skills/install`       | Install skill via CLI command (board only). Body: `{ command, tier?, agentId?, targetDir? }` |
+
+Skill tiers: `built_in` (core: always injected; optional: togglable per agent), `company` (opt-in per agent), `agent` (auto-discovered from agent cwd). Built-in skills have a `defaultEnabled` flag — core skills (`paperclip`, `paperclip-create-agent`, `para-memory-files`) are always injected; optional built-ins (`create-agent-adapter`, `pr-report`, `release`, `release-changelog`) must be explicitly assigned like company skills. Agent-local skills are discovered from `.agents/skills/` and `.claude/skills/` within the agent's `adapterConfig.cwd` — no API registration needed.
+
 ### Approvals, Costs, Activity, Dashboard
 
 | Method | Path                                         | Description                        |
