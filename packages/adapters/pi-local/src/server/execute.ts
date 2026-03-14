@@ -148,6 +148,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     typeof envConfig.PAPERCLIP_API_KEY === "string" && envConfig.PAPERCLIP_API_KEY.trim().length > 0;
   const env: Record<string, string> = { ...buildPaperclipEnv(agent) };
   env.PAPERCLIP_RUN_ID = runId;
+  env.AGENT_HOME = cwd;
   env.PI_CODING_AGENT_DIR = skillsDir;
   
   const wakeTaskId =
