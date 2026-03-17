@@ -277,11 +277,13 @@ export function AgentDetail() {
     enabled: Boolean(resolvedAgentId),
   });
 
-  const { data: heartbeats } = useQuery({
+  const { data: heartbeatsResult } = useQuery({
     queryKey: queryKeys.heartbeats(resolvedCompanyId!, agent?.id ?? undefined),
     queryFn: () => heartbeatsApi.list(resolvedCompanyId!, agent?.id ?? undefined),
     enabled: !!resolvedCompanyId && !!agent?.id,
   });
+  const heartbeats = heartbeatsResult?.runs ?? [];
+  const heartbeatsDegraded = heartbeatsResult?.degraded ?? false;
 
   const { data: allIssues } = useQuery({
     queryKey: queryKeys.issues.list(resolvedCompanyId!),
@@ -301,7 +303,7 @@ export function AgentDetail() {
   const reportsToAgent = (allAgents ?? []).find((a) => a.id === agent?.reportsTo);
   const directReports = (allAgents ?? []).filter((a) => a.reportsTo === agent?.id && a.status !== "terminated");
   const mobileLiveRun = useMemo(
-    () => (heartbeats ?? []).find((r) => r.status === "running" || r.status === "queued") ?? null,
+    () => heartbeats.find((r) => r.status === "running" || r.status === "queued") ?? null,
     [heartbeats],
   );
 
@@ -652,7 +654,7 @@ export function AgentDetail() {
       {activeView === "dashboard" && (
         <AgentOverview
           agent={agent}
-          runs={heartbeats ?? []}
+          runs={heartbeats}
           assignedIssues={assignedIssues}
           runtimeState={runtimeState}
           agentId={agent.id}
@@ -676,6 +678,7 @@ export function AgentDetail() {
       {activeView === "chat" && (
         <AgentChatSessionTab
           agentId={agent.id}
+          agentRouteId={canonicalAgentRef}
           adapterType={agent.adapterType}
           agentName={agent.name}
         />
@@ -683,7 +686,8 @@ export function AgentDetail() {
 
       {activeView === "runs" && (
         <RunsTab
-          runs={heartbeats ?? []}
+          runs={heartbeats}
+          degraded={heartbeatsDegraded}
           companyId={resolvedCompanyId!}
           agentId={agent.id}
           agentRouteId={canonicalAgentRef}
@@ -1189,6 +1193,7 @@ function RunListItem({ run, isSelected, agentId }: { run: HeartbeatRun; isSelect
 
 function RunsTab({
   runs,
+  degraded = false,
   companyId,
   agentId,
   agentRouteId,
@@ -1196,6 +1201,7 @@ function RunsTab({
   adapterType,
 }: {
   runs: HeartbeatRun[];
+  degraded?: boolean;
   companyId: string;
   agentId: string;
   agentRouteId: string;
@@ -1204,7 +1210,7 @@ function RunsTab({
 }) {
   const { isMobile } = useSidebar();
 
-  if (runs.length === 0) {
+  if (runs.length === 0 && !degraded) {
     return <p className="text-sm text-muted-foreground">No runs yet.</p>;
   }
 
@@ -1216,6 +1222,13 @@ function RunsTab({
   // On mobile, don't auto-select so the list shows first; on desktop, auto-select latest
   const effectiveRunId = isMobile ? selectedRunId : (selectedRunId ?? sorted[0]?.id ?? null);
   const selectedRun = sorted.find((r) => r.id === effectiveRunId) ?? null;
+
+  const degradedBanner = degraded ? (
+    <div className="flex items-center gap-2 rounded-md border border-yellow-500/30 bg-yellow-500/10 px-3 py-2 text-xs text-yellow-700 dark:text-yellow-400 mb-3">
+      <span className="shrink-0">⚠</span>
+      <span>One or more runs contain corrupted output data. Run details (error messages, result summaries) may be missing, but run records are shown.</span>
+    </div>
+  ) : null;
 
   // Mobile: show either run list OR run detail with back button
   if (isMobile) {
@@ -1234,16 +1247,21 @@ function RunsTab({
       );
     }
     return (
-      <div className="border border-border rounded-lg overflow-x-hidden">
-        {sorted.map((run) => (
-          <RunListItem key={run.id} run={run} isSelected={false} agentId={agentRouteId} />
-        ))}
+      <div className="space-y-3">
+        {degradedBanner}
+        <div className="border border-border rounded-lg overflow-x-hidden">
+          {sorted.map((run) => (
+            <RunListItem key={run.id} run={run} isSelected={false} agentId={agentRouteId} />
+          ))}
+        </div>
       </div>
     );
   }
 
   // Desktop: side-by-side layout
   return (
+    <div className="flex flex-col gap-3">
+      {degradedBanner}
     <div className="flex gap-0">
       {/* Left: run list — border stretches full height, content sticks */}
       <div className={cn(
@@ -1263,6 +1281,7 @@ function RunsTab({
           <RunDetail key={selectedRun.id} run={selectedRun} agentRouteId={agentRouteId} adapterType={adapterType} />
         </div>
       )}
+    </div>
     </div>
   );
 }

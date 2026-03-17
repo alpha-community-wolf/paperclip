@@ -100,7 +100,7 @@ export function ClaudeLocalAdvancedFields({
             : eff(
                 "adapterConfig",
                 "dangerouslySkipPermissions",
-                config.dangerouslySkipPermissions !== false,
+                Boolean(config.dangerouslySkipPermissions),
               )
         }
         onChange={(v) =>

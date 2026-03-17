@@ -39,6 +39,11 @@ export const chatApi = {
     api.get<ChatMessage[]>(messagesBasePath(agentId, sessionId)),
   sendMessage: (agentId: string, sessionId: string, body: { content: string }) =>
     api.post<CreateChatMessageResponse>(messagesBasePath(agentId, sessionId), body),
+  retryMessage: (agentId: string, sessionId: string, messageId: string) =>
+    api.post<CreateChatMessageResponse>(
+      `${messagesBasePath(agentId, sessionId)}/${encodeURIComponent(messageId)}/retry`,
+      {},
+    ),
   streamUrl: (agentId: string, sessionId: string, messageId: string) =>
     `/api${messagesBasePath(agentId, sessionId)}/${encodeURIComponent(messageId)}/stream`,
 };

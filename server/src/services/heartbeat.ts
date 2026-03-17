@@ -1202,8 +1202,10 @@ export function heartbeatService(db: Db) {
     agentId: string;
     companyId: string;
     context: Record<string, unknown>;
+    /** When true, the adapter session will be resumed — skip full history injection. */
+    hasResumableSession?: boolean;
   }) {
-    const { agentId, companyId, context } = input;
+    const { agentId, companyId, context, hasResumableSession = false } = input;
     const wakeReason = readNonEmptyString(context.wakeReason);
     if (wakeReason !== "chat_message") {
       delete context.paperclipChat;
@@ -1305,17 +1307,26 @@ export function heartbeatService(db: Db) {
         createdAt: item.createdAt.toISOString(),
       })),
       historyText,
-      promptText: [
-        "This invocation is an interactive chat reply.",
-        "Reply directly to the latest user message.",
-        "Respect agent instructions and Paperclip operational rules.",
-        "",
-        "Conversation history (oldest to newest):",
-        historyText || "(no prior messages)",
-        "",
-        "Latest user message:",
-        latestUserMessage,
-      ].join("\n"),
+      promptText: hasResumableSession
+        ? [
+            "This invocation is an interactive chat reply.",
+            "Reply directly to the latest user message.",
+            "Respect agent instructions and Paperclip operational rules.",
+            "",
+            "Latest user message:",
+            latestUserMessage,
+          ].join("\n")
+        : [
+            "This invocation is an interactive chat reply.",
+            "Reply directly to the latest user message.",
+            "Respect agent instructions and Paperclip operational rules.",
+            "",
+            "Conversation history (oldest to newest):",
+            historyText || "(no prior messages)",
+            "",
+            "Latest user message:",
+            latestUserMessage,
+          ].join("\n"),
     };
   }
 
@@ -1351,11 +1362,6 @@ export function heartbeatService(db: Db) {
 
     const runtime = await ensureRuntimeState(agent);
     const context = parseObject(run.contextSnapshot);
-    await enrichChatInvocationContext({
-      agentId: agent.id,
-      companyId: agent.companyId,
-      context,
-    });
     const taskKey = deriveTaskKey(context, null);
     const sessionCodec = getAdapterSessionCodec(agent.adapterType);
     const issueId = readNonEmptyString(context.issueId);
@@ -1395,6 +1401,15 @@ export function heartbeatService(db: Db) {
     const resetTaskSession = shouldResetTaskSessionForWake(context);
     const sessionResetReason = describeSessionResetReason(context);
     const taskSessionForRun = resetTaskSession ? null : taskSession;
+    // Enrich chat context after session resolution so we can skip full history
+    // injection when the adapter session will be resumed (session carries the
+    // conversation; redundant history only wastes context window tokens).
+    await enrichChatInvocationContext({
+      agentId: agent.id,
+      companyId: agent.companyId,
+      context,
+      hasResumableSession: !!taskSessionForRun,
+    });
     const previousSessionParams = normalizeSessionParams(
       sessionCodec.deserialize(taskSessionForRun?.sessionParamsJson ?? null),
     );
@@ -2588,22 +2603,41 @@ export function heartbeatService(db: Db) {
     return newRun;
   }
 
-  return {
-    list: async (companyId: string, agentId?: string, limit?: number) => {
-      const query = db
-        .select(heartbeatRunListColumns)
-        .from(heartbeatRuns)
-        .where(
-          agentId
-            ? and(eq(heartbeatRuns.companyId, companyId), eq(heartbeatRuns.agentId, agentId))
-            : eq(heartbeatRuns.companyId, companyId),
-        )
-        .orderBy(desc(heartbeatRuns.createdAt));
+  // Fallback column set that nulls out text/JSONB columns which may contain
+  // invalid UTF-8 bytes from corrupted subprocess output. Used when the normal
+  // query fails with PostgreSQL error 22021 (invalid byte sequence).
+  const heartbeatRunListColumnsSafe = {
+    ...heartbeatRunListColumns,
+    error: sql<string | null>`NULL`.as("error"),
+    resultJson: sql<Record<string, unknown> | null>`NULL`.as("resultJson"),
+    contextSnapshot: sql<Record<string, unknown> | null>`NULL`.as("contextSnapshot"),
+  } as const;
 
-      if (limit) {
-        return query.limit(limit);
+  return {
+    list: async (companyId: string, agentId?: string, limit?: number): Promise<{ runs: (typeof heartbeatRuns.$inferSelect)[]; degraded: boolean }> => {
+      const where = agentId
+        ? and(eq(heartbeatRuns.companyId, companyId), eq(heartbeatRuns.agentId, agentId))
+        : eq(heartbeatRuns.companyId, companyId);
+
+      const buildQuery = (columns: typeof heartbeatRunListColumns | typeof heartbeatRunListColumnsSafe) => {
+        const q = db.select(columns).from(heartbeatRuns).where(where).orderBy(desc(heartbeatRuns.createdAt));
+        return limit ? q.limit(limit) : q;
+      };
+
+      try {
+        const runs = await buildQuery(heartbeatRunListColumns) as unknown as (typeof heartbeatRuns.$inferSelect)[];
+        return { runs, degraded: false };
+      } catch (err: unknown) {
+        const isEncodingError =
+          err != null &&
+          typeof err === "object" &&
+          "code" in err &&
+          (err as { code: unknown }).code === "22021";
+        if (!isEncodingError) throw err;
+        // Retry with safe columns — returns run records without the corrupted text fields
+        const runs = await buildQuery(heartbeatRunListColumnsSafe) as unknown as (typeof heartbeatRuns.$inferSelect)[];
+        return { runs, degraded: true };
       }
-      return query;
     },
 
     getRun,

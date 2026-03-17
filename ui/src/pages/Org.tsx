@@ -11,6 +11,43 @@ import { PageSkeleton } from "../components/PageSkeleton";
 import { ChevronRight, GitBranch } from "lucide-react";
 import { cn } from "../lib/utils";
 
+const adapterLabels: Record<string, string> = {
+  claude_local: "Claude Local",
+  codex_local: "Codex Local",
+  opencode_local: "OpenCode Local",
+  cursor: "Cursor",
+  pi_local: "Pi Local",
+  openclaw_gateway: "OpenClaw Gateway",
+  process: "Process",
+  http: "HTTP",
+};
+
+function formatInlineValue(value: string | null | undefined): string {
+  if (!value || value.trim().length === 0) return "Auto";
+  return value;
+}
+
+function formatAdapter(value: string | null | undefined): string {
+  const normalized = value?.trim();
+  if (!normalized) return "Auto";
+  if (adapterLabels[normalized]) return adapterLabels[normalized];
+  return normalized
+    .split(/[_-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function formatThinking(value: string | null | undefined): string {
+  const normalized = value?.trim();
+  if (!normalized) return "Auto";
+  return normalized
+    .split(/[_-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
 function OrgTree({
   nodes,
   depth = 0,
@@ -45,7 +82,7 @@ function OrgTreeNode({
     <div>
       <Link
         to={hrefFn(node.id)}
-        className="flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors cursor-pointer hover:bg-accent/50 no-underline text-inherit"
+        className="flex items-start gap-2 px-3 py-2 rounded-md text-sm transition-colors cursor-pointer hover:bg-accent/50 no-underline text-inherit"
         style={{ paddingLeft: `${depth * 16 + 12}px` }}
       >
         {hasChildren ? (
@@ -78,8 +115,15 @@ function OrgTreeNode({
                   : "bg-neutral-400"
           )}
         />
-        <span className="font-medium flex-1">{node.name}</span>
-        <span className="text-xs text-muted-foreground">{node.role}</span>
+        <div className="flex-1 min-w-0">
+          <div className="font-medium truncate">{node.name}</div>
+          <div className="text-xs text-muted-foreground flex flex-wrap gap-x-3 gap-y-0.5">
+            <span>Adapter: {formatAdapter(node.adapterType)}</span>
+            <span>Model: {formatInlineValue(node.model)}</span>
+            <span>Thinking: {formatThinking(node.thinking)}</span>
+          </div>
+        </div>
+        <span className="text-xs text-muted-foreground mt-0.5">{node.role}</span>
         <StatusBadge status={node.status} />
       </Link>
       {hasChildren && expanded && (

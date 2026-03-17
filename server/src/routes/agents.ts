@@ -444,11 +444,26 @@ export function agentRoutes(db: Db) {
     const reports = Array.isArray(node.reports)
       ? (node.reports as Array<Record<string, unknown>>).map((report) => toLeanOrgNode(report))
       : [];
+    const adapterType = asNonEmptyString(node.adapterType);
+    const adapterConfig = asRecord(node.adapterConfig) ?? {};
+    const model = asNonEmptyString(adapterConfig.model);
+    const thinking =
+      adapterType === "codex_local"
+        ? asNonEmptyString(adapterConfig.modelReasoningEffort) ??
+          asNonEmptyString(adapterConfig.reasoningEffort)
+        : adapterType === "cursor"
+          ? asNonEmptyString(adapterConfig.mode)
+          : adapterType === "opencode_local"
+            ? asNonEmptyString(adapterConfig.variant)
+            : asNonEmptyString(adapterConfig.effort);
     return {
       id: String(node.id),
       name: String(node.name),
       role: String(node.role),
       status: String(node.status),
+      adapterType,
+      model,
+      thinking,
       reports,
     };
   }
@@ -1373,8 +1388,8 @@ export function agentRoutes(db: Db) {
     const agentId = req.query.agentId as string | undefined;
     const limitParam = req.query.limit as string | undefined;
     const limit = limitParam ? Math.max(1, Math.min(1000, parseInt(limitParam, 10) || 200)) : undefined;
-    const runs = await heartbeat.list(companyId, agentId, limit);
-    res.json(runs);
+    const result = await heartbeat.list(companyId, agentId, limit);
+    res.json(result);
   });
 
   router.get("/companies/:companyId/live-runs", async (req, res) => {

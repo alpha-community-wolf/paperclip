@@ -94,11 +94,11 @@ export function Sidebar() {
         <SidebarAgents />
 
         <SidebarSection label="Company">
-          <SidebarNavItem to="/skills" label="Skills" icon={Blocks} />
-          <SidebarNavItem to="/webhooks" label="Webhooks" icon={Webhook} />
           <SidebarNavItem to="/org" label="Org" icon={Network} />
           <SidebarNavItem to="/costs" label="Costs" icon={DollarSign} />
           <SidebarNavItem to="/activity" label="Activity" icon={History} />
+          <SidebarNavItem to="/skills" label="Skills" icon={Blocks} />
+          <SidebarNavItem to="/webhooks" label="Webhooks" icon={Webhook} />
           <SidebarNavItem to="/company/settings" label="Settings" icon={Settings} />
         </SidebarSection>
       </nav>

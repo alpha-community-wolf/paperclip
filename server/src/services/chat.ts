@@ -537,6 +537,84 @@ export function chatService(db: Db) {
       }
     },
 
+    retryMessage: async (input: {
+      agentId: string;
+      sessionId?: string | null;
+      messageId: string;
+      actor: { actorType: "user" | "agent" | "system"; actorId: string | null };
+    }): Promise<CreateChatMessageResponse> => {
+      const agent = await agents.getById(input.agentId);
+      if (!agent) throw notFound("Agent not found");
+      const sourceMessage = await getMessage(input.messageId);
+      if (!sourceMessage || sourceMessage.agentId !== agent.id || sourceMessage.companyId !== agent.companyId) {
+        throw notFound("Chat message not found");
+      }
+      if (sourceMessage.role !== "user") {
+        throw conflict("Only user chat messages can be retried");
+      }
+      if (!sourceMessage.runId) {
+        throw conflict("Chat message has not started a run");
+      }
+      if (input.sessionId && sourceMessage.chatSessionId !== input.sessionId) {
+        throw notFound("Chat message not found");
+      }
+      const run = await heartbeat.getRun(sourceMessage.runId);
+      if (!run) {
+        throw notFound("Heartbeat run not found");
+      }
+      if (run.status !== "failed" && run.status !== "timed_out" && run.status !== "cancelled") {
+        throw conflict("Only failed, timed out, or cancelled chat runs can be retried");
+      }
+      const session = sourceMessage.chatSessionId ? await getSession(sourceMessage.chatSessionId) : null;
+      if (!session || session.agentId !== agent.id || session.companyId !== agent.companyId) {
+        throw notFound("Chat session not found");
+      }
+      if (session.archivedAt) {
+        throw conflict("Chat session is archived");
+      }
+
+      const resumedRun = await heartbeat.wakeup(agent.id, {
+        source: "on_demand",
+        triggerDetail: "manual",
+        reason: "chat_message",
+        payload: {
+          chatMessageId: sourceMessage.id,
+          chatSessionId: session.id,
+          taskKey: session.taskKey,
+          retryFromRunId: run.id,
+        },
+        requestedByActorType: input.actor.actorType,
+        requestedByActorId: input.actor.actorId,
+        contextSnapshot: {
+          chatSessionId: session.id,
+          taskKey: session.taskKey,
+          chatMessageId: sourceMessage.id,
+          retryFromRunId: run.id,
+        },
+      });
+
+      if (!resumedRun) {
+        throw conflict("Agent wakeup was skipped");
+      }
+
+      const [updatedMessage] = await db
+        .update(chatMessages)
+        .set({ runId: resumedRun.id })
+        .where(eq(chatMessages.id, sourceMessage.id))
+        .returning();
+
+      await updateSessionActivity({
+        sessionId: session.id,
+        lastMessageAt: sourceMessage.createdAt,
+        lastRunId: resumedRun.id,
+      });
+
+      return {
+        message: normalizeChatMessage(updatedMessage ?? sourceMessage),
+        runId: resumedRun.id,
+      };
+    },
+
     streamMessageResponse: async (
       input: {
         agentId: string;

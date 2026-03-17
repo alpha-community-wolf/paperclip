@@ -95,10 +95,12 @@ function summarizeTranscriptEntry(entry: ReturnType<typeof buildTranscript>[numb
 
 export function AgentChatSessionTab({
   agentId,
+  agentRouteId,
   adapterType,
   agentName,
 }: {
   agentId: string;
+  agentRouteId: string;
   adapterType: string;
   agentName: string;
 }) {
@@ -328,6 +330,28 @@ export function AgentChatSessionTab({
     },
   });
 
+  const retryChatRun = useMutation({
+    mutationFn: async (input: { messageId: string; runId: string }) => {
+      if (!selectedSessionId) throw new Error("No chat session selected");
+      const run = await heartbeatsApi.get(input.runId);
+      if (run.status !== "failed" && run.status !== "timed_out" && run.status !== "cancelled") {
+        throw new Error(`Only failed, timed out, or cancelled runs can be retried (current: ${run.status}).`);
+      }
+      return chatApi.retryMessage(agentId, selectedSessionId, input.messageId);
+    },
+    onSuccess: (result) => {
+      if (!selectedSessionId) return;
+      setSendError(null);
+      queryClient.setQueryData<ChatMessage[]>(queryKeys.chatMessages(agentId, selectedSessionId), (current) =>
+        (current ?? []).map((entry) => (entry.id === result.message.id ? result.message : entry)),
+      );
+      startStream(selectedSessionId, result);
+    },
+    onError: (mutationError) => {
+      setSendError(mutationError instanceof Error ? mutationError.message : "Failed to retry run");
+    },
+  });
+
   const renameSession = useMutation({
     mutationFn: ({ sessionId, nextTitle }: { sessionId: string; nextTitle: string }) =>
       chatApi.updateSession(agentId, sessionId, {
@@ -437,8 +461,8 @@ export function AgentChatSessionTab({
   }, []);
 
   const runUrlFor = useCallback(
-    (runId: string) => `/agents/${encodeURIComponent(agentId)}/runs/${encodeURIComponent(runId)}`,
-    [agentId],
+    (runId: string) => `/agents/${encodeURIComponent(agentRouteId)}/runs/${encodeURIComponent(runId)}`,
+    [agentRouteId],
   );
 
   const renderInlineRunDetails = (runId: string | null) => {
@@ -717,6 +741,8 @@ export function AgentChatSessionTab({
             {messages.map((message) => {
               const isUser = message.role === "user";
               const detailsOpen = message.runId && message.runId === expandedRunId;
+              const retryPendingForMessage =
+                retryChatRun.isPending && retryChatRun.variables?.messageId === message.id;
               return (
                 <div
                   key={message.id}
@@ -740,7 +766,7 @@ export function AgentChatSessionTab({
                     ) : (
                       <MarkdownBody>{message.content}</MarkdownBody>
                     )}
-                    {!isUser && message.runId && (
+                    {message.runId && (
                       <div className="mt-2 flex items-center gap-3 text-[11px]">
                         <button
                           type="button"
@@ -755,9 +781,19 @@ export function AgentChatSessionTab({
                         >
                           View Run
                         </Link>
+                        {isUser && (
+                          <button
+                            type="button"
+                            onClick={() => retryChatRun.mutate({ messageId: message.id, runId: message.runId! })}
+                            disabled={retryPendingForMessage}
+                            className="text-muted-foreground underline-offset-2 hover:text-foreground hover:underline disabled:pointer-events-none disabled:opacity-50"
+                          >
+                            {retryPendingForMessage ? "Retrying..." : "Retry Run"}
+                          </button>
+                        )}
                       </div>
                     )}
-                    {!isUser ? renderInlineRunDetails(message.runId) : null}
+                    {renderInlineRunDetails(message.runId)}
                   </div>
                 </div>
               );

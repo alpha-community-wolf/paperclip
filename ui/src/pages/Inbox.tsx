@@ -323,11 +323,12 @@ export function Inbox() {
     enabled: !!selectedCompanyId,
   });
 
-  const { data: heartbeatRuns, isLoading: isRunsLoading } = useQuery({
+  const { data: heartbeatRunsResult, isLoading: isRunsLoading } = useQuery({
     queryKey: queryKeys.heartbeats(selectedCompanyId!),
     queryFn: () => heartbeatsApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
+  const heartbeatRuns = heartbeatRunsResult?.runs;
 
   const touchedIssues = useMemo(() => getRecentTouchedIssues(touchedIssuesRaw), [touchedIssuesRaw]);
   const unreadTouchedIssues = useMemo(

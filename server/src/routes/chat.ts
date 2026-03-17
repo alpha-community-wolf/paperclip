@@ -129,6 +129,41 @@ export function chatRoutes(db: Db) {
     },
   );
 
+  router.post("/agents/:agentId/chat/sessions/:sessionId/messages/:messageId/retry", async (req, res) => {
+    const agent = await resolveAgent(req, res);
+    if (!agent) return;
+    const sessionId = req.params.sessionId as string;
+    const messageId = req.params.messageId as string;
+    const actor = getActorInfo(req);
+    const result = await chat.retryMessage({
+      agentId: agent.id,
+      sessionId,
+      messageId,
+      actor: {
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+      },
+    });
+
+    await logActivity(db, {
+      companyId: agent.companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      action: "chat.message.retried",
+      entityType: "agent",
+      entityId: agent.id,
+      details: {
+        chatSessionId: result.message.chatSessionId,
+        chatMessageId: result.message.id,
+        runId: result.runId,
+      },
+    });
+
+    res.json(result);
+  });
+
   router.get("/agents/:agentId/chat/sessions/:sessionId/messages/:messageId/stream", async (req, res) => {
     const sessionId = req.params.sessionId as string;
     const messageId = req.params.messageId as string;
@@ -211,6 +246,46 @@ export function chatRoutes(db: Db) {
     });
 
     res.status(201).json(result);
+  });
+
+  router.post("/agents/:agentId/chat/messages/:messageId/retry", async (req, res) => {
+    const agent = await resolveAgent(req, res);
+    if (!agent) return;
+    const messageId = req.params.messageId as string;
+    const message = await chat.getMessage(messageId);
+    const sessionId = message?.chatSessionId ?? null;
+    if (!sessionId) {
+      res.status(404).json({ error: "Chat message not found" });
+      return;
+    }
+    const actor = getActorInfo(req);
+    const result = await chat.retryMessage({
+      agentId: agent.id,
+      sessionId,
+      messageId,
+      actor: {
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+      },
+    });
+
+    await logActivity(db, {
+      companyId: agent.companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      action: "chat.message.retried",
+      entityType: "agent",
+      entityId: agent.id,
+      details: {
+        chatSessionId: result.message.chatSessionId,
+        chatMessageId: result.message.id,
+        runId: result.runId,
+      },
+    });
+
+    res.json(result);
   });
 
   router.get("/agents/:agentId/chat/messages/:messageId/stream", async (req, res) => {

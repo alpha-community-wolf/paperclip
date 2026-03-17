@@ -73,11 +73,12 @@ export function Dashboard() {
     enabled: !!selectedCompanyId,
   });
 
-  const { data: runs } = useQuery({
+  const { data: runsResult } = useQuery({
     queryKey: queryKeys.heartbeats(selectedCompanyId!),
     queryFn: () => heartbeatsApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
+  const runs = runsResult?.runs;
 
   const recentIssues = issues ? getRecentIssues(issues) : [];
   const recentActivity = useMemo(() => (activity ?? []).slice(0, 10), [activity]);

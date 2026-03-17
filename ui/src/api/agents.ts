@@ -37,6 +37,9 @@ export interface OrgNode {
   name: string;
   role: string;
   status: string;
+  adapterType?: string | null;
+  model?: string | null;
+  thinking?: string | null;
   reports: OrgNode[];
 }
 

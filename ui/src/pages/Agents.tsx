@@ -85,12 +85,13 @@ export function Agents() {
     enabled: !!selectedCompanyId && effectiveView === "org",
   });
 
-  const { data: runs } = useQuery({
+  const { data: runsResult } = useQuery({
     queryKey: queryKeys.heartbeats(selectedCompanyId!),
     queryFn: () => heartbeatsApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
     refetchInterval: 15_000,
   });
+  const runs = runsResult?.runs;
 
   // Map agentId -> first live run + live run count
   const liveRunByAgent = useMemo(() => {

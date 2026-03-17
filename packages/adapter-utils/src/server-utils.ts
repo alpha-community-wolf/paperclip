@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { constants as fsConstants, promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { StringDecoder } from "node:string_decoder";
 import { parse as parseDotenv } from "dotenv";
 
 export interface RunProcessResult {
@@ -378,6 +379,8 @@ export async function runChildProcess(
         let stdout = "";
         let stderr = "";
         let logChain: Promise<void> = Promise.resolve();
+        const stdoutDecoder = new StringDecoder("utf8");
+        const stderrDecoder = new StringDecoder("utf8");
 
         const timeout =
           opts.timeoutSec > 0
@@ -393,7 +396,8 @@ export async function runChildProcess(
             : null;
 
         child.stdout?.on("data", (chunk: unknown) => {
-          const text = String(chunk);
+          const text = stdoutDecoder.write(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk), "utf8"));
+          if (!text) return;
           stdout = appendWithCap(stdout, text);
           logChain = logChain
             .then(() => opts.onLog("stdout", text))
@@ -401,7 +405,8 @@ export async function runChildProcess(
         });
 
         child.stderr?.on("data", (chunk: unknown) => {
-          const text = String(chunk);
+          const text = stderrDecoder.write(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk), "utf8"));
+          if (!text) return;
           stderr = appendWithCap(stderr, text);
           logChain = logChain
             .then(() => opts.onLog("stderr", text))
@@ -423,6 +428,11 @@ export async function runChildProcess(
         child.on("close", (code: number | null, signal: NodeJS.Signals | null) => {
           if (timeout) clearTimeout(timeout);
           runningProcesses.delete(runId);
+          // Flush any trailing incomplete multi-byte sequence from the decoders
+          const stdoutTrail = stdoutDecoder.end();
+          const stderrTrail = stderrDecoder.end();
+          if (stdoutTrail) stdout = appendWithCap(stdout, stdoutTrail);
+          if (stderrTrail) stderr = appendWithCap(stderr, stderrTrail);
           void logChain.finally(() => {
             resolve({
               exitCode: code,
