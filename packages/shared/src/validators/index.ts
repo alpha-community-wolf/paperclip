@@ -220,3 +220,10 @@ export {
   mcpServerConfigSchema,
   mcpServersConfigSchema,
 } from "./mcp.js";
+
+export {
+  upsertTelegramConfigSchema,
+  updateTelegramConfigSchema,
+  type UpsertTelegramConfig,
+  type UpdateTelegramConfig,
+} from "./telegram.js";

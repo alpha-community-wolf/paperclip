@@ -16,6 +16,7 @@ export const chatSessions = pgTable(
     archivedAt: timestamp("archived_at", { withTimezone: true }),
     lastMessageAt: timestamp("last_message_at", { withTimezone: true }),
     lastRunId: uuid("last_run_id").references(() => heartbeatRuns.id),
+    telegramChatId: text("telegram_chat_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

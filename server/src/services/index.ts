@@ -31,3 +31,4 @@ export { eventRoutingService } from "./event-routing.js";
 export { taskCronService, computeNextCronTrigger } from "./task-cron-schedules.js";
 export { reconcilePersistedRuntimeServicesOnStartup } from "./workspace-runtime.js";
 export { createStorageServiceFromConfig, getStorageService } from "../storage/index.js";
+export { telegramService } from "./telegram.js";

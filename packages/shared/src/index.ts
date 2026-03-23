@@ -160,6 +160,8 @@ export type {
   SecretProviderDescriptor,
   InboxDismissal,
   InboxDismissalItemType,
+  AgentTelegramConfig,
+  AgentTelegramTestResult,
 } from "./types/index.js";
 
 export {
@@ -330,6 +332,10 @@ export {
   type CreateTaskCronSchedule,
   type UpdateTaskCronSchedule,
   type AttachTaskCronIssue,
+  upsertTelegramConfigSchema,
+  updateTelegramConfigSchema,
+  type UpsertTelegramConfig,
+  type UpdateTelegramConfig,
 } from "./validators/index.js";
 
 export { API_PREFIX, API } from "./api.js";

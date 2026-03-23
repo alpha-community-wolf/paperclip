@@ -1,0 +1,119 @@
+import { Router, type Request, type Response } from "express";
+import type { Db } from "@paperclipai/db";
+import { upsertTelegramConfigSchema, updateTelegramConfigSchema } from "@paperclipai/shared";
+import { validate } from "../middleware/validate.js";
+import { agentService } from "../services/index.js";
+import { telegramService } from "../services/telegram.js";
+import { assertCompanyAccess } from "./authz.js";
+
+export function telegramRoutes(db: Db) {
+  const router = Router();
+  const agents = agentService(db);
+  const telegram = telegramService(db);
+
+  async function resolveAgent(req: Request, res: Response) {
+    const agentId = req.params.agentId as string;
+    const agent = await agents.getById(agentId);
+    if (!agent) {
+      res.status(404).json({ error: "Agent not found" });
+      return null;
+    }
+    assertCompanyAccess(req, agent.companyId);
+    return agent;
+  }
+
+  router.get("/agents/:agentId/telegram", async (req, res) => {
+    const agent = await resolveAgent(req, res);
+    if (!agent) return;
+
+    const config = await telegram.getConfig(agent.id);
+    const botInstance = telegram.getActiveBot(agent.id);
+    res.json({
+      config: config ?? null,
+      status: botInstance ? "connected" : config?.enabled ? "disconnected" : "disabled",
+    });
+  });
+
+  router.put(
+    "/agents/:agentId/telegram",
+    validate(upsertTelegramConfigSchema),
+    async (req, res) => {
+      const agent = await resolveAgent(req, res);
+      if (!agent) return;
+
+      const config = await telegram.upsertConfig({
+        agentId: agent.id,
+        companyId: agent.companyId,
+        botToken: req.body.botToken,
+        enabled: req.body.enabled,
+        allowedUserIds: req.body.allowedUserIds,
+      });
+
+      const botInstance = telegram.getActiveBot(agent.id);
+      res.json({
+        config,
+        status: botInstance ? "connected" : config.enabled ? "starting" : "disabled",
+      });
+    },
+  );
+
+  router.patch(
+    "/agents/:agentId/telegram",
+    validate(updateTelegramConfigSchema),
+    async (req, res) => {
+      const agent = await resolveAgent(req, res);
+      if (!agent) return;
+
+      const config = await telegram.updateConfig({
+        agentId: agent.id,
+        botToken: req.body.botToken,
+        enabled: req.body.enabled,
+        allowedUserIds: req.body.allowedUserIds,
+      });
+
+      if (!config) {
+        res.status(404).json({ error: "Telegram config not found. Use PUT to create." });
+        return;
+      }
+
+      const botInstance = telegram.getActiveBot(agent.id);
+      res.json({
+        config,
+        status: botInstance ? "connected" : config.enabled ? "starting" : "disabled",
+      });
+    },
+  );
+
+  router.delete("/agents/:agentId/telegram", async (req, res) => {
+    const agent = await resolveAgent(req, res);
+    if (!agent) return;
+
+    const deleted = await telegram.deleteConfig(agent.id);
+    if (!deleted) {
+      res.status(404).json({ error: "Telegram config not found" });
+      return;
+    }
+    res.json({ ok: true });
+  });
+
+  router.post("/agents/:agentId/telegram/test", async (req, res) => {
+    const agent = await resolveAgent(req, res);
+    if (!agent) return;
+
+    const { botToken } = req.body;
+    if (!botToken || typeof botToken !== "string" || botToken.trim().length < 10) {
+      res.status(400).json({ error: "botToken is required" });
+      return;
+    }
+
+    try {
+      const result = await telegram.testToken(botToken.trim());
+      res.json(result);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Invalid bot token";
+      res.status(400).json({ error: message });
+    }
+  });
+
+  return router;
+}

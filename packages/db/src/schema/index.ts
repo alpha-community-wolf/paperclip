@@ -42,3 +42,4 @@ export { webhookEndpoints } from "./webhook_endpoints.js";
 export { eventRoutingRules } from "./event_routing_rules.js";
 export { webhookEvents } from "./webhook_events.js";
 export { cronSchedules } from "./cron_schedules.js";
+export { agentTelegramConfigs } from "./agent_telegram_configs.js";

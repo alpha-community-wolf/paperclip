@@ -44,6 +44,7 @@ import { MarkdownEditor } from "./MarkdownEditor";
 import { ChoosePathButton } from "./PathInstructionsModal";
 import { AgentSkillsSection } from "./AgentSkillsSection";
 import { McpServersSection } from "./McpServersSection";
+import { TelegramConfigSection } from "./TelegramConfigSection";
 import { OpenCodeLogoIcon } from "./OpenCodeLogoIcon";
 
 /* ---- Create mode values ---- */
@@ -853,6 +854,18 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
             <McpServersSection
               agentId={props.agent.id}
               adapterType={adapterType}
+              companyId={props.agent.companyId}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* ---- Telegram ---- */}
+      {!isCreate && (
+        <div className={cn(!cards && "border-b border-border")}>
+          <div className={cn(cards ? "rounded-md border border-border p-4" : "px-4 py-3")}>
+            <TelegramConfigSection
+              agentId={props.agent.id}
               companyId={props.agent.companyId}
             />
           </div>

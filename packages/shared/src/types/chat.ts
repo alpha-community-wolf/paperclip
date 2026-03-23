@@ -11,6 +11,7 @@ export interface ChatSession {
   archivedAt: Date | null;
   lastMessageAt: Date | null;
   lastRunId: string | null;
+  telegramChatId: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

@@ -101,6 +101,7 @@ export const queryKeys = {
     content: (agentId: string, path: string) => ["workspace", "content", agentId, path] as const,
   },
   mcpServers: (agentId: string) => ["mcp-servers", agentId] as const,
+  telegram: (agentId: string) => ["telegram", agentId] as const,
   mcpInstructions: (agentId: string, serverName: string) =>
     ["mcp-instructions", agentId, serverName] as const,
   inboxDismissals: (companyId: string) => ["inbox-dismissals", companyId] as const,

@@ -14,6 +14,7 @@ function makeSession(overrides: Partial<ChatSession>): ChatSession {
     archivedAt: overrides.archivedAt ?? null,
     lastMessageAt: overrides.lastMessageAt ?? null,
     lastRunId: overrides.lastRunId ?? null,
+    telegramChatId: overrides.telegramChatId ?? null,
     createdAt: overrides.createdAt ?? new Date("2026-03-01T00:00:00.000Z"),
     updatedAt: overrides.updatedAt ?? new Date("2026-03-17T00:00:00.000Z"),
   };

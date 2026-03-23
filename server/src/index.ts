@@ -30,6 +30,7 @@ import {
   reconcilePersistedRuntimeServicesOnStartup,
   seedBuiltInSkillsForAllCompanies,
   taskCronService,
+  telegramService,
 } from "./services/index.js";
 import { createStorageServiceFromConfig } from "./storage/index.js";
 import { printStartupBanner } from "./startup-banner.js";
@@ -524,6 +525,18 @@ export async function startServer(): Promise<StartedServer> {
       logger.error({ err }, "startup seeding of built-in skills failed");
     });
   
+  void (async () => {
+    try {
+      const telegram = telegramService(db as any);
+      const result = await telegram.syncAllBots();
+      if (result.started > 0) {
+        logger.info({ started: result.started, errors: result.errors }, "telegram: synced bots on startup");
+      }
+    } catch (err) {
+      logger.error({ err }, "telegram: failed to sync bots on startup");
+    }
+  })();
+
   if (config.heartbeatSchedulerEnabled) {
     const heartbeat = heartbeatService(db as any);
     const taskCron = taskCronService(db as any);
