@@ -39,6 +39,7 @@ function toApiConfig(row: ConfigRow): AgentTelegramConfig {
     agentId: row.agentId,
     botUsername: row.botUsername,
     enabled: row.enabled,
+    ownerChatId: row.ownerChatId,
     allowedUserIds: (row.allowedUserIds as string[]) ?? [],
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -128,6 +129,7 @@ export function telegramService(db: Db) {
     agentId: string;
     botToken?: string;
     enabled?: boolean;
+    ownerChatId?: string | null;
     allowedUserIds?: string[];
   }): Promise<AgentTelegramConfig | null> {
     const existing = await getConfig(input.agentId);
@@ -136,6 +138,7 @@ export function telegramService(db: Db) {
     const patch: Partial<typeof agentTelegramConfigs.$inferInsert> = { updatedAt: new Date() };
     if (input.botToken !== undefined) patch.botToken = input.botToken;
     if (input.enabled !== undefined) patch.enabled = input.enabled;
+    if (input.ownerChatId !== undefined) patch.ownerChatId = input.ownerChatId;
     if (input.allowedUserIds !== undefined) patch.allowedUserIds = input.allowedUserIds;
 
     const [updated] = await db
@@ -400,6 +403,15 @@ export function telegramService(db: Db) {
         return;
       }
 
+      // Auto-capture ownerChatId from the first person to message the bot
+      const currentConfig = await getConfig(agentId);
+      if (currentConfig && !currentConfig.ownerChatId) {
+        await db
+          .update(agentTelegramConfigs)
+          .set({ ownerChatId: telegramChatId, updatedAt: new Date() })
+          .where(eq(agentTelegramConfigs.id, currentConfig.id));
+      }
+
       const rawText = ctx.message.text;
       let messageText = rawText;
       let forceNewSession = false;
@@ -552,6 +564,20 @@ export function telegramService(db: Db) {
     return activeBots.size;
   }
 
+  async function sendNotification(agentId: string, text: string): Promise<boolean> {
+    const config = await getConfig(agentId);
+    if (!config?.ownerChatId || !config.enabled) return false;
+
+    const instance = activeBots.get(agentId);
+    if (!instance) return false;
+
+    const parts = splitMessage(text);
+    for (const part of parts) {
+      await instance.bot.api.sendMessage(Number(config.ownerChatId), part);
+    }
+    return true;
+  }
+
   return {
     getConfig: getConfigApi,
     upsertConfig,
@@ -565,5 +591,6 @@ export function telegramService(db: Db) {
     onConfigChange,
     getActiveBot,
     getActiveBotCount,
+    sendNotification,
   };
 }

@@ -224,6 +224,7 @@ export {
 export {
   upsertTelegramConfigSchema,
   updateTelegramConfigSchema,
+  sendTelegramMessageSchema,
   type UpsertTelegramConfig,
   type UpdateTelegramConfig,
 } from "./telegram.js";

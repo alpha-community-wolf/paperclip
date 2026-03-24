@@ -1,0 +1,1 @@
+ALTER TABLE "agent_telegram_configs" ADD COLUMN "owner_chat_id" text;

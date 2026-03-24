@@ -9,7 +9,12 @@ export const upsertTelegramConfigSchema = z.object({
 export const updateTelegramConfigSchema = z.object({
   botToken: z.string().trim().min(10).optional(),
   enabled: z.boolean().optional(),
+  ownerChatId: z.string().trim().min(1).optional().nullable(),
   allowedUserIds: z.array(z.string().trim().min(1)).optional(),
+});
+
+export const sendTelegramMessageSchema = z.object({
+  text: z.string().trim().min(1, "Message text is required"),
 });
 
 export type UpsertTelegramConfig = z.infer<typeof upsertTelegramConfigSchema>;

@@ -260,6 +260,13 @@
       "when": 1774289158367,
       "tag": "0036_familiar_mesmero",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1774390993660,
+      "tag": "0037_ambitious_vector",
+      "breakpoints": true
     }
   ]
 }

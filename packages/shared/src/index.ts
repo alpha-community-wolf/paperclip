@@ -334,6 +334,7 @@ export {
   type AttachTaskCronIssue,
   upsertTelegramConfigSchema,
   updateTelegramConfigSchema,
+  sendTelegramMessageSchema,
   type UpsertTelegramConfig,
   type UpdateTelegramConfig,
 } from "./validators/index.js";

@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import type { Db } from "@paperclipai/db";
-import { upsertTelegramConfigSchema, updateTelegramConfigSchema } from "@paperclipai/shared";
+import { upsertTelegramConfigSchema, updateTelegramConfigSchema, sendTelegramMessageSchema } from "@paperclipai/shared";
 import { validate } from "../middleware/validate.js";
 import { agentService } from "../services/index.js";
 import { telegramService } from "../services/telegram.js";
@@ -68,6 +68,7 @@ export function telegramRoutes(db: Db) {
         agentId: agent.id,
         botToken: req.body.botToken,
         enabled: req.body.enabled,
+        ownerChatId: req.body.ownerChatId,
         allowedUserIds: req.body.allowedUserIds,
       });
 
@@ -95,6 +96,27 @@ export function telegramRoutes(db: Db) {
     }
     res.json({ ok: true });
   });
+
+  router.post(
+    "/agents/:agentId/telegram/send",
+    validate(sendTelegramMessageSchema),
+    async (req, res) => {
+      const agent = await resolveAgent(req, res);
+      if (!agent) return;
+
+      try {
+        const sent = await telegram.sendNotification(agent.id, req.body.text);
+        if (!sent) {
+          res.status(422).json({ error: "Bot is not active or no owner chat ID is configured" });
+          return;
+        }
+        res.json({ ok: true });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to send message";
+        res.status(500).json({ error: message });
+      }
+    },
+  );
 
   router.post("/agents/:agentId/telegram/test", async (req, res) => {
     const agent = await resolveAgent(req, res);
