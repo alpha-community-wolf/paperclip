@@ -130,7 +130,8 @@ export function AgentChatSessionTab({
   const [streamState, setStreamState] = useState<StreamState | null>(null);
   const [completedMessageId, setCompletedMessageId] = useState<string | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
-  const lastAttemptedStreamIdRef = useRef<string | null>(null);
+  /** Run IDs whose SSE stream already finished (completed/failed/etc.). Prevents reconnect loop when Hermes logs keep updating streamState. */
+  const finishedStreamRunIdsRef = useRef<Set<string>>(new Set());
   const transcriptRef = useRef<HTMLDivElement | null>(null);
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
@@ -195,7 +196,6 @@ export function AgentChatSessionTab({
   const startStream = useCallback(
     (sessionId: string, result: Pick<CreateChatMessageResponse, "message" | "runId">) => {
       closeStream();
-      lastAttemptedStreamIdRef.current = result.message.id;
       setCompletedMessageId(null);
       autoExpandedRunIdRef.current = result.runId ?? null;
       if (result.runId) setExpandedRunId(result.runId);
@@ -239,6 +239,9 @@ export function AgentChatSessionTab({
           status: StreamStatus;
           message: ChatMessage | null;
         };
+        if (payload.runId) {
+          finishedStreamRunIdsRef.current.add(payload.runId);
+        }
         if (payload.message) {
           appendAssistantMessage(payload.message);
           setCompletedMessageId(payload.message.id);
@@ -278,6 +281,10 @@ export function AgentChatSessionTab({
   useEffect(() => () => closeStream(), [closeStream]);
 
   useEffect(() => {
+    finishedStreamRunIdsRef.current.clear();
+  }, [selectedSessionId]);
+
+  useEffect(() => {
     if (!selectedSessionId) return;
     const assistantRunIds = new Set(
       messages
@@ -287,13 +294,11 @@ export function AgentChatSessionTab({
     const pendingMessage = [...messages]
       .reverse()
       .find((message) => message.role === "user" && message.runId && !assistantRunIds.has(message.runId));
-    if (!pendingMessage) return;
+    if (!pendingMessage?.runId) return;
+    if (finishedStreamRunIdsRef.current.has(pendingMessage.runId)) return;
     if (eventSourceRef.current) return;
-    if (lastAttemptedStreamIdRef.current === pendingMessage.id && streamState && isTerminalStreamStatus(streamState.status)) {
-      return;
-    }
     startStream(selectedSessionId, { message: pendingMessage, runId: pendingMessage.runId });
-  }, [messages, selectedSessionId, startStream, streamState]);
+  }, [messages, selectedSessionId, startStream]);
 
   useEffect(() => {
     scrollToTranscriptBottom("auto");
