@@ -204,6 +204,32 @@ export function telegramService(db: Db) {
 
   const agentsSvc = agentService(db);
 
+  async function archiveTelegramSession(agentId: string, telegramChatId: string) {
+    const existing = await db
+      .select()
+      .from(chatSessions)
+      .where(
+        and(
+          eq(chatSessions.agentId, agentId),
+          eq(chatSessions.telegramChatId, telegramChatId),
+          isNull(chatSessions.archivedAt),
+        ),
+      )
+      .then((rows) => rows[0] ?? null);
+
+    if (existing) {
+      const now = new Date();
+      await db
+        .update(chatSessions)
+        .set({
+          archivedAt: now,
+          updatedAt: now,
+          taskKey: `${existing.taskKey}:archived:${now.getTime()}`,
+        })
+        .where(eq(chatSessions.id, existing.id));
+    }
+  }
+
   async function streamRunToTelegram(
     bot: Bot,
     chatId: number,
@@ -340,24 +366,7 @@ export function telegramService(db: Db) {
 
     bot.command("reset", async (ctx) => {
       const telegramChatId = String(ctx.chat.id);
-      const existing = await db
-        .select()
-        .from(chatSessions)
-        .where(
-          and(
-            eq(chatSessions.agentId, agentId),
-            eq(chatSessions.telegramChatId, telegramChatId),
-            isNull(chatSessions.archivedAt),
-          ),
-        )
-        .then((rows) => rows[0] ?? null);
-
-      if (existing) {
-        await db
-          .update(chatSessions)
-          .set({ archivedAt: new Date(), updatedAt: new Date() })
-          .where(eq(chatSessions.id, existing.id));
-      }
+      await archiveTelegramSession(agentId, telegramChatId);
       await ctx.reply("Conversation reset. Send a new message to start fresh.");
     });
 
@@ -381,24 +390,7 @@ export function telegramService(db: Db) {
 
       try {
         if (forceNewSession) {
-          const existing = await db
-            .select()
-            .from(chatSessions)
-            .where(
-              and(
-                eq(chatSessions.agentId, agentId),
-                eq(chatSessions.telegramChatId, telegramChatId),
-                isNull(chatSessions.archivedAt),
-              ),
-            )
-            .then((rows) => rows[0] ?? null);
-
-          if (existing) {
-            await db
-              .update(chatSessions)
-              .set({ archivedAt: new Date(), updatedAt: new Date() })
-              .where(eq(chatSessions.id, existing.id));
-          }
+          await archiveTelegramSession(agentId, telegramChatId);
 
           if (!messageText) {
             await ctx.reply("New conversation started. Send your first message.");
