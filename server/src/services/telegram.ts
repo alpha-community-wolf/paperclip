@@ -321,7 +321,7 @@ export function telegramService(db: Db) {
         "/help — This message\n" +
         "/status — Check if the agent is available\n" +
         "/reset — Start a new conversation\n\n" +
-        "Prefix any message with -new to start a fresh conversation.",
+        "Prefix any message with /new to start a fresh conversation.",
       );
     });
 
@@ -374,7 +374,7 @@ export function telegramService(db: Db) {
       let messageText = rawText;
       let forceNewSession = false;
 
-      if (rawText.trimStart().toLowerCase().startsWith("-new")) {
+      if (rawText.trimStart().toLowerCase().startsWith("/new")) {
         forceNewSession = true;
         messageText = rawText.trimStart().slice(4).trim();
       }
