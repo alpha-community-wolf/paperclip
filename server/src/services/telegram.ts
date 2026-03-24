@@ -1,18 +1,26 @@
 import { randomUUID } from "node:crypto";
 import { Bot } from "grammy";
 import { run as grammyRun, type RunnerHandle } from "@grammyjs/runner";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { agents, agentTelegramConfigs, chatMessages, chatSessions } from "@paperclipai/db";
+import { agents, agentTelegramConfigs, chatSessions } from "@paperclipai/db";
 import type { AgentTelegramConfig, AgentTelegramTestResult } from "@paperclipai/shared";
 import { logger } from "../middleware/logger.js";
 import { subscribeCompanyLiveEvents } from "./live-events.js";
 import { chatService } from "./chat.js";
 import { heartbeatService } from "./heartbeat.js";
+import { agentService } from "./agents.js";
+import {
+  parseLogLines,
+  buildTranscript,
+  buildAssistantReply,
+  resolveStdoutParser,
+  isTerminalRunStatus,
+} from "./chat-transcript.js";
 
 const TELEGRAM_MESSAGE_LIMIT = 4096;
-const RUN_POLL_INTERVAL_MS = 2000;
-const RUN_POLL_MAX_ATTEMPTS = 300; // 10 min max wait
+const STREAM_POLL_INTERVAL_MS = 1500;
+const STREAM_MAX_POLLS = 400; // ~10 min max
 
 interface BotInstance {
   bot: Bot;
@@ -173,6 +181,7 @@ export function telegramService(db: Db) {
         and(
           eq(chatSessions.agentId, input.agentId),
           eq(chatSessions.telegramChatId, input.telegramChatId),
+          isNull(chatSessions.archivedAt),
         ),
       )
       .then((rows) => rows[0] ?? null);
@@ -193,42 +202,97 @@ export function telegramService(db: Db) {
     return created!;
   }
 
-  async function waitForRunCompletion(runId: string): Promise<string | null> {
-    for (let attempt = 0; attempt < RUN_POLL_MAX_ATTEMPTS; attempt++) {
-      const run = await heartbeat.getRun(runId);
-      if (!run) return null;
+  const agentsSvc = agentService(db);
 
-      const status = run.status as string;
-      if (status === "succeeded" || status === "failed" || status === "cancelled" || status === "timed_out") {
-        return status;
+  async function streamRunToTelegram(
+    bot: Bot,
+    chatId: number,
+    runId: string,
+    agentId: string,
+  ): Promise<void> {
+    const agentRow = await agentsSvc.getById(agentId);
+    const parser = resolveStdoutParser(agentRow?.adapterType);
+
+    const placeholder = await bot.api.sendMessage(chatId, "Thinking\u2026");
+    const msgId = placeholder.message_id;
+
+    let offset = 0;
+    let remainder = "";
+    let lastSentText = "";
+    const allChunks: import("./chat-transcript.js").ChatLogChunk[] = [];
+
+    for (let poll = 0; poll < STREAM_MAX_POLLS; poll++) {
+      const run = await heartbeat.getRun(runId);
+      if (!run) {
+        await bot.api.editMessageText(chatId, msgId, "The run could not be found.").catch(() => {});
+        return;
       }
 
-      await new Promise((resolve) => setTimeout(resolve, RUN_POLL_INTERVAL_MS));
+      const log = await heartbeat.readLog(runId, { offset, limitBytes: 64_000 }).catch(() => null);
+      if (log && log.content.length > 0) {
+        const parsed = parseLogLines(log.content, remainder);
+        remainder = parsed.remainder;
+        offset += Buffer.byteLength(log.content, "utf8");
+        allChunks.push(...parsed.chunks);
+
+        if (parsed.chunks.length > 0) {
+          const transcript = buildTranscript(allChunks, parser);
+          const currentText = transcript
+            .filter((e) => e.kind === "assistant")
+            .map((e) => e.text.trim())
+            .filter(Boolean)
+            .join("\n\n")
+            .trim();
+
+          if (currentText && currentText !== lastSentText) {
+            const displayText = currentText.length > TELEGRAM_MESSAGE_LIMIT
+              ? currentText.slice(0, TELEGRAM_MESSAGE_LIMIT - 4) + "\u2026"
+              : currentText;
+            await bot.api.editMessageText(chatId, msgId, displayText).catch((err) => {
+              logger.debug({ err }, "telegram: editMessageText failed");
+            });
+            lastSentText = currentText;
+          }
+        }
+      }
+
+      if (isTerminalRunStatus(run.status)) {
+        // Drain any remaining log content
+        const finalLog = await heartbeat.readLog(runId, { offset, limitBytes: 256_000 }).catch(() => null);
+        if (finalLog && finalLog.content.length > 0) {
+          const parsed = parseLogLines(finalLog.content, remainder);
+          allChunks.push(...parsed.chunks);
+        }
+
+        const transcript = buildTranscript(allChunks, parser);
+        const runError = typeof (run as Record<string, unknown>).error === "string"
+          ? (run as Record<string, unknown>).error as string
+          : null;
+        let finalText = buildAssistantReply(transcript, { status: run.status, error: runError });
+
+        if (!finalText) {
+          finalText = "The agent finished but did not produce a response.";
+        }
+
+        if (finalText.length <= TELEGRAM_MESSAGE_LIMIT) {
+          if (finalText !== lastSentText) {
+            await bot.api.editMessageText(chatId, msgId, finalText).catch(() => {});
+          }
+        } else {
+          await bot.api.deleteMessage(chatId, msgId).catch(() => {});
+          const parts = splitMessage(finalText);
+          for (const part of parts) {
+            await bot.api.sendMessage(chatId, part);
+          }
+        }
+        return;
+      }
+
+      await bot.api.sendChatAction(chatId, "typing").catch(() => {});
+      await new Promise((resolve) => setTimeout(resolve, STREAM_POLL_INTERVAL_MS));
     }
-    return null;
-  }
 
-  async function getAssistantResponse(messageId: string): Promise<string | null> {
-    const sourceMessage = await db
-      .select()
-      .from(chatMessages)
-      .where(eq(chatMessages.id, messageId))
-      .then((rows) => rows[0] ?? null);
-    if (!sourceMessage?.runId) return null;
-
-    const assistantMsg = await db
-      .select()
-      .from(chatMessages)
-      .where(
-        and(
-          eq(chatMessages.agentId, sourceMessage.agentId),
-          eq(chatMessages.runId, sourceMessage.runId),
-          eq(chatMessages.role, "assistant"),
-        ),
-      )
-      .then((rows) => rows[0] ?? null);
-
-    return assistantMsg?.content ?? null;
+    await bot.api.editMessageText(chatId, msgId, "The agent is taking too long. Please try again later.").catch(() => {});
   }
 
   function startBot(config: ConfigRow): void {
@@ -256,7 +320,8 @@ export function telegramService(db: Db) {
         "/start — Introduction\n" +
         "/help — This message\n" +
         "/status — Check if the agent is available\n" +
-        "/reset — Start a new conversation",
+        "/reset — Start a new conversation\n\n" +
+        "Prefix any message with -new to start a fresh conversation.",
       );
     });
 
@@ -282,6 +347,7 @@ export function telegramService(db: Db) {
           and(
             eq(chatSessions.agentId, agentId),
             eq(chatSessions.telegramChatId, telegramChatId),
+            isNull(chatSessions.archivedAt),
           ),
         )
         .then((rows) => rows[0] ?? null);
@@ -304,7 +370,42 @@ export function telegramService(db: Db) {
         return;
       }
 
+      const rawText = ctx.message.text;
+      let messageText = rawText;
+      let forceNewSession = false;
+
+      if (rawText.trimStart().toLowerCase().startsWith("-new")) {
+        forceNewSession = true;
+        messageText = rawText.trimStart().slice(4).trim();
+      }
+
       try {
+        if (forceNewSession) {
+          const existing = await db
+            .select()
+            .from(chatSessions)
+            .where(
+              and(
+                eq(chatSessions.agentId, agentId),
+                eq(chatSessions.telegramChatId, telegramChatId),
+                isNull(chatSessions.archivedAt),
+              ),
+            )
+            .then((rows) => rows[0] ?? null);
+
+          if (existing) {
+            await db
+              .update(chatSessions)
+              .set({ archivedAt: new Date(), updatedAt: new Date() })
+              .where(eq(chatSessions.id, existing.id));
+          }
+
+          if (!messageText) {
+            await ctx.reply("New conversation started. Send your first message.");
+            return;
+          }
+        }
+
         await ctx.api.sendChatAction(ctx.chat.id, "typing");
 
         const session = await findOrCreateTelegramSession({
@@ -316,7 +417,7 @@ export function telegramService(db: Db) {
         const result = await chat.createMessage({
           agentId,
           sessionId: session.id,
-          content: ctx.message.text,
+          content: messageText,
           actor: { actorType: "system", actorId: `telegram:${senderId}` },
         });
 
@@ -325,51 +426,7 @@ export function telegramService(db: Db) {
           return;
         }
 
-        const typingInterval = setInterval(() => {
-          ctx.api.sendChatAction(ctx.chat.id, "typing").catch(() => {});
-        }, 4000);
-
-        try {
-          const status = await waitForRunCompletion(result.runId);
-
-          // Give a moment for assistant message materialization
-          await new Promise((resolve) => setTimeout(resolve, 1500));
-
-          // Try to get the materialized assistant message
-          let response = await getAssistantResponse(result.message.id);
-
-          // If no materialized message yet, trigger materialization via chat service
-          if (!response) {
-            try {
-              const messages = await chat.listMessages(agentId, session.id);
-              const assistantMsg = messages
-                .filter((m) => m.runId === result.runId && m.role === "assistant")
-                .pop();
-              response = assistantMsg?.content ?? null;
-            } catch {
-              // ignore
-            }
-          }
-
-          if (!response) {
-            if (status === "failed") {
-              response = "The agent encountered an error processing your message.";
-            } else if (status === "timed_out") {
-              response = "The agent timed out processing your message.";
-            } else if (status === "cancelled") {
-              response = "The agent run was cancelled.";
-            } else {
-              response = "The agent finished but did not produce a response.";
-            }
-          }
-
-          const chunks = splitMessage(response);
-          for (const chunk of chunks) {
-            await ctx.reply(chunk);
-          }
-        } finally {
-          clearInterval(typingInterval);
-        }
+        await streamRunToTelegram(bot, ctx.chat.id, result.runId, agentId);
       } catch (err) {
         logger.error({ err, agentId, telegramChatId }, "telegram: failed to process message");
         try {
