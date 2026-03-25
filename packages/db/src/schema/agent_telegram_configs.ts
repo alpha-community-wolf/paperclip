@@ -11,6 +11,7 @@ export const agentTelegramConfigs = pgTable(
     botToken: text("bot_token").notNull(),
     botUsername: text("bot_username"),
     enabled: boolean("enabled").notNull().default(false),
+    ownerChatId: text("owner_chat_id"),
     allowedUserIds: jsonb("allowed_user_ids").$type<string[]>().notNull().default([]),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

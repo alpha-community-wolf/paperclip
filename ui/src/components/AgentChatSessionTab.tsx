@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "@/lib/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ChatMessage, ChatSession, CreateChatMessageResponse, HeartbeatRun, HeartbeatRunEvent } from "@paperclipai/shared";
@@ -38,6 +38,12 @@ interface StreamState {
 
 function isTerminalStreamStatus(status: StreamStatus) {
   return status === "completed" || status === "failed" || status === "cancelled" || status === "timed_out";
+}
+
+/** True while the SSE stream is still active (pending or receiving logs). Refs do not re-render — use this for UI, not eventSourceRef. */
+function isStreamInProgress(streamState: StreamState | null): boolean {
+  if (!streamState) return false;
+  return streamState.status === "pending" || streamState.status === "streaming";
 }
 
 function deriveAssistantPreview(streamState: StreamState | null, adapterType: string) {
@@ -124,7 +130,8 @@ export function AgentChatSessionTab({
   const [streamState, setStreamState] = useState<StreamState | null>(null);
   const [completedMessageId, setCompletedMessageId] = useState<string | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
-  const lastAttemptedStreamIdRef = useRef<string | null>(null);
+  /** Run IDs whose SSE stream already finished (completed/failed/etc.). Prevents reconnect loop when Hermes logs keep updating streamState. */
+  const finishedStreamRunIdsRef = useRef<Set<string>>(new Set());
   const transcriptRef = useRef<HTMLDivElement | null>(null);
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
@@ -189,7 +196,6 @@ export function AgentChatSessionTab({
   const startStream = useCallback(
     (sessionId: string, result: Pick<CreateChatMessageResponse, "message" | "runId">) => {
       closeStream();
-      lastAttemptedStreamIdRef.current = result.message.id;
       setCompletedMessageId(null);
       autoExpandedRunIdRef.current = result.runId ?? null;
       if (result.runId) setExpandedRunId(result.runId);
@@ -233,20 +239,25 @@ export function AgentChatSessionTab({
           status: StreamStatus;
           message: ChatMessage | null;
         };
+        if (payload.runId) {
+          finishedStreamRunIdsRef.current.add(payload.runId);
+        }
         if (payload.message) {
           appendAssistantMessage(payload.message);
           setCompletedMessageId(payload.message.id);
         }
-        if (autoExpandedRunIdRef.current === payload.runId) {
-          autoExpandedRunIdRef.current = null;
-          setExpandedRunId((current) => (current === payload.runId ? null : current));
-        }
+        // Clear the auto-expand ref but keep the panel open so the user
+        // can review run details. It collapses when the next stream starts
+        // or when the user clicks "Hide run details".
+        autoExpandedRunIdRef.current = null;
         setStreamState((current) =>
           current && current.sourceMessageId === result.message.id
             ? { ...current, runId: payload.runId, status: payload.status }
             : current,
         );
-        queryClient.invalidateQueries({ queryKey: queryKeys.chatMessages(agentId, sessionId) });
+        // Do not invalidate messages here — appendAssistantMessage already merged the
+        // assistant row. A refetch can briefly return data without that row and retrigger
+        // the reconnect effect (second EventSource → footer / streaming UI flicker).
         closeStream();
       });
 
@@ -264,10 +275,14 @@ export function AgentChatSessionTab({
         closeStream();
       });
     },
-    [agentId, appendAssistantMessage, closeStream, queryClient],
+    [agentId, appendAssistantMessage, closeStream],
   );
 
   useEffect(() => () => closeStream(), [closeStream]);
+
+  useEffect(() => {
+    finishedStreamRunIdsRef.current.clear();
+  }, [selectedSessionId]);
 
   useEffect(() => {
     if (!selectedSessionId) return;
@@ -279,22 +294,20 @@ export function AgentChatSessionTab({
     const pendingMessage = [...messages]
       .reverse()
       .find((message) => message.role === "user" && message.runId && !assistantRunIds.has(message.runId));
-    if (!pendingMessage) return;
+    if (!pendingMessage?.runId) return;
+    if (finishedStreamRunIdsRef.current.has(pendingMessage.runId)) return;
     if (eventSourceRef.current) return;
-    if (lastAttemptedStreamIdRef.current === pendingMessage.id && streamState && isTerminalStreamStatus(streamState.status)) {
-      return;
-    }
     startStream(selectedSessionId, { message: pendingMessage, runId: pendingMessage.runId });
-  }, [messages, selectedSessionId, startStream, streamState]);
+  }, [messages, selectedSessionId, startStream]);
 
   useEffect(() => {
     scrollToTranscriptBottom("auto");
   }, [selectedSessionId, scrollToTranscriptBottom]);
 
   useEffect(() => {
-    if (!eventSourceRef.current) return;
+    if (!isStreamInProgress(streamState)) return;
     scrollToTranscriptBottom("smooth");
-  }, [messages.length, scrollToTranscriptBottom, streamState?.logs.length]);
+  }, [messages.length, scrollToTranscriptBottom, streamState, streamState?.logs.length]);
 
   useEffect(() => {
     if (!completedMessageId) return;
@@ -394,17 +407,22 @@ export function AgentChatSessionTab({
   });
 
   const assistantPreview = useMemo(() => deriveAssistantPreview(streamState, adapterType), [adapterType, streamState]);
+  /** Hermes emits many log chunks/sec — defer Markdown so the UI doesn't thrash. */
+  const deferredAssistantPreview = useDeferredValue(assistantPreview);
+  const streamInProgress = useMemo(() => isStreamInProgress(streamState), [streamState]);
   const activeRunId = streamState?.runId ?? null;
   const hasPersistedAssistantForActiveRun = Boolean(
     activeRunId && messages.some((message) => message.role === "assistant" && message.runId === activeRunId),
   );
-  const canSend = draft.trim().length > 0 && !sendMessage.isPending && !eventSourceRef.current && !selectedSession?.archivedAt;
+  const canSend =
+    draft.trim().length > 0 && !sendMessage.isPending && !streamInProgress && !selectedSession?.archivedAt;
 
   const { data: runDetail } = useQuery({
     queryKey: expandedRunId ? queryKeys.runDetail(expandedRunId) : ["heartbeat-run", "none"],
     queryFn: () => heartbeatsApi.get(expandedRunId!),
     enabled: Boolean(expandedRunId),
     refetchInterval: (query) => {
+      if (streamInProgress) return false;
       const run = query.state.data as HeartbeatRun | undefined;
       if (!run) return false;
       return run.status === "running" || run.status === "queued" ? 2000 : false;
@@ -415,7 +433,10 @@ export function AgentChatSessionTab({
     queryKey: expandedRunId ? ["heartbeat-run-events", expandedRunId] : ["heartbeat-run-events", "none"],
     queryFn: () => heartbeatsApi.events(expandedRunId!, 0, 200),
     enabled: Boolean(expandedRunId),
-    refetchInterval: runDetail && (runDetail.status === "running" || runDetail.status === "queued") ? 2000 : false,
+    refetchInterval:
+      streamInProgress || !runDetail || (runDetail.status !== "running" && runDetail.status !== "queued")
+        ? false
+        : 2000,
   });
 
   const { data: persistedRunLogs = [] } = useQuery({
@@ -433,7 +454,10 @@ export function AgentChatSessionTab({
       }
       return records;
     },
-    refetchInterval: runDetail && (runDetail.status === "running" || runDetail.status === "queued") ? 2000 : false,
+    refetchInterval:
+      streamInProgress || !runDetail || (runDetail.status !== "running" && runDetail.status !== "queued")
+        ? false
+        : 2000,
   });
 
   const runLogEvents = useMemo(() => {
@@ -441,6 +465,16 @@ export function AgentChatSessionTab({
       expandedRunId &&
       streamState?.runId === expandedRunId &&
       (streamState.status === "pending" || streamState.status === "streaming")
+    ) {
+      return streamState.logs;
+    }
+    if (
+      expandedRunId &&
+      streamState?.runId === expandedRunId &&
+      streamState &&
+      isTerminalStreamStatus(streamState.status) &&
+      persistedRunLogs.length === 0 &&
+      streamState.logs.length > 0
     ) {
       return streamState.logs;
     }
@@ -795,13 +829,15 @@ export function AgentChatSessionTab({
                     )}
                     {message.runId && (
                       <div className="mt-2 flex items-center gap-3 text-[11px]">
-                        <button
-                          type="button"
-                          onClick={() => toggleRunDetails(message.runId)}
-                          className="text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-                        >
-                          {detailsOpen ? "Hide run details" : "Show run details"}
-                        </button>
+                        {!isUser && (
+                          <button
+                            type="button"
+                            onClick={() => toggleRunDetails(message.runId)}
+                            className="text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                          >
+                            {detailsOpen ? "Hide run details" : "Show run details"}
+                          </button>
+                        )}
                         <Link
                           to={runUrlFor(message.runId)}
                           className="text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
@@ -820,7 +856,7 @@ export function AgentChatSessionTab({
                         )}
                       </div>
                     )}
-                    {renderInlineRunDetails(message.runId)}
+                    {!isUser && renderInlineRunDetails(message.runId)}
                   </div>
                 </div>
               );
@@ -835,7 +871,7 @@ export function AgentChatSessionTab({
                       {streamState.status === "streaming" || streamState.status === "pending" ? "Streaming..." : streamState.status}
                     </span>
                   </div>
-                  <MarkdownBody>{assistantPreview}</MarkdownBody>
+                  <MarkdownBody>{streamInProgress ? deferredAssistantPreview : assistantPreview}</MarkdownBody>
                   {streamState.runId && (
                     <div className="mt-2 flex items-center gap-3 text-[11px]">
                       <button
@@ -872,13 +908,15 @@ export function AgentChatSessionTab({
                     sendMessage.mutate(draft.trim());
                   }
                 }}
-                disabled={!selectedSessionId || sendMessage.isPending || Boolean(eventSourceRef.current) || Boolean(selectedSession?.archivedAt)}
+                disabled={
+                  !selectedSessionId || sendMessage.isPending || streamInProgress || Boolean(selectedSession?.archivedAt)
+                }
               />
               <div className="flex items-center justify-between gap-3">
                 <div className="text-xs text-muted-foreground">
                   {selectedSession?.archivedAt
                     ? "Restore this conversation from the sidebar to continue chatting."
-                    : eventSourceRef.current
+                    : streamInProgress
                       ? "Wait for the current response to finish before sending another message."
                       : "Press Enter to send. Use Shift+Enter for a new line."}
                 </div>

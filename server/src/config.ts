@@ -1,5 +1,6 @@
 import { readConfigFile } from "./config-file.js";
 import { existsSync } from "node:fs";
+import os from "node:os";
 import { config as loadDotenv } from "dotenv";
 import { resolvePaperclipEnvPath } from "./paths.js";
 import {
@@ -25,6 +26,17 @@ import {
 const PAPERCLIP_ENV_FILE_PATH = resolvePaperclipEnvPath();
 if (existsSync(PAPERCLIP_ENV_FILE_PATH)) {
   loadDotenv({ path: PAPERCLIP_ENV_FILE_PATH, override: false, quiet: true });
+}
+
+// Ensure common user binary directories are in PATH so adapters using raw
+// child_process.execFile (e.g. Hermes) can find pip/pipx-installed CLIs.
+if (process.platform !== "win32") {
+  const home = os.homedir();
+  const userLocalBin = `${home}/.local/bin`;
+  const currentPath = process.env.PATH ?? "";
+  if (!currentPath.split(":").includes(userLocalBin)) {
+    process.env.PATH = `${userLocalBin}:${currentPath}`;
+  }
 }
 
 type DatabaseMode = "embedded-postgres" | "postgres";

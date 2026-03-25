@@ -30,6 +30,7 @@ export const AGENT_ADAPTER_TYPES = [
   "pi_local",
   "cursor",
   "openclaw_gateway",
+  "hermes_local",
 ] as const;
 export type AgentAdapterType = (typeof AGENT_ADAPTER_TYPES)[number];
 
@@ -60,6 +61,23 @@ export const AGENT_ROLE_LABELS: Record<AgentRole, string> = {
   devops: "DevOps",
   researcher: "Researcher",
   general: "General",
+};
+
+export const AGENT_TEMPLATES = [
+  "base",
+  "operations",
+  "content",
+  "engineering",
+  "research",
+] as const;
+export type AgentTemplate = (typeof AGENT_TEMPLATES)[number];
+
+export const AGENT_TEMPLATE_LABELS: Record<AgentTemplate, string> = {
+  base: "Base",
+  operations: "Operations & Admin",
+  content: "Content & Marketing",
+  engineering: "Engineering",
+  research: "Research & Sales",
 };
 
 export const AGENT_ICON_NAMES = [

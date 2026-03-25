@@ -187,6 +187,14 @@ export function TelegramConfigSection({ agentId, companyId }: TelegramConfigSect
               {config.botUsername ? `@${config.botUsername}` : "—"}
             </span>
           </div>
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-muted-foreground">Owner Chat ID</span>
+            <span className="text-sm font-mono">
+              {config.ownerChatId ?? (
+                <span className="text-muted-foreground/50 italic">auto-captured on first message</span>
+              )}
+            </span>
+          </div>
           {config.allowedUserIds.length > 0 && (
             <div className="flex items-center justify-between">
               <span className="text-xs text-muted-foreground">Allowed users</span>

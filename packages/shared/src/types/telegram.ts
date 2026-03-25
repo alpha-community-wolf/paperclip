@@ -4,6 +4,7 @@ export interface AgentTelegramConfig {
   agentId: string;
   botUsername: string | null;
   enabled: boolean;
+  ownerChatId: string | null;
   allowedUserIds: string[];
   createdAt: string;
   updatedAt: string;

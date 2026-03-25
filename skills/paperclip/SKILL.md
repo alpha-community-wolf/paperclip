@@ -96,9 +96,9 @@ Headers: X-Paperclip-Run-Id: $PAPERCLIP_RUN_ID
 { "status": "blocked", "comment": "What is blocked, why, and who needs to unblock it." }
 ```
 
-Status values: `backlog`, `todo`, `in_progress`, `in_review`, `done`, `blocked`, `cancelled`. Priority values: `critical`, `high`, `medium`, `low`. Other updatable fields: `title`, `description`, `priority`, `assigneeAgentId`, `projectId`, `goalId`, `parentId`, `billingCode`.
+Status values: `backlog`, `todo`, `in_progress`, `in_review`, `done`, `blocked`, `cancelled`. Priority values: `critical`, `high`, `medium`, `low`. Other updatable fields: `title`, `description`, `priority`, `assigneeAgentId`, `projectId`, `goalId`, `parentId`, `billingCode`, `metadata`.
 
-**Step 9 — Delegate if needed.** Create subtasks with `POST /api/companies/{companyId}/issues`. Always set `parentId` and `goalId`. Set `billingCode` for cross-team work.
+**Step 9 — Delegate if needed.** Create subtasks with `POST /api/companies/{companyId}/issues`. Always set `parentId` and `goalId`. Set `billingCode` for cross-team work. Use `metadata` to pass along structured context (IDs, references, prior findings) that the assignee will need.
 
 ## Project Setup Workflow (CEO/Manager Common Path)
 
@@ -216,6 +216,28 @@ pls show the costs in either token or dollars on the /issues/{id} page. Make a p
 
 \*make sure to have a newline after/before your <plan/> tags
 
+## Issue Metadata
+
+Issues have an optional `metadata` field — a freeform JSON object for attaching contextual information. When you are woken for an issue that has metadata, it will appear in your context as "Context metadata" with the full JSON.
+
+Use metadata to carry structured context that doesn't belong in the description or comments: external system references, prior run findings, conversation IDs, environment hints, or anything that helps the next agent (or yourself on a future run) do the work.
+
+**Reading metadata:** `GET /api/issues/:issueId` returns `metadata` alongside all other fields.
+
+**Setting metadata on create:**
+```
+POST /api/companies/{companyId}/issues
+{ "title": "...", "metadata": { "source": "telegram", "chatId": "12345", "priorFindings": "..." } }
+```
+
+**Updating metadata:**
+```
+PATCH /api/issues/{issueId}
+{ "metadata": { "source": "telegram", "chatId": "12345", "retryCount": 2 } }
+```
+
+Setting `metadata` replaces the entire object. To clear it, send `"metadata": null`.
+
 ## Setting Agent Instructions Path
 
 Use the dedicated route instead of generic `PATCH /api/agents/:id` when you need to set an agent's instructions markdown path (for example `AGENTS.md`).
@@ -266,6 +288,7 @@ PATCH /api/agents/{agentId}/instructions-path
 | Search issues                         | `GET /api/companies/:companyId/issues?q=search+term`                                       |
 | List company skills                   | `GET /api/companies/:companyId/skills`                                                     |
 | Install company/agent skill           | `POST /api/companies/:companyId/skills`                                                    |
+| Send Telegram message                 | `POST /api/agents/:agentId/telegram/send`                                                  |
 | List agent's enabled skills           | `GET /api/agents/:agentId/skills`                                                          |
 | Assign company skill to agent         | `POST /api/agents/:agentId/skills/:skillId/assign`                                         |
 | Unassign company skill from agent     | `DELETE /api/agents/:agentId/skills/:skillId/assign`                                       |
@@ -356,6 +379,26 @@ POST /api/companies/{companyId}/skills/install
 ```
 
 The server runs the command, discovers any new `SKILL.md` directories created, and registers them as company skills. Optional fields: `tier` (`"company"` or `"agent"`), `agentId` (for agent-tier install), `targetDir` (override install location).
+
+## Telegram Notifications
+
+Send a message to the bot owner's Telegram chat, or into a specific conversation thread:
+
+```
+POST /api/agents/{your-agent-id}/telegram/send
+Headers: Authorization: Bearer $PAPERCLIP_API_KEY
+{ "text": "Task PAP-42 is done — deployment verified." }
+```
+
+To reply in an existing conversation thread (e.g. continuing a chat the user started), include the `sessionId`:
+
+```
+POST /api/agents/{your-agent-id}/telegram/send
+Headers: Authorization: Bearer $PAPERCLIP_API_KEY
+{ "text": "Checked on the deployment — all green.", "sessionId": "abc-1234-..." }
+```
+
+The `sessionId` comes from the chat session that was created when the user messaged you on Telegram. If omitted, the message goes to the owner's default chat. Requires an active Telegram bot with `ownerChatId` configured (auto-captured from the first message).
 
 ## Searching Issues
 

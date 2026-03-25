@@ -45,6 +45,15 @@ import {
 import {
   agentConfigurationDoc as piAgentConfigurationDoc,
 } from "@paperclipai/adapter-pi-local";
+import {
+  testEnvironment as hermesTestEnvironment,
+  sessionCodec as hermesSessionCodec,
+} from "hermes-paperclip-adapter/server";
+import {
+  agentConfigurationDoc as hermesAgentConfigurationDoc,
+} from "hermes-paperclip-adapter";
+import { execute as hermesExecute } from "./hermes/execute.js";
+import { hermesModels, listHermesModels } from "./hermes/models.js";
 import { processAdapter } from "./process/index.js";
 import { httpAdapter } from "./http/index.js";
 
@@ -111,6 +120,17 @@ const piLocalAdapter: ServerAdapterModule = {
   agentConfigurationDoc: piAgentConfigurationDoc,
 };
 
+const hermesLocalAdapter: ServerAdapterModule = {
+  type: "hermes_local",
+  execute: hermesExecute,
+  testEnvironment: hermesTestEnvironment,
+  sessionCodec: hermesSessionCodec,
+  models: hermesModels,
+  listModels: listHermesModels,
+  supportsLocalAgentJwt: true,
+  agentConfigurationDoc: hermesAgentConfigurationDoc,
+};
+
 const adaptersByType = new Map<string, ServerAdapterModule>(
   [
     claudeLocalAdapter,
@@ -119,6 +139,7 @@ const adaptersByType = new Map<string, ServerAdapterModule>(
     piLocalAdapter,
     cursorLocalAdapter,
     openclawGatewayAdapter,
+    hermesLocalAdapter,
     processAdapter,
     httpAdapter,
   ].map((a) => [a.type, a]),

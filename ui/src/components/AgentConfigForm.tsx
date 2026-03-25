@@ -305,7 +305,8 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
     adapterType === "claude_local" ||
     adapterType === "codex_local" ||
     adapterType === "opencode_local" ||
-    adapterType === "cursor";
+    adapterType === "cursor" ||
+    adapterType === "hermes_local";
   const uiAdapter = useMemo(() => getUIAdapter(adapterType), [adapterType]);
 
   const editTaskCronDefaults = eff(
@@ -674,7 +675,9 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                         ? "agent"
                         : adapterType === "opencode_local"
                           ? "opencode"
-                          : "claude"
+                          : adapterType === "hermes_local"
+                            ? "hermes"
+                            : "claude"
                   }
                 />
               </Field>
@@ -691,7 +694,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                 onOpenChange={setModelOpen}
                 allowDefault={adapterType !== "opencode_local"}
                 required={adapterType === "opencode_local"}
-                groupByProvider={adapterType === "opencode_local"}
+                groupByProvider={adapterType === "opencode_local" || adapterType === "hermes_local"}
               />
               {fetchedModelsError && (
                 <p className="text-xs text-destructive">
@@ -817,7 +820,14 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
               {/* Edit-only: timeout + grace period */}
               {!isCreate && (
                 <>
-                  <Field label="Timeout (sec)" hint={help.timeoutSec}>
+                  <Field
+                    label="Timeout (sec)"
+                    hint={
+                      adapterType === "hermes_local"
+                        ? `${help.timeoutSec} ${help.hermesInternalTimeouts}`
+                        : help.timeoutSec
+                    }
+                  >
                     <DraftNumberInput
                       value={eff(
                         "adapterConfig",
@@ -1137,7 +1147,7 @@ function AdapterEnvironmentResult({ result }: { result: AdapterEnvironmentTestRe
 
 /* ---- Internal sub-components ---- */
 
-const ENABLED_ADAPTER_TYPES = new Set(["claude_local", "codex_local", "opencode_local", "cursor"]);
+const ENABLED_ADAPTER_TYPES = new Set(["claude_local", "codex_local", "opencode_local", "cursor", "hermes_local"]);
 
 /** Display list includes all real adapter types plus UI-only coming-soon entries. */
 const ADAPTER_DISPLAY_LIST: { value: string; label: string; comingSoon: boolean }[] = [

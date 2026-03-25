@@ -30,6 +30,9 @@ interface BotInstance {
   unsubscribeLiveEvents: () => void;
 }
 
+const pendingRetries = new Set<string>();
+const MAX_409_RETRIES = 3;
+
 type ConfigRow = typeof agentTelegramConfigs.$inferSelect;
 
 function toApiConfig(row: ConfigRow): AgentTelegramConfig {
@@ -39,6 +42,7 @@ function toApiConfig(row: ConfigRow): AgentTelegramConfig {
     agentId: row.agentId,
     botUsername: row.botUsername,
     enabled: row.enabled,
+    ownerChatId: row.ownerChatId,
     allowedUserIds: (row.allowedUserIds as string[]) ?? [],
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -128,6 +132,7 @@ export function telegramService(db: Db) {
     agentId: string;
     botToken?: string;
     enabled?: boolean;
+    ownerChatId?: string | null;
     allowedUserIds?: string[];
   }): Promise<AgentTelegramConfig | null> {
     const existing = await getConfig(input.agentId);
@@ -136,6 +141,7 @@ export function telegramService(db: Db) {
     const patch: Partial<typeof agentTelegramConfigs.$inferInsert> = { updatedAt: new Date() };
     if (input.botToken !== undefined) patch.botToken = input.botToken;
     if (input.enabled !== undefined) patch.enabled = input.enabled;
+    if (input.ownerChatId !== undefined) patch.ownerChatId = input.ownerChatId;
     if (input.allowedUserIds !== undefined) patch.allowedUserIds = input.allowedUserIds;
 
     const [updated] = await db
@@ -174,18 +180,39 @@ export function telegramService(db: Db) {
     companyId: string;
     telegramChatId: string;
   }) {
-    const existing = await db
+    const taskKey = `telegram:${input.telegramChatId}`;
+
+    // Find any session with this taskKey (active or archived)
+    const match = await db
       .select()
       .from(chatSessions)
       .where(
         and(
           eq(chatSessions.agentId, input.agentId),
-          eq(chatSessions.telegramChatId, input.telegramChatId),
-          isNull(chatSessions.archivedAt),
+          eq(chatSessions.companyId, input.companyId),
+          eq(chatSessions.taskKey, taskKey),
         ),
       )
       .then((rows) => rows[0] ?? null);
-    if (existing) return existing;
+
+    if (match && !match.archivedAt) {
+      // Active session — backfill telegramChatId if missing
+      if (!match.telegramChatId) {
+        await db
+          .update(chatSessions)
+          .set({ telegramChatId: input.telegramChatId, updatedAt: new Date() })
+          .where(eq(chatSessions.id, match.id));
+      }
+      return match;
+    }
+
+    if (match && match.archivedAt) {
+      // Archived session blocking the taskKey slot — rename it to free the constraint
+      await db
+        .update(chatSessions)
+        .set({ taskKey: `${taskKey}:archived:${match.archivedAt.getTime()}` })
+        .where(eq(chatSessions.id, match.id));
+    }
 
     const sessionId = randomUUID();
     const [created] = await db
@@ -194,7 +221,7 @@ export function telegramService(db: Db) {
         id: sessionId,
         companyId: input.companyId,
         agentId: input.agentId,
-        taskKey: `telegram:${input.telegramChatId}`,
+        taskKey,
         title: "Telegram chat",
         telegramChatId: input.telegramChatId,
       })
@@ -379,6 +406,15 @@ export function telegramService(db: Db) {
         return;
       }
 
+      // Auto-capture ownerChatId from the first person to message the bot
+      const currentConfig = await getConfig(agentId);
+      if (currentConfig && !currentConfig.ownerChatId) {
+        await db
+          .update(agentTelegramConfigs)
+          .set({ ownerChatId: telegramChatId, updatedAt: new Date() })
+          .where(eq(agentTelegramConfigs.id, currentConfig.id));
+      }
+
       const rawText = ctx.message.text;
       let messageText = rawText;
       let forceNewSession = false;
@@ -438,15 +474,40 @@ export function telegramService(db: Db) {
     runner.task()?.catch(async (err) => {
       const is409 = err && typeof err === "object" && "error_code" in err && err.error_code === 409;
       if (is409) {
-        logger.warn({ agentId }, "telegram: 409 conflict (another instance polling), will retry in 30s");
         activeBots.delete(agentId);
         runner.isRunning() && (await runner.stop().catch(() => {}));
-        await new Promise((resolve) => setTimeout(resolve, 30_000));
-        const freshConfig = await getConfig(agentId);
-        if (freshConfig?.enabled && freshConfig.botToken) {
-          logger.info({ agentId }, "telegram: retrying bot start after 409");
-          startBot(freshConfig);
+
+        if (pendingRetries.has(agentId)) {
+          logger.warn({ agentId }, "telegram: 409 retry already in progress, skipping");
+          return;
         }
+        pendingRetries.add(agentId);
+
+        for (let attempt = 1; attempt <= MAX_409_RETRIES; attempt++) {
+          const delay = attempt * 30_000;
+          logger.warn({ agentId, attempt, delayMs: delay }, "telegram: 409 conflict, waiting before retry");
+          await new Promise((resolve) => setTimeout(resolve, delay));
+
+          if (activeBots.has(agentId)) {
+            logger.info({ agentId }, "telegram: bot already restarted by another path, aborting retry");
+            break;
+          }
+
+          const freshConfig = await getConfig(agentId);
+          if (!freshConfig?.enabled || !freshConfig.botToken) {
+            logger.info({ agentId }, "telegram: config disabled/missing, aborting retry");
+            break;
+          }
+
+          logger.info({ agentId, attempt }, "telegram: retrying bot start after 409");
+          try {
+            startBot(freshConfig);
+            break;
+          } catch (retryErr) {
+            logger.warn({ err: retryErr, agentId, attempt }, "telegram: retry attempt failed");
+          }
+        }
+        pendingRetries.delete(agentId);
       } else {
         logger.error({ err, agentId }, "telegram: runner crashed");
       }
@@ -531,6 +592,43 @@ export function telegramService(db: Db) {
     return activeBots.size;
   }
 
+  async function sendNotification(
+    agentId: string,
+    text: string,
+    opts?: { sessionId?: string },
+  ): Promise<boolean> {
+    const config = await getConfig(agentId);
+    if (!config?.enabled) return false;
+
+    const instance = activeBots.get(agentId);
+    if (!instance) return false;
+
+    let targetChatId: string | null = null;
+
+    if (opts?.sessionId) {
+      const session = await db
+        .select()
+        .from(chatSessions)
+        .where(eq(chatSessions.id, opts.sessionId))
+        .then((rows) => rows[0] ?? null);
+      if (session?.telegramChatId) {
+        targetChatId = session.telegramChatId;
+      }
+    }
+
+    if (!targetChatId) {
+      targetChatId = config.ownerChatId;
+    }
+
+    if (!targetChatId) return false;
+
+    const parts = splitMessage(text);
+    for (const part of parts) {
+      await instance.bot.api.sendMessage(Number(targetChatId), part);
+    }
+    return true;
+  }
+
   return {
     getConfig: getConfigApi,
     upsertConfig,
@@ -544,5 +642,6 @@ export function telegramService(db: Db) {
     onConfigChange,
     getActiveBot,
     getActiveBotCount,
+    sendNotification,
   };
 }

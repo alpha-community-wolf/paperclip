@@ -13,6 +13,7 @@ import {
   toCodexToml,
   type McpServersMap,
 } from "@paperclipai/adapter-utils";
+import yaml from "js-yaml";
 import { agentService } from "../services/index.js";
 import { badRequest, notFound, unprocessable, conflict, forbidden } from "../errors.js";
 import { assertCompanyAccess } from "./authz.js";
@@ -65,6 +66,70 @@ export function mcpServerRoutes(db: Db) {
     return agent.adapterType;
   }
 
+  function fromHermesYaml(content: string): McpServersMap {
+    const parsed = yaml.load(content) as Record<string, unknown> | null;
+    if (!parsed) return {};
+    const raw = parsed.mcp_servers as Record<string, Record<string, unknown>> | undefined;
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+    const result: McpServersMap = {};
+    for (const [name, value] of Object.entries(raw)) {
+      if (!value || typeof value !== "object") continue;
+      const hasUrl = typeof value.url === "string" && value.url.length > 0;
+      const hasCommand = typeof value.command === "string" && value.command.length > 0;
+      const envObj = (value.env && typeof value.env === "object" && !Array.isArray(value.env))
+        ? value.env as Record<string, string>
+        : undefined;
+      const enabled = value.enabled !== false;
+      if (hasUrl) {
+        result[name] = {
+          transport: "http",
+          url: value.url as string,
+          headers: (value.headers && typeof value.headers === "object" && !Array.isArray(value.headers))
+            ? value.headers as Record<string, string>
+            : undefined,
+          env: envObj,
+          enabled,
+        };
+      } else if (hasCommand) {
+        result[name] = {
+          transport: "stdio",
+          command: value.command as string,
+          args: Array.isArray(value.args) ? value.args as string[] : undefined,
+          env: envObj,
+          enabled,
+        };
+      }
+    }
+    return result;
+  }
+
+  function toHermesYaml(
+    servers: McpServersMap,
+    existingContent: string | null,
+  ): string {
+    let existing: Record<string, unknown> = {};
+    if (existingContent) {
+      try {
+        existing = (yaml.load(existingContent) as Record<string, unknown>) ?? {};
+      } catch { /* start fresh */ }
+    }
+    const mcpSection: Record<string, unknown> = {};
+    for (const [name, srv] of Object.entries(servers)) {
+      const entry: Record<string, unknown> = { enabled: srv.enabled !== false };
+      if (srv.transport === "stdio") {
+        entry.command = srv.command ?? "";
+        if (srv.args && srv.args.length > 0) entry.args = srv.args;
+      } else {
+        entry.url = srv.url ?? "";
+        if (srv.headers && Object.keys(srv.headers).length > 0) entry.headers = srv.headers;
+      }
+      if (srv.env && Object.keys(srv.env).length > 0) entry.env = srv.env;
+      mcpSection[name] = entry;
+    }
+    existing.mcp_servers = mcpSection;
+    return yaml.dump(existing, { lineWidth: -1 });
+  }
+
   function parseFileContent(content: string, format: string): McpServersMap {
     switch (format) {
       case "claude":
@@ -74,6 +139,8 @@ export function mcpServerRoutes(db: Db) {
         return fromOpenCodeJson(content);
       case "codex":
         return fromCodexToml(content);
+      case "hermes":
+        return fromHermesYaml(content);
       default:
         return {};
     }
@@ -88,7 +155,6 @@ export function mcpServerRoutes(db: Db) {
       const agent = await resolveAgent(req);
       assertCompanyAccess(req, agent.companyId);
 
-      const cwd = getCwd(agent);
       const adapterType = getAdapterType(agent);
       const pathInfo = mcpConfigPath(adapterType);
 
@@ -97,7 +163,13 @@ export function mcpServerRoutes(db: Db) {
         return;
       }
 
-      const fullPath = path.resolve(cwd, pathInfo.filePath);
+      const fullPath = pathInfo.absolute
+        ? pathInfo.filePath
+        : path.resolve(getCwd(agent), pathInfo.filePath);
+
+      const displayPath = pathInfo.absolute
+        ? pathInfo.filePath.replace(process.env.HOME ?? "", "~")
+        : pathInfo.filePath;
 
       let servers: McpServersMap = {};
       try {
@@ -107,7 +179,7 @@ export function mcpServerRoutes(db: Db) {
         if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
       }
 
-      res.json({ servers, adapterType, filePath: pathInfo.filePath });
+      res.json({ servers, adapterType, filePath: displayPath });
     } catch (err) {
       next(err);
     }
@@ -117,13 +189,13 @@ export function mcpServerRoutes(db: Db) {
    * PUT /api/agents/:id/mcp-servers
    * Writes MCP config to the agent's workspace config file on disk.
    * For opencode.json, preserves non-MCP keys (permission, $schema, etc.).
+   * For hermes config.yaml, preserves non-MCP keys.
    */
   router.put("/agents/:id/mcp-servers", async (req, res, next) => {
     try {
       const agent = await resolveAgent(req);
       assertCompanyAccess(req, agent.companyId);
 
-      const cwd = getCwd(agent);
       const adapterType = getAdapterType(agent);
       const pathInfo = mcpConfigPath(adapterType);
 
@@ -137,7 +209,14 @@ export function mcpServerRoutes(db: Db) {
       }
       const servers = body.servers;
 
-      const fullPath = path.resolve(cwd, pathInfo.filePath);
+      const fullPath = pathInfo.absolute
+        ? pathInfo.filePath
+        : path.resolve(getCwd(agent), pathInfo.filePath);
+
+      const displayPath = pathInfo.absolute
+        ? pathInfo.filePath.replace(process.env.HOME ?? "", "~")
+        : pathInfo.filePath;
+
       let output: string;
 
       if (pathInfo.format === "opencode") {
@@ -172,6 +251,14 @@ export function mcpServerRoutes(db: Db) {
         output = JSON.stringify(existing, null, 2) + "\n";
       } else if (pathInfo.format === "codex") {
         output = toCodexToml(servers);
+      } else if (pathInfo.format === "hermes") {
+        let existingContent: string | null = null;
+        try {
+          existingContent = await fs.readFile(fullPath, "utf-8");
+        } catch (err: unknown) {
+          if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+        }
+        output = toHermesYaml(servers, existingContent);
       } else {
         output = toClaudeMcpJson(servers) + "\n";
       }
@@ -179,7 +266,7 @@ export function mcpServerRoutes(db: Db) {
       await fs.mkdir(path.dirname(fullPath), { recursive: true });
       await fs.writeFile(fullPath, output, "utf-8");
 
-      res.json({ servers, filePath: pathInfo.filePath });
+      res.json({ servers, filePath: displayPath });
     } catch (err) {
       next(err);
     }

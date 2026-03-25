@@ -261,16 +261,19 @@ function isStringRecord(v: unknown): v is Record<string, string> {
 
 // ---- Adapter -> config file path mapping ----
 
-export type McpConfigFormat = "claude" | "opencode" | "codex" | "cursor";
+export type McpConfigFormat = "claude" | "opencode" | "codex" | "cursor" | "hermes";
 
 export interface McpConfigPathInfo {
   filePath: string;
   format: McpConfigFormat;
+  /** When true, filePath is absolute and should NOT be resolved relative to the agent cwd. */
+  absolute?: boolean;
 }
 
 /**
- * Returns the config file path (relative to agent cwd) and format
- * for a given adapter type. Returns null for unsupported adapters.
+ * Returns the config file path and format for a given adapter type.
+ * Most paths are relative to the agent cwd; Hermes is absolute (~/.hermes/config.yaml).
+ * Returns null for unsupported adapters.
  */
 export function mcpConfigPath(adapterType: string): McpConfigPathInfo | null {
   switch (adapterType) {
@@ -282,6 +285,10 @@ export function mcpConfigPath(adapterType: string): McpConfigPathInfo | null {
       return { filePath: ".cursor/mcp.json", format: "cursor" };
     case "codex_local":
       return { filePath: "config.toml", format: "codex" };
+    case "hermes_local": {
+      const home = process.env.HERMES_HOME ?? path.join(os.homedir(), ".hermes");
+      return { filePath: path.join(home, "config.yaml"), format: "hermes", absolute: true };
+    }
     default:
       return null;
   }

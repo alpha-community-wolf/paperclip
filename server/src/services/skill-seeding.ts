@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import type { Db } from "@paperclipai/db";
 import { companies } from "@paperclipai/db";
 import { skillService } from "./skills.js";
+import { discoverHermesSkills } from "../adapters/hermes/skills.js";
 
 const __moduleDir = path.dirname(fileURLToPath(import.meta.url));
 const SKILLS_DIR_CANDIDATES = [
@@ -74,7 +75,11 @@ export async function discoverBuiltInSkills(): Promise<BuiltInSkillDef[]> {
 }
 
 export async function seedBuiltInSkillsForAllCompanies(db: Db): Promise<{ seeded: number }> {
-  const builtInSkills = await discoverBuiltInSkills();
+  const [paperclipSkills, hermesSkills] = await Promise.all([
+    discoverBuiltInSkills(),
+    discoverHermesSkills().catch(() => []),
+  ]);
+  const builtInSkills = [...paperclipSkills, ...hermesSkills];
   if (builtInSkills.length === 0) return { seeded: 0 };
 
   const allCompanies = await db.select({ id: companies.id }).from(companies);
@@ -90,7 +95,11 @@ export async function seedBuiltInSkillsForAllCompanies(db: Db): Promise<{ seeded
 }
 
 export async function seedBuiltInSkillsForCompany(db: Db, companyId: string): Promise<void> {
-  const builtInSkills = await discoverBuiltInSkills();
+  const [paperclipSkills, hermesSkills] = await Promise.all([
+    discoverBuiltInSkills(),
+    discoverHermesSkills().catch(() => []),
+  ]);
+  const builtInSkills = [...paperclipSkills, ...hermesSkills];
   if (builtInSkills.length === 0) return;
   const svc = skillService(db);
   await svc.seedBuiltInSkills(companyId, builtInSkills);
