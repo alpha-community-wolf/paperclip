@@ -958,6 +958,16 @@ export function agentRoutes(db: Db) {
       spentMonthlyCents: 0,
       lastHeartbeatAt: null,
     });
+
+    await access.ensureMembership(companyId, "agent", agent.id, "member", "active");
+    await access.setPrincipalGrants(
+      companyId,
+      "agent",
+      agent.id,
+      [{ permissionKey: "tasks:assign", scope: null }],
+      req.actor.userId ?? null,
+    );
+
     const taskCronSchedule = await maybeCreateTaskCronFromRuntimeConfig({
       agent,
       runtimeConfig: req.body.runtimeConfig,
