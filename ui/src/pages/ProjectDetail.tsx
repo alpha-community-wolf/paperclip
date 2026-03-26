@@ -152,6 +152,13 @@ function ProjectIssuesList({ projectId, companyId }: { projectId: string; compan
     refetchInterval: 5000,
   });
 
+  const { data: failedRuns } = useQuery({
+    queryKey: queryKeys.failedRuns(companyId),
+    queryFn: () => heartbeatsApi.failedRunsForCompany(companyId),
+    enabled: !!companyId,
+    refetchInterval: 30000,
+  });
+
   const liveIssueIds = useMemo(() => {
     const ids = new Set<string>();
     for (const run of liveRuns ?? []) {
@@ -159,6 +166,22 @@ function ProjectIssuesList({ projectId, companyId }: { projectId: string; compan
     }
     return ids;
   }, [liveRuns]);
+
+  const failedRunMap = useMemo(() => {
+    const map = new Map<string, { runId: string; agentId: string; agentName: string; error?: string | null; finishedAt: string | null }>();
+    for (const run of failedRuns ?? []) {
+      if (run.issueId && !liveIssueIds.has(run.issueId)) {
+        map.set(run.issueId, {
+          runId: run.id,
+          agentId: run.agentId,
+          agentName: run.agentName,
+          error: run.error,
+          finishedAt: run.finishedAt,
+        });
+      }
+    }
+    return map;
+  }, [failedRuns, liveIssueIds]);
 
   const { data: issues, isLoading, error } = useQuery({
     queryKey: queryKeys.issues.listByProject(companyId, projectId),
@@ -182,6 +205,7 @@ function ProjectIssuesList({ projectId, companyId }: { projectId: string; compan
       error={error as Error | null}
       agents={agents}
       liveIssueIds={liveIssueIds}
+      failedRunMap={failedRunMap}
       projectId={projectId}
       viewStateKey={`paperclip:project-view:${projectId}`}
       onUpdateIssue={(id, data) => updateIssue.mutate({ id, data })}

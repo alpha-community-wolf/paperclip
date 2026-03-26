@@ -57,6 +57,13 @@ export function Issues() {
     refetchInterval: 5000,
   });
 
+  const { data: failedRuns } = useQuery({
+    queryKey: queryKeys.failedRuns(selectedCompanyId!),
+    queryFn: () => heartbeatsApi.failedRunsForCompany(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+    refetchInterval: 30000,
+  });
+
   const liveIssueIds = useMemo(() => {
     const ids = new Set<string>();
     for (const run of liveRuns ?? []) {
@@ -64,6 +71,22 @@ export function Issues() {
     }
     return ids;
   }, [liveRuns]);
+
+  const failedRunMap = useMemo(() => {
+    const map = new Map<string, { runId: string; agentId: string; agentName: string; error?: string | null; finishedAt: string | null }>();
+    for (const run of failedRuns ?? []) {
+      if (run.issueId && !liveIssueIds.has(run.issueId)) {
+        map.set(run.issueId, {
+          runId: run.id,
+          agentId: run.agentId,
+          agentName: run.agentName,
+          error: run.error,
+          finishedAt: run.finishedAt,
+        });
+      }
+    }
+    return map;
+  }, [failedRuns, liveIssueIds]);
 
   const issueLinkState = useMemo(
     () =>
@@ -104,6 +127,7 @@ export function Issues() {
       error={error as Error | null}
       agents={agents}
       liveIssueIds={liveIssueIds}
+      failedRunMap={failedRunMap}
       viewStateKey="paperclip:issues-view"
       issueLinkState={issueLinkState}
       initialAssignees={searchParams.get("assignee") ? [searchParams.get("assignee")!] : undefined}

@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useDialog } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
 import { issuesApi } from "../api/issues";
+import { agentsApi } from "../api/agents";
 import { taskCronsApi } from "../api/taskCrons";
 import { queryKeys } from "../lib/queryKeys";
 import { groupBy } from "../lib/groupBy";
@@ -46,6 +47,9 @@ import {
   Save,
   History,
   Zap,
+  XCircle,
+  RotateCcw,
+  Loader2,
 } from "lucide-react";
 import { KanbanBoard } from "./KanbanBoard";
 import type { Issue } from "@paperclipai/shared";
@@ -172,12 +176,21 @@ interface Agent {
   name: string;
 }
 
+export interface FailedRunInfo {
+  runId: string;
+  agentId: string;
+  agentName: string;
+  error?: string | null;
+  finishedAt: string | null;
+}
+
 interface IssuesListProps {
   issues: Issue[];
   isLoading?: boolean;
   error?: Error | null;
   agents?: Agent[];
   liveIssueIds?: Set<string>;
+  failedRunMap?: Map<string, FailedRunInfo>;
   projectId?: string;
   viewStateKey: string;
   issueLinkState?: unknown;
@@ -193,6 +206,7 @@ export function IssuesList({
   error,
   agents,
   liveIssueIds,
+  failedRunMap,
   projectId,
   viewStateKey,
   issueLinkState,
@@ -214,6 +228,27 @@ export function IssuesList({
     }
     return getViewState(scopedKey);
   });
+  const [retryingIssueId, setRetryingIssueId] = useState<string | null>(null);
+
+  const retryMutation = useMutation({
+    mutationFn: async ({ agentId, issueId }: { agentId: string; issueId: string }) => {
+      return agentsApi.wakeup(agentId, {
+        source: "on_demand",
+        triggerDetail: "manual",
+        reason: "Retry after failure",
+        payload: { issueId },
+      }, selectedCompanyId ?? undefined);
+    },
+    onMutate: ({ issueId }) => setRetryingIssueId(issueId),
+    onSettled: () => {
+      setRetryingIssueId(null);
+      if (selectedCompanyId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.failedRuns(selectedCompanyId) });
+        queryClient.invalidateQueries({ queryKey: queryKeys.liveRuns(selectedCompanyId) });
+      }
+    },
+  });
+
   const [assigneePickerIssueId, setAssigneePickerIssueId] = useState<string | null>(null);
   const [recurringPickerIssueId, setRecurringPickerIssueId] = useState<string | null>(null);
   const [assigneeSearch, setAssigneeSearch] = useState("");
@@ -438,6 +473,37 @@ export function IssuesList({
               <span className="text-[11px] font-medium text-blue-600 dark:text-blue-400 hidden sm:inline">Live</span>
             </span>
           )}
+          {!liveIssueIds?.has(issue.id) && failedRunMap?.has(issue.id) && (() => {
+            const info = failedRunMap.get(issue.id)!;
+            const isRetrying = retryingIssueId === issue.id;
+            return (
+              <span className="inline-flex items-center gap-1 sm:gap-1.5">
+                <span
+                  className="inline-flex items-center gap-1 px-1.5 sm:px-2 py-0.5 rounded-full bg-red-500/10"
+                  title={info.error ?? `Last run by ${info.agentName} failed`}
+                >
+                  <XCircle className="h-3 w-3 text-red-500" />
+                  <span className="text-[11px] font-medium text-red-600 dark:text-red-400 hidden sm:inline">Failed</span>
+                </span>
+                <button
+                  type="button"
+                  className="inline-flex items-center justify-center h-5 w-5 rounded-full hover:bg-muted transition-colors"
+                  title={`Retry ${info.agentName}`}
+                  disabled={isRetrying}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    retryMutation.mutate({ agentId: info.agentId, issueId: issue.id });
+                  }}
+                >
+                  {isRetrying
+                    ? <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+                    : <RotateCcw className="h-3 w-3 text-muted-foreground hover:text-foreground" />
+                  }
+                </button>
+              </span>
+            );
+          })()}
           <span className="text-xs text-muted-foreground sm:hidden">&middot;</span>
           <span className="text-xs text-muted-foreground sm:hidden">
             {timeAgo(issue.updatedAt)}

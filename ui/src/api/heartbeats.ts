@@ -22,6 +22,22 @@ export interface LiveRunForIssue {
   projectId?: string | null;
 }
 
+export interface FailedRunForIssue {
+  id: string;
+  status: string;
+  invocationSource: string;
+  triggerDetail: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  createdAt: string;
+  agentId: string;
+  agentName: string;
+  adapterType: string;
+  issueId: string;
+  projectId?: string | null;
+  error?: string | null;
+}
+
 export interface HeartbeatRunListResult {
   runs: HeartbeatRun[];
   degraded: boolean;
@@ -51,4 +67,6 @@ export const heartbeatsApi = {
     api.get<ActiveRunForIssue | null>(`/issues/${issueId}/active-run`),
   liveRunsForCompany: (companyId: string, minCount?: number) =>
     api.get<LiveRunForIssue[]>(`/companies/${companyId}/live-runs${minCount ? `?minCount=${minCount}` : ""}`),
+  failedRunsForCompany: (companyId: string) =>
+    api.get<FailedRunForIssue[]>(`/companies/${companyId}/failed-runs`),
 };

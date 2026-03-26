@@ -1636,6 +1636,69 @@ export function agentRoutes(db: Db) {
     res.json(liveRuns);
   });
 
+  router.get("/companies/:companyId/failed-runs", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+
+    const issueIdExpr = sql`${heartbeatRuns.contextSnapshot} ->> 'issueId'`;
+
+    // Find the most recent run per issue, then filter to failed/timed_out
+    const latestPerIssue = db
+      .select({
+        id: heartbeatRuns.id,
+        status: heartbeatRuns.status,
+        invocationSource: heartbeatRuns.invocationSource,
+        triggerDetail: heartbeatRuns.triggerDetail,
+        startedAt: heartbeatRuns.startedAt,
+        finishedAt: heartbeatRuns.finishedAt,
+        createdAt: heartbeatRuns.createdAt,
+        agentId: heartbeatRuns.agentId,
+        issueId: issueIdExpr.as("issueId"),
+        error: heartbeatRuns.error,
+        rn: sql<number>`ROW_NUMBER() OVER (
+          PARTITION BY ${heartbeatRuns.contextSnapshot} ->> 'issueId'
+          ORDER BY COALESCE(${heartbeatRuns.finishedAt}, ${heartbeatRuns.createdAt}) DESC
+        )`.as("rn"),
+      })
+      .from(heartbeatRuns)
+      .where(
+        and(
+          eq(heartbeatRuns.companyId, companyId),
+          sql`${heartbeatRuns.contextSnapshot} ->> 'issueId' IS NOT NULL`,
+        ),
+      )
+      .as("latest");
+
+    const rows = await db
+      .select({
+        id: latestPerIssue.id,
+        status: latestPerIssue.status,
+        invocationSource: latestPerIssue.invocationSource,
+        triggerDetail: latestPerIssue.triggerDetail,
+        startedAt: latestPerIssue.startedAt,
+        finishedAt: latestPerIssue.finishedAt,
+        createdAt: latestPerIssue.createdAt,
+        agentId: latestPerIssue.agentId,
+        agentName: agentsTable.name,
+        adapterType: agentsTable.adapterType,
+        issueId: latestPerIssue.issueId,
+        projectId: issuesTable.projectId,
+        error: latestPerIssue.error,
+      })
+      .from(latestPerIssue)
+      .innerJoin(agentsTable, sql`${agentsTable.id} = ${latestPerIssue.agentId}`)
+      .leftJoin(issuesTable, sql`${issuesTable.id}::text = ${latestPerIssue.issueId}`)
+      .where(
+        and(
+          eq(latestPerIssue.rn, 1),
+          sql`${latestPerIssue.status} IN ('failed', 'timed_out')`,
+        ),
+      )
+      .orderBy(sql`${latestPerIssue.finishedAt} DESC NULLS LAST`);
+
+    res.json(rows);
+  });
+
   router.get("/heartbeat-runs/:runId", async (req, res) => {
     const runId = req.params.runId as string;
     const run = await heartbeat.getRun(runId);
