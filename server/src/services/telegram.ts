@@ -22,6 +22,26 @@ const TELEGRAM_MESSAGE_LIMIT = 4096;
 const STREAM_POLL_INTERVAL_MS = 1500;
 const STREAM_MAX_POLLS = 400; // ~10 min max
 
+const THINKING_MESSAGES = [
+  "Thinking\u2026",
+  "Mulling it over\u2026",
+  "Percolating\u2026",
+  "Just getting those tokens, boss\u2026",
+  "GPUs are humming\u2026",
+  "Laying the bricks\u2026",
+  "Give me a sec\u2026",
+  "Working on it\u2026",
+  "Crunching the numbers\u2026",
+  "Connecting the dots\u2026",
+  "Almost there\u2026",
+  "Brewing up a response\u2026",
+  "Neurons firing\u2026",
+  "Pondering deeply\u2026",
+  "On it\u2026",
+];
+/** Number of poll cycles before rotating to the next thinking message */
+const THINKING_ROTATE_POLLS = 3;
+
 interface BotInstance {
   bot: Bot;
   runner: RunnerHandle;
@@ -269,12 +289,13 @@ export function telegramService(db: Db) {
     const agentRow = await agentsSvc.getById(agentId);
     const parser = resolveStdoutParser(agentRow?.adapterType);
 
-    const placeholder = await bot.api.sendMessage(chatId, "Thinking\u2026");
+    const placeholder = await bot.api.sendMessage(chatId, THINKING_MESSAGES[0]);
     const msgId = placeholder.message_id;
 
     let offset = 0;
     let remainder = "";
     let lastSentText = "";
+    let hasRealContent = false;
     const allChunks: import("./chat-transcript.js").ChatLogChunk[] = [];
 
     for (let poll = 0; poll < STREAM_MAX_POLLS; poll++) {
@@ -301,6 +322,7 @@ export function telegramService(db: Db) {
             .trim();
 
           if (currentText && currentText !== lastSentText) {
+            hasRealContent = true;
             const displayText = currentText.length > TELEGRAM_MESSAGE_LIMIT
               ? currentText.slice(0, TELEGRAM_MESSAGE_LIMIT - 4) + "\u2026"
               : currentText;
@@ -342,6 +364,13 @@ export function telegramService(db: Db) {
           }
         }
         return;
+      }
+
+      // Cycle through fun thinking messages while waiting for real content
+      if (!hasRealContent && poll > 0 && poll % THINKING_ROTATE_POLLS === 0) {
+        const msgIndex = (poll / THINKING_ROTATE_POLLS) % THINKING_MESSAGES.length;
+        const thinkingText = THINKING_MESSAGES[msgIndex];
+        await bot.api.editMessageText(chatId, msgId, thinkingText).catch(() => {});
       }
 
       await bot.api.sendChatAction(chatId, "typing").catch(() => {});
