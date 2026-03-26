@@ -18,6 +18,7 @@ import { agentsApi } from "../api/agents";
 import { chatApi } from "../api/chat";
 import { heartbeatsApi } from "../api/heartbeats";
 import { queryKeys } from "../lib/queryKeys";
+import { useInboxBadge } from "../hooks/useInboxBadge";
 import { cn, agentRouteRef, relativeTime } from "../lib/utils";
 import { agentStatusDot, agentStatusDotDefault } from "../lib/status-colors";
 import { AgentIcon } from "../components/AgentIconPicker";
@@ -49,6 +50,7 @@ function AgentListPanel({
   agents,
   liveCountByAgent,
   recentSessionsByAgent,
+  unreadByAgent,
   selectedAgentId,
   onSelectAgent,
   searchQuery,
@@ -59,6 +61,7 @@ function AgentListPanel({
   agents: Agent[];
   liveCountByAgent: Map<string, number>;
   recentSessionsByAgent: Map<string, ChatSession>;
+  unreadByAgent: Record<string, number>;
   selectedAgentId: string | null;
   onSelectAgent: (agent: Agent) => void;
   searchQuery: string;
@@ -120,6 +123,7 @@ function AgentListPanel({
         {filtered.map((agent) => {
           const isSelected = agent.id === selectedAgentId;
           const runCount = liveCountByAgent.get(agent.id) ?? 0;
+          const unreadCount = unreadByAgent[agent.id] ?? 0;
           const recentSession = recentSessionsByAgent.get(agent.id);
           const dotColor =
             agentStatusDot[agent.status] ?? agentStatusDotDefault;
@@ -149,13 +153,26 @@ function AgentListPanel({
                     dotColor,
                   )}
                 />
+                {collapsed && unreadCount > 0 && (
+                  <span className="absolute -top-1 -right-1 flex h-3 w-3 items-center justify-center rounded-full bg-primary text-[7px] font-bold leading-none text-primary-foreground">
+                    {unreadCount > 9 ? "9+" : unreadCount}
+                  </span>
+                )}
               </div>
               {!collapsed && (
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <span className="truncate text-[13px] font-medium">
+                    <span className={cn(
+                      "truncate text-[13px]",
+                      unreadCount > 0 ? "font-semibold text-foreground" : "font-medium",
+                    )}>
                       {agent.name}
                     </span>
+                    {unreadCount > 0 && (
+                      <span className="flex h-4.5 min-w-4.5 shrink-0 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-semibold leading-none text-primary-foreground">
+                        {unreadCount}
+                      </span>
+                    )}
                     {runCount > 0 && (
                       <span className="flex items-center gap-1 shrink-0">
                         <span className="relative flex h-1.5 w-1.5">
@@ -291,6 +308,8 @@ export function Chat() {
     refetchInterval: 10_000,
   });
 
+  const inboxBadge = useInboxBadge(selectedCompanyId);
+
   const { data: companySessions = [] } = useQuery({
     queryKey: queryKeys.chatCompanySessions(selectedCompanyId!),
     queryFn: () => chatApi.listCompanySessions(selectedCompanyId!, { limit: 200 }),
@@ -354,6 +373,7 @@ export function Chat() {
           agents={visibleAgents}
           liveCountByAgent={liveCountByAgent}
           recentSessionsByAgent={recentSessionsByAgent}
+          unreadByAgent={inboxBadge.unreadChatByAgent}
           selectedAgentId={selectedAgent?.id ?? null}
           onSelectAgent={handleSelectAgent}
           searchQuery={agentSearch}

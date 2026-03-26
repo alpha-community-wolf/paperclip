@@ -77,6 +77,7 @@ export const queryKeys = {
   chatSessions: (agentId: string, includeArchived: boolean = false) =>
     ["chat", "sessions", agentId, includeArchived ? "with-archived" : "active-only"] as const,
   chatMessages: (agentId: string, sessionId: string) => ["chat", "messages", agentId, sessionId] as const,
+  chatUnreadSessions: (agentId: string) => ["chat", "unread-sessions", agentId] as const,
   skills: {
     list: (companyId: string) => ["skills", companyId] as const,
     detail: (id: string) => ["skills", "detail", id] as const,

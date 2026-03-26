@@ -109,5 +109,6 @@ export function useInboxBadge(companyId: string | null | undefined) {
     unreadTouchedIssues: 0,
     alerts: 0,
     unreadChatSessions: 0,
+    unreadChatByAgent: {},
   };
 }

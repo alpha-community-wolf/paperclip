@@ -38,6 +38,18 @@ export function chatRoutes(db: Db) {
     res.json(sessions);
   });
 
+  router.get("/agents/:agentId/chat/unread-sessions", async (req, res) => {
+    const agent = await resolveAgent(req, res);
+    if (!agent) return;
+    const actor = getActorInfo(req);
+    if (actor.actorType !== "user" || !actor.actorId) {
+      res.json({ sessionIds: [] });
+      return;
+    }
+    const sessionIds = await chatReadStates.listUnreadSessionIds(agent.companyId, actor.actorId, agent.id);
+    res.json({ sessionIds });
+  });
+
   router.get("/agents/:agentId/chat/sessions", async (req, res) => {
     const agent = await resolveAgent(req, res);
     if (!agent) return;

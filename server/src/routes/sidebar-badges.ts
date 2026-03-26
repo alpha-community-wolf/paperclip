@@ -51,16 +51,24 @@ export function sidebarBadgeRoutes(db: Db) {
         ? await inboxDismissals.listItemIdsByType(companyId, req.actor.userId, "failed_run")
         : [];
 
-    const unreadChatSessions =
+    const boardUserId =
       req.actor.type === "board" && typeof req.actor.userId === "string"
-        ? await chatReadStates.countUnreadSessions(companyId, req.actor.userId)
-        : 0;
+        ? req.actor.userId
+        : null;
+
+    const [unreadChatSessions, unreadChatByAgent] = boardUserId
+      ? await Promise.all([
+          chatReadStates.countUnreadSessions(companyId, boardUserId),
+          chatReadStates.countUnreadSessionsByAgent(companyId, boardUserId),
+        ])
+      : [0, {} as Record<string, number>];
 
     const badges = await svc.get(companyId, {
       joinRequests: joinRequestCount,
       unreadTouchedIssues,
       dismissedFailedRunIds,
       unreadChatSessions,
+      unreadChatByAgent,
     });
 
     const summary = await dashboard.summary(companyId);

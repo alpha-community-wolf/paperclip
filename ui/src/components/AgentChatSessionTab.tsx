@@ -143,6 +143,18 @@ export function AgentChatSessionTab({
     enabled: Boolean(agentId),
   });
 
+  const unreadQueryKey = queryKeys.chatUnreadSessions(agentId);
+  const { data: unreadData } = useQuery({
+    queryKey: unreadQueryKey,
+    queryFn: () => chatApi.listUnreadSessionIds(agentId),
+    enabled: Boolean(agentId),
+    refetchInterval: 15_000,
+  });
+  const unreadSessionIds = useMemo(
+    () => new Set(unreadData?.sessionIds ?? []),
+    [unreadData],
+  );
+
   useEffect(() => {
     if (!sessions.length) {
       setSelectedSessionId(null);
@@ -179,10 +191,11 @@ export function AgentChatSessionTab({
       if (selectedCompanyId) {
         queryClient.invalidateQueries({ queryKey: queryKeys.sidebarBadges(selectedCompanyId) });
       }
+      queryClient.invalidateQueries({ queryKey: unreadQueryKey });
     }).catch(() => {
       // Silently ignore — marking read is best-effort
     });
-  }, [selectedSessionId, agentId, messages.length, selectedCompanyId, queryClient]);
+  }, [selectedSessionId, agentId, messages.length, selectedCompanyId, queryClient, unreadQueryKey]);
 
   const closeStream = useCallback(() => {
     eventSourceRef.current?.close();
@@ -572,6 +585,7 @@ export function AgentChatSessionTab({
       const isRenaming = session.id === renamingSessionId;
       const isUpdatingArchive = updateArchivedSession.isPending;
       const isUpdatingName = renameSession.isPending;
+      const isUnread = unreadSessionIds.has(session.id);
       return (
         <div
           key={session.id}
@@ -624,9 +638,21 @@ export function AgentChatSessionTab({
                     closeStream();
                   }}
                 >
-                  <div className="truncate text-sm font-medium">{displaySessionTitle(session)}</div>
-                  <div className="truncate text-[11px] text-muted-foreground">
-                    {relativeTime(session.lastMessageAt ?? session.updatedAt)}
+                  <div className="flex items-center gap-1.5">
+                    {isUnread && (
+                      <span className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-primary" />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <div className={cn(
+                        "truncate text-sm",
+                        isUnread ? "font-semibold text-foreground" : "font-medium",
+                      )}>
+                        {displaySessionTitle(session)}
+                      </div>
+                      <div className="truncate text-[11px] text-muted-foreground">
+                        {relativeTime(session.lastMessageAt ?? session.updatedAt)}
+                      </div>
+                    </div>
                   </div>
                 </button>
                 <DropdownMenu>

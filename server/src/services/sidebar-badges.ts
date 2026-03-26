@@ -32,6 +32,7 @@ export function sidebarBadgeService(db: Db) {
         alerts?: number;
         dismissedFailedRunIds?: string[];
         unreadChatSessions?: number;
+        unreadChatByAgent?: Record<string, number>;
       },
     ): Promise<SidebarBadges> => {
       const actionableApprovals = await db
@@ -85,6 +86,7 @@ export function sidebarBadgeService(db: Db) {
         unreadTouchedIssues,
         alerts,
         unreadChatSessions,
+        unreadChatByAgent: extra?.unreadChatByAgent ?? {},
       };
     },
   };

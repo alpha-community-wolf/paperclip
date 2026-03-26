@@ -57,6 +57,10 @@ export const chatApi = {
       `${sessionsBasePath(agentId)}/${encodeURIComponent(sessionId)}/read`,
       {},
     ),
+  listUnreadSessionIds: (agentId: string) =>
+    api.get<{ sessionIds: string[] }>(
+      `/agents/${encodeURIComponent(agentId)}/chat/unread-sessions`,
+    ),
   streamUrl: (agentId: string, sessionId: string, messageId: string) =>
     `/api${messagesBasePath(agentId, sessionId)}/${encodeURIComponent(messageId)}/stream`,
 };

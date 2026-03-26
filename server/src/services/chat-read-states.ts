@@ -47,5 +47,75 @@ export function chatReadStateService(db: Db) {
         );
       return Number(row?.count ?? 0);
     },
+
+    /** Per-agent unread session counts for the sidebar / chat page agent list. */
+    countUnreadSessionsByAgent: async (companyId: string, userId: string) => {
+      const rows = await db
+        .select({
+          agentId: chatSessions.agentId,
+          count: sql<number>`count(DISTINCT ${chatSessions.id})`,
+        })
+        .from(chatSessions)
+        .innerJoin(
+          chatMessages,
+          and(
+            eq(chatMessages.chatSessionId, chatSessions.id),
+            eq(chatMessages.role, "assistant"),
+          ),
+        )
+        .leftJoin(
+          chatReadStates,
+          and(
+            eq(chatReadStates.chatSessionId, chatSessions.id),
+            eq(chatReadStates.userId, userId),
+            eq(chatReadStates.companyId, companyId),
+          ),
+        )
+        .where(
+          and(
+            eq(chatSessions.companyId, companyId),
+            isNull(chatSessions.archivedAt),
+            sql`(${chatReadStates.id} IS NULL OR ${chatMessages.createdAt} > ${chatReadStates.lastReadAt})`,
+          ),
+        )
+        .groupBy(chatSessions.agentId);
+
+      const result: Record<string, number> = {};
+      for (const row of rows) {
+        result[row.agentId] = Number(row.count);
+      }
+      return result;
+    },
+
+    /** Returns IDs of unread sessions for a specific agent. */
+    listUnreadSessionIds: async (companyId: string, userId: string, agentId: string) => {
+      const rows = await db
+        .selectDistinct({ sessionId: chatSessions.id })
+        .from(chatSessions)
+        .innerJoin(
+          chatMessages,
+          and(
+            eq(chatMessages.chatSessionId, chatSessions.id),
+            eq(chatMessages.role, "assistant"),
+          ),
+        )
+        .leftJoin(
+          chatReadStates,
+          and(
+            eq(chatReadStates.chatSessionId, chatSessions.id),
+            eq(chatReadStates.userId, userId),
+            eq(chatReadStates.companyId, companyId),
+          ),
+        )
+        .where(
+          and(
+            eq(chatSessions.companyId, companyId),
+            eq(chatSessions.agentId, agentId),
+            isNull(chatSessions.archivedAt),
+            sql`(${chatReadStates.id} IS NULL OR ${chatMessages.createdAt} > ${chatReadStates.lastReadAt})`,
+          ),
+        );
+      return rows.map((r) => r.sessionId);
+    },
   };
 }
