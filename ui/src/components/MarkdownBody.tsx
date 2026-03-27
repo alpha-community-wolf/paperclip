@@ -1,10 +1,10 @@
-import { isValidElement, useEffect, useId, useState, type CSSProperties, type ReactNode } from "react";
+import { Fragment, isValidElement, useEffect, useId, useState, type CSSProperties, type ReactNode } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { parseProjectMentionHref } from "@paperclipai/shared";
 import { cn } from "../lib/utils";
 import { useTheme } from "../context/ThemeContext";
-import { useWorkspaceFile } from "../context/WorkspaceFileContext";
+import { useWorkspaceFile, type WorkspaceFileContextValue } from "../context/WorkspaceFileContext";
 import { Link } from "@/lib/router";
 
 interface MarkdownBodyProps {
@@ -165,6 +165,79 @@ function resolveWorkspacePath(text: string, cwd: string | null): string | null {
   return cleaned;
 }
 
+// Regex to find file paths embedded in prose text.
+// Matches: optional ./ or / prefix, at least one dir/ segment, filename with known extension.
+// Allows trailing sentence punctuation (stripped before use).
+const FILE_PATH_IN_TEXT_RE = /(?:\.\/|\/)?(?:[\w.$@~-]+\/)+[\w.$@~-]+\.(?:md|mdx|txt|log|json|jsonl|yaml|yml|toml|ini|ts|tsx|js|jsx|mjs|cjs|py|rb|go|rs|java|sh|bash|html|htm|css|scss|svg|xml|sql|csv|env|cfg|conf|lock)(?=[.,;:!?)\]"'\s]|$)/gi;
+
+/**
+ * Scan a plain-text string for file path occurrences and return a ReactNode
+ * with detected paths replaced by WorkspaceFileLinks.
+ */
+function linkFilePathsInText(
+  text: string,
+  wsCtx: WorkspaceFileContextValue,
+): ReactNode {
+  const parts: ReactNode[] = [];
+  let lastIndex = 0;
+  let key = 0;
+
+  // Reset regex state (it has the `g` flag)
+  FILE_PATH_IN_TEXT_RE.lastIndex = 0;
+
+  let match: RegExpExecArray | null;
+  while ((match = FILE_PATH_IN_TEXT_RE.exec(text)) !== null) {
+    const matchText = match[0];
+    const idx = match.index;
+
+    // Skip if preceded by `://` (part of a URL)
+    if (idx >= 3 && text.slice(idx - 3, idx).includes("://")) continue;
+
+    const resolved = resolveWorkspacePath(matchText, wsCtx.workspaceCwd);
+    if (!resolved) continue;
+
+    if (idx > lastIndex) {
+      parts.push(text.slice(lastIndex, idx));
+    }
+    parts.push(
+      <WorkspaceFileLink key={key++} agentRouteId={wsCtx.agentRouteId} filePath={resolved} inline>
+        {matchText}
+      </WorkspaceFileLink>,
+    );
+    lastIndex = idx + matchText.length;
+  }
+
+  if (parts.length === 0) return text;
+
+  if (lastIndex < text.length) {
+    parts.push(text.slice(lastIndex));
+  }
+  return <Fragment>{parts}</Fragment>;
+}
+
+/**
+ * Recursively walk React children and replace text strings that contain
+ * file paths with linked versions.
+ */
+function processChildrenForFilePaths(
+  children: ReactNode,
+  wsCtx: WorkspaceFileContextValue,
+): ReactNode {
+  if (typeof children === "string") {
+    return linkFilePathsInText(children, wsCtx);
+  }
+  if (Array.isArray(children)) {
+    return children.map((child, i) =>
+      typeof child === "string" ? (
+        <Fragment key={i}>{linkFilePathsInText(child, wsCtx)}</Fragment>
+      ) : (
+        child
+      ),
+    );
+  }
+  return children;
+}
+
 function workspaceFileHref(agentRouteId: string, filePath: string): string {
   return `/agents/${agentRouteId}/workspace?file=${encodeURIComponent(filePath)}`;
 }
@@ -246,6 +319,18 @@ export function MarkdownBody({ children, className }: MarkdownBodyProps) {
                 {linkChildren}
               </a>
             );
+          },
+          p: ({ node: _node, children: pChildren, ...pProps }) => {
+            if (!wsCtx) return <p {...pProps}>{pChildren}</p>;
+            return <p {...pProps}>{processChildrenForFilePaths(pChildren, wsCtx)}</p>;
+          },
+          li: ({ node: _node, children: liChildren, ...liProps }) => {
+            if (!wsCtx) return <li {...liProps}>{liChildren}</li>;
+            return <li {...liProps}>{processChildrenForFilePaths(liChildren, wsCtx)}</li>;
+          },
+          td: ({ node: _node, children: tdChildren, ...tdProps }) => {
+            if (!wsCtx) return <td {...tdProps}>{tdChildren}</td>;
+            return <td {...tdProps}>{processChildrenForFilePaths(tdChildren, wsCtx)}</td>;
           },
           code: ({ node: _node, className: codeClassName, children: codeChildren, ...codeProps }) => {
             const isBlock = codeClassName && /^language-/.test(codeClassName);

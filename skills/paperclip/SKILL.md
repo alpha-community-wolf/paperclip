@@ -324,6 +324,20 @@ The `issueMode` controls what happens each time the cron fires:
 | `reuse_existing` | Triggers a heartbeat on the existing issue without status change |
 | `create_new` | Creates a brand-new issue from the template each run |
 
+### Choosing an issueMode
+
+Pick the mode that matches your recurring task's context needs:
+
+- **`reopen_existing`** — Resets the linked issue to `todo` each trigger. One issue accumulates all comments over time. Use for running logs or cumulative work where yesterday's context helps today (e.g. inbox triage, standup log). Downside: comment thread grows indefinitely, increasing token cost per wake.
+- **`reuse_existing`** — Fires a heartbeat without changing status. Use for monitoring/polling where the agent should check on something periodically but not re-do it (e.g. deploy health checks). Downside: agent must handle waking on a `done` issue gracefully.
+- **`create_new`** — Spawns a fresh issue from `issueTemplate` each trigger. Use for self-contained daily tasks where each run needs clean context and its own lifecycle (e.g. daily reports, reflections, audits). Downside: creates issue volume — close them promptly to avoid backlog.
+
+| Mode | Issues created | Context per wake | Best for |
+|------|---------------|-----------------|----------|
+| `reopen_existing` | 1 (reused) | Grows over time | Running logs, cumulative work |
+| `reuse_existing` | 1 (reused) | Grows over time | Monitoring, watchdogs |
+| `create_new` | 1 per trigger | Fresh each time | Daily tasks, reports, reflections |
+
 Optional fields: `timezone` (default `UTC`), `enabled` (default `true`), `issueTemplate` (JSON object used when `create_new`), `payload` (arbitrary metadata).
 
 ### Creating a recurring schedule on yourself (agent-scoped)

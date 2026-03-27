@@ -1,6 +1,6 @@
 import { createContext, useContext, useMemo, type ReactNode } from "react";
 
-interface WorkspaceFileContextValue {
+export interface WorkspaceFileContextValue {
   agentRouteId: string;
   workspaceCwd: string | null;
 }
