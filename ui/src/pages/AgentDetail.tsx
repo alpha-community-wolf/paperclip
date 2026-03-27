@@ -30,7 +30,6 @@ import { EntityRow } from "../components/EntityRow";
 import { Identity } from "../components/Identity";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { ScrollToBottom } from "../components/ScrollToBottom";
-import { AgentChatSessionTab } from "../components/AgentChatSessionTab";
 import { RecurringScheduleCard } from "../components/RecurringScheduleCard";
 import { AgentWorkspaceTab } from "../components/AgentWorkspaceTab";
 import { WorkspaceFileProvider } from "../context/WorkspaceFileContext";
@@ -65,6 +64,7 @@ import {
   ArrowLeft,
   Clock3,
   CalendarClock,
+  MessageSquare,
 } from "lucide-react";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
@@ -182,6 +182,16 @@ function parseAgentDetailView(value: string | null): AgentDetailView {
   return "dashboard";
 }
 
+/** Redirect legacy /agents/:id/chat to the dedicated chat page */
+function useChatRedirect(activeView: AgentDetailView, agentRouteId: string | undefined) {
+  const navigate = useNavigate();
+  useEffect(() => {
+    if (activeView === "chat" && agentRouteId) {
+      navigate(`/chat/${agentRouteId}`, { replace: true });
+    }
+  }, [activeView, agentRouteId, navigate]);
+}
+
 const usageNumber = sharedUsageNumber;
 
 function runMetrics(run: HeartbeatRun) {
@@ -240,6 +250,7 @@ export function AgentDetail() {
   });
   const resolvedCompanyId = agent?.companyId ?? selectedCompanyId;
   const canonicalAgentRef = agent ? agentRouteRef(agent) : routeAgentRef;
+  useChatRedirect(activeView, canonicalAgentRef);
   const agentLookupRef = agent?.id ?? routeAgentRef;
   const resolvedAgentId = agent?.id ?? null;
 
@@ -517,6 +528,14 @@ export function AgentDetail() {
               <span className="hidden sm:inline">Pause</span>
             </Button>
           )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => navigate(`/chat/${canonicalAgentRef}`)}
+          >
+            <MessageSquare className="h-3.5 w-3.5 sm:mr-1" />
+            <span className="hidden sm:inline">Chat</span>
+          </Button>
           <span className="hidden sm:inline"><StatusBadge status={agent.status} /></span>
           {mobileLiveRun && (
             <Link
@@ -582,7 +601,6 @@ export function AgentDetail() {
           <PageTabBar
             items={[
               { value: "dashboard", label: "Dashboard" },
-              { value: "chat", label: "Chat" },
               { value: "workspace", label: "Workspace" },
               { value: "configuration", label: "Configuration" },
               { value: "runs", label: "Runs" },
@@ -683,15 +701,6 @@ export function AgentDetail() {
           onCancelActionChange={setCancelConfigAction}
           onSavingChange={setConfigSaving}
           updatePermissions={updatePermissions}
-        />
-      )}
-
-      {activeView === "chat" && (
-        <AgentChatSessionTab
-          agentId={agent.id}
-          agentRouteId={canonicalAgentRef}
-          adapterType={agent.adapterType}
-          agentName={agent.name}
         />
       )}
 
