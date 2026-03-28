@@ -19,6 +19,7 @@ export { goals } from "./goals.js";
 export { issues } from "./issues.js";
 export { labels } from "./labels.js";
 export { issueLabels } from "./issue_labels.js";
+export { issueLinks } from "./issue_links.js";
 export { issueApprovals } from "./issue_approvals.js";
 export { issueReviewBundles } from "./issue_review_bundles.js";
 export { issueComments } from "./issue_comments.js";

@@ -288,6 +288,13 @@
       "when": 1774540800000,
       "tag": "0040_chat_read_states",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1774731221305,
+      "tag": "0041_magical_whiplash",
+      "breakpoints": true
     }
   ]
 }
