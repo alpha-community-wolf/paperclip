@@ -727,6 +727,27 @@ async function buildAgentSelfContext(
     }
   }
 
+  // Inject MEMORY.md if present in agent workspace
+  if (cwd) {
+    const memoryMaxChars = Math.min(
+      Math.max(0, Number(config.memoryMaxChars) || 3000),
+      8000,
+    );
+    if (memoryMaxChars > 0) {
+      try {
+        const memoryContent = await fs.readFile(path.join(cwd, "MEMORY.md"), "utf-8");
+        const trimmed = memoryContent.trim();
+        if (trimmed.length > 0) {
+          lines.push("");
+          lines.push("## Memory");
+          lines.push(trimmed.length > memoryMaxChars ? trimmed.slice(0, memoryMaxChars) + "\n…" : trimmed);
+        }
+      } catch {
+        // Missing or unreadable — silently skip
+      }
+    }
+  }
+
   return lines.join("\n");
 }
 
