@@ -65,6 +65,8 @@ export function TelegramConfigSection({ agentId, companyId }: TelegramConfigSect
   const [isEditing, setIsEditing] = useState(false);
   const [testResult, setTestResult] = useState<AgentTelegramTestResult | null>(null);
   const [testError, setTestError] = useState<string | null>(null);
+  const [requireMentionInput, setRequireMentionInput] = useState(true);
+  const [mentionPatternsInput, setMentionPatternsInput] = useState("");
 
   const {
     data,
@@ -76,7 +78,7 @@ export function TelegramConfigSection({ agentId, companyId }: TelegramConfigSect
   });
 
   const saveMutation = useMutation({
-    mutationFn: (body: { botToken: string; enabled: boolean; allowedUserIds?: string[] }) =>
+    mutationFn: (body: { botToken: string; enabled: boolean; allowedUserIds?: string[]; requireMention?: boolean; mentionPatterns?: string[] }) =>
       api.put<TelegramResponse>(`/agents/${agentId}/telegram?companyId=${companyId}`, body),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.telegram(agentId) });
@@ -124,11 +126,17 @@ export function TelegramConfigSection({ agentId, companyId }: TelegramConfigSect
 
   const handleSave = useCallback(() => {
     if (!tokenInput.trim()) return;
+    const patterns = mentionPatternsInput
+      .split("\n")
+      .map((p) => p.trim())
+      .filter(Boolean);
     saveMutation.mutate({
       botToken: tokenInput.trim(),
       enabled: true,
+      requireMention: requireMentionInput,
+      mentionPatterns: patterns,
     });
-  }, [tokenInput, saveMutation]);
+  }, [tokenInput, requireMentionInput, mentionPatternsInput, saveMutation]);
 
   const config = data?.config;
   const status = data?.status ?? "disabled";
@@ -230,6 +238,16 @@ export function TelegramConfigSection({ agentId, companyId }: TelegramConfigSect
                 <span className="text-xs font-mono">{config.allowedUserIds.join(", ")}</span>
               </div>
             )}
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-muted-foreground">Group mention required</span>
+              <span className="text-xs font-mono">{config.requireMention ? "yes" : "no"}</span>
+            </div>
+            {config.mentionPatterns.length > 0 && (
+              <div className="flex items-start justify-between gap-4">
+                <span className="text-xs text-muted-foreground shrink-0">Mention patterns</span>
+                <span className="text-xs font-mono text-right break-all">{config.mentionPatterns.join(", ")}</span>
+              </div>
+            )}
           </div>
 
           {telemetry && config.enabled && (
@@ -275,7 +293,11 @@ export function TelegramConfigSection({ agentId, companyId }: TelegramConfigSect
               variant="outline"
               size="sm"
               className="h-7 text-xs w-full"
-              onClick={() => setIsEditing(true)}
+              onClick={() => {
+                setIsEditing(true);
+                setRequireMentionInput(config.requireMention);
+                setMentionPatternsInput(config.mentionPatterns.join("\n"));
+              }}
             >
               Update token
             </Button>
@@ -357,10 +379,45 @@ export function TelegramConfigSection({ agentId, companyId }: TelegramConfigSect
                   setTokenInput("");
                   setTestResult(null);
                   setTestError(null);
+                  setRequireMentionInput(true);
+                  setMentionPatternsInput("");
                 }}
               >
                 Cancel
               </Button>
+            )}
+          </div>
+
+          <div className="space-y-2 pt-1">
+            <div className="flex items-center justify-between">
+              <label className="text-xs text-muted-foreground">Require @mention in groups</label>
+              <button
+                type="button"
+                className="flex items-center gap-1 text-xs"
+                onClick={() => setRequireMentionInput((v) => !v)}
+              >
+                {requireMentionInput ? (
+                  <ToggleRight className="h-4 w-4 text-emerald-500" />
+                ) : (
+                  <ToggleLeft className="h-4 w-4 text-muted-foreground" />
+                )}
+                <span className={requireMentionInput ? "text-emerald-500" : "text-muted-foreground"}>
+                  {requireMentionInput ? "on" : "off"}
+                </span>
+              </button>
+            </div>
+            {requireMentionInput && (
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">
+                  Custom mention patterns (regex, one per line)
+                </label>
+                <textarea
+                  className={cn(inputClass, "resize-none h-16 font-mono text-xs")}
+                  placeholder={"hey bot\npaperclip help"}
+                  value={mentionPatternsInput}
+                  onChange={(e) => setMentionPatternsInput(e.target.value)}
+                />
+              </div>
             )}
           </div>
 

@@ -228,6 +228,8 @@ function toApiConfig(row: ConfigRow): AgentTelegramConfig {
     enabled: row.enabled,
     ownerChatId: row.ownerChatId,
     allowedUserIds: (row.allowedUserIds as string[]) ?? [],
+    requireMention: row.requireMention,
+    mentionPatterns: (row.mentionPatterns as string[]) ?? [],
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -274,6 +276,8 @@ export function telegramService(db: Db) {
     botToken: string;
     enabled?: boolean;
     allowedUserIds?: string[];
+    requireMention?: boolean;
+    mentionPatterns?: string[];
   }): Promise<AgentTelegramConfig> {
     const existing = await getConfig(input.agentId);
     const now = new Date();
@@ -285,6 +289,8 @@ export function telegramService(db: Db) {
           botToken: input.botToken,
           enabled: input.enabled ?? existing.enabled,
           allowedUserIds: input.allowedUserIds ?? existing.allowedUserIds,
+          requireMention: input.requireMention ?? existing.requireMention,
+          mentionPatterns: input.mentionPatterns ?? existing.mentionPatterns,
           updatedAt: now,
         })
         .where(eq(agentTelegramConfigs.id, existing.id))
@@ -303,6 +309,8 @@ export function telegramService(db: Db) {
         botToken: input.botToken,
         enabled: input.enabled ?? false,
         allowedUserIds: input.allowedUserIds ?? [],
+        requireMention: input.requireMention ?? true,
+        mentionPatterns: input.mentionPatterns ?? [],
       })
       .returning();
     if (!created) throw new Error("Failed to create telegram config");
@@ -317,6 +325,8 @@ export function telegramService(db: Db) {
     enabled?: boolean;
     ownerChatId?: string | null;
     allowedUserIds?: string[];
+    requireMention?: boolean;
+    mentionPatterns?: string[];
   }): Promise<AgentTelegramConfig | null> {
     const existing = await getConfig(input.agentId);
     if (!existing) return null;
@@ -326,6 +336,8 @@ export function telegramService(db: Db) {
     if (input.enabled !== undefined) patch.enabled = input.enabled;
     if (input.ownerChatId !== undefined) patch.ownerChatId = input.ownerChatId;
     if (input.allowedUserIds !== undefined) patch.allowedUserIds = input.allowedUserIds;
+    if (input.requireMention !== undefined) patch.requireMention = input.requireMention;
+    if (input.mentionPatterns !== undefined) patch.mentionPatterns = input.mentionPatterns;
 
     const [updated] = await db
       .update(agentTelegramConfigs)
@@ -540,6 +552,52 @@ export function telegramService(db: Db) {
     await bot.api.editMessageText(chatId, msgId, "The agent is taking too long. Please try again later.").catch(() => {});
   }
 
+  /**
+   * Determines whether a group message should be processed based on the gating config.
+   * Returns the stripped message text if allowed, or null if the message should be ignored.
+   */
+  function applyGroupGating(opts: {
+    text: string;
+    botUsername: string | null;
+    requireMention: boolean;
+    mentionPatterns: string[];
+    isReplyToBot: boolean;
+  }): string | null {
+    const { text, botUsername, requireMention, mentionPatterns, isReplyToBot } = opts;
+
+    if (!requireMention) return text;
+
+    // Always respond to direct replies to the bot
+    if (isReplyToBot) return text;
+
+    // Check @mention
+    if (botUsername) {
+      const mentionTag = `@${botUsername}`;
+      const mentionTagLower = mentionTag.toLowerCase();
+      const textLower = text.toLowerCase();
+      if (textLower.includes(mentionTagLower)) {
+        // Strip the @mention from the text
+        const stripped = text.replace(new RegExp(`@${botUsername}`, "gi"), "").trim();
+        return stripped || text;
+      }
+    }
+
+    // Check custom mention patterns (case-insensitive)
+    for (const pattern of mentionPatterns) {
+      try {
+        const re = new RegExp(pattern, "i");
+        if (re.test(text)) {
+          const stripped = text.replace(re, "").trim();
+          return stripped || text;
+        }
+      } catch {
+        // Invalid regex — skip
+      }
+    }
+
+    return null;
+  }
+
   function startBot(config: ConfigRow): void {
     if (activeBots.has(config.agentId)) return;
 
@@ -592,6 +650,8 @@ export function telegramService(db: Db) {
     bot.on("message:text", async (ctx) => {
       const senderId = String(ctx.from.id);
       const telegramChatId = String(ctx.chat.id);
+      const chatType = ctx.chat.type;
+      const isGroupChat = chatType === "group" || chatType === "supergroup";
 
       if (allowedUserIds.size > 0 && !allowedUserIds.has(senderId)) {
         await ctx.reply("You are not authorized to use this bot.");
@@ -620,6 +680,28 @@ export function telegramService(db: Db) {
       if (rawText.trimStart().toLowerCase().startsWith("/new")) {
         forceNewSession = true;
         messageText = rawText.trimStart().slice(4).trim();
+      }
+
+      // Group chat gating — only respond if @mentioned, replied to bot, or pattern matches
+      if (isGroupChat) {
+        const isReplyToBot = !!(
+          ctx.message.reply_to_message?.from?.username &&
+          currentConfig?.botUsername &&
+          ctx.message.reply_to_message.from.username.toLowerCase() === currentConfig.botUsername.toLowerCase()
+        );
+        const requireMention = currentConfig?.requireMention ?? true;
+        const mentionPatterns = (currentConfig?.mentionPatterns as string[]) ?? [];
+
+        const gatedText = applyGroupGating({
+          text: messageText,
+          botUsername: currentConfig?.botUsername ?? null,
+          requireMention,
+          mentionPatterns,
+          isReplyToBot,
+        });
+
+        if (gatedText === null) return; // silently ignore
+        messageText = gatedText;
       }
 
       try {
