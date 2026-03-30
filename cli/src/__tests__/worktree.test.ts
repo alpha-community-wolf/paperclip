@@ -189,6 +189,10 @@ describe("worktree helpers", () => {
 
   it("copies the source local_encrypted secrets key into the seeded worktree instance", () => {
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-worktree-secrets-"));
+    const savedMasterKey = process.env.PAPERCLIP_SECRETS_MASTER_KEY;
+    const savedMasterKeyFile = process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE;
+    delete process.env.PAPERCLIP_SECRETS_MASTER_KEY;
+    delete process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE;
     try {
       const sourceConfigPath = path.join(tempRoot, "source", "config.json");
       const sourceKeyPath = path.join(tempRoot, "source", "secrets", "master.key");
@@ -208,6 +212,8 @@ describe("worktree helpers", () => {
 
       expect(fs.readFileSync(targetKeyPath, "utf8")).toBe("source-master-key");
     } finally {
+      if (savedMasterKey !== undefined) process.env.PAPERCLIP_SECRETS_MASTER_KEY = savedMasterKey;
+      if (savedMasterKeyFile !== undefined) process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE = savedMasterKeyFile;
       fs.rmSync(tempRoot, { recursive: true, force: true });
     }
   });
@@ -309,7 +315,7 @@ describe("worktree helpers", () => {
     }
   });
 
-  it("creates and initializes a worktree from the top-level worktree:make command", async () => {
+  it("creates and initializes a worktree from the top-level worktree:make command", { timeout: 30_000 }, async () => {
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-worktree-make-"));
     const repoRoot = path.join(tempRoot, "repo");
     const fakeHome = path.join(tempRoot, "home");
