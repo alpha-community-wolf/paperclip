@@ -746,6 +746,46 @@ async function buildAgentSelfContext(
         // Missing or unreadable — silently skip
       }
     }
+
+    // Inject most recent daily note from $AGENT_HOME/memory/
+    const recentNotesMaxChars = Math.min(
+      Math.max(0, Number(config.recentNotesMaxChars) || 1500),
+      4000,
+    );
+    const recentNotesDays = Math.min(
+      Math.max(0, Number(config.recentNotesDays) || 7),
+      90,
+    );
+    if (recentNotesMaxChars > 0 && recentNotesDays > 0) {
+      try {
+        const memoryDir = path.join(cwd, "memory");
+        const entries = await fs.readdir(memoryDir);
+        const datePattern = /^\d{4}-\d{2}-\d{2}\.md$/;
+        const dateFiles = entries.filter((e) => datePattern.test(e)).sort().reverse();
+        if (dateFiles.length > 0) {
+          const mostRecent = dateFiles[0];
+          const fileDate = mostRecent.replace(".md", "");
+          const daysDiff = Math.floor(
+            (Date.now() - new Date(fileDate + "T00:00:00Z").getTime()) / (1000 * 60 * 60 * 24),
+          );
+          if (daysDiff >= 0 && daysDiff <= recentNotesDays) {
+            const content = await fs.readFile(path.join(memoryDir, mostRecent), "utf-8");
+            const trimmed = content.trim();
+            if (trimmed.length > 0) {
+              lines.push("");
+              lines.push(`## Recent Notes (${fileDate})`);
+              lines.push(
+                trimmed.length > recentNotesMaxChars
+                  ? trimmed.slice(0, recentNotesMaxChars) + "\n…"
+                  : trimmed,
+              );
+            }
+          }
+        }
+      } catch {
+        // Missing memory directory or unreadable — silently skip
+      }
+    }
   }
 
   return lines.join("\n");
