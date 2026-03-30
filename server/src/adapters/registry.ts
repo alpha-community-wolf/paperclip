@@ -48,6 +48,9 @@ import {
 import {
   testEnvironment as hermesTestEnvironment,
   sessionCodec as hermesSessionCodec,
+  detectModel as hermesDetectModel,
+  listSkills as hermesListSkills,
+  syncSkills as hermesSyncSkills,
 } from "hermes-paperclip-adapter/server";
 import {
   agentConfigurationDoc as hermesAgentConfigurationDoc,
