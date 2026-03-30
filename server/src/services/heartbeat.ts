@@ -715,6 +715,23 @@ async function buildAgentSelfContext(
     }
   }
 
+  // Telegram session context — injected when the wake was triggered from Telegram
+  const telegramCtx = context.telegramContext;
+  if (telegramCtx && typeof telegramCtx === "object" && !Array.isArray(telegramCtx)) {
+    const tc = telegramCtx as Record<string, unknown>;
+    lines.push("");
+    lines.push("## Telegram session");
+    if (typeof tc.platform === "string") lines.push(`- Platform: ${tc.platform}`);
+    if (typeof tc.chatType === "string") lines.push(`- Chat type: ${tc.chatType}`);
+    if (typeof tc.userDisplayName === "string") lines.push(`- Responding to: ${tc.userDisplayName}`);
+    if (typeof tc.chatName === "string" && tc.chatName) lines.push(`- Chat: ${tc.chatName}`);
+    if (typeof tc.historySummary === "string" && tc.historySummary) {
+      lines.push("");
+      lines.push("Recent conversation:");
+      lines.push(tc.historySummary);
+    }
+  }
+
   if (cwd && agent.adapterType) {
     const mcpInstructions = await loadMcpInstructions(cwd, agent.adapterType);
     if (mcpInstructions.length > 0) {

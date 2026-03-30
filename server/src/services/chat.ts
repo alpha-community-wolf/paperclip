@@ -354,6 +354,8 @@ export function chatService(db: Db) {
       sessionId?: string | null;
       content: string;
       actor: { actorType: "user" | "agent" | "system"; actorId: string | null };
+      /** Extra fields to merge into the contextSnapshot passed to the agent wakeup. */
+      extraContext?: Record<string, unknown>;
     }): Promise<CreateChatMessageResponse> => {
       const agent = await agents.getById(input.agentId);
       if (!agent) throw notFound("Agent not found");
@@ -392,6 +394,7 @@ export function chatService(db: Db) {
             chatSessionId: session.id,
             taskKey: session.taskKey,
             chatMessageId: message.id,
+            ...(input.extraContext ?? {}),
           },
         });
 
