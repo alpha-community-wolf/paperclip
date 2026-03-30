@@ -108,9 +108,7 @@ export function approvalService(db: Db) {
       if (updated.type === "hire_agent" && updated.status === "approved") {
         const payload = updated.payload as Record<string, unknown>;
         const payloadAgentId = typeof payload.agentId === "string" ? payload.agentId : null;
-        if (payloadAgentId) {
-          // Idempotent: safe to call even on re-resolve if the agent is still
-          // pending (e.g. server crashed between approval update and activation).
+        if (applied && payloadAgentId) {
           await agentsSvc.activatePendingApproval(payloadAgentId);
           hireApprovedAgentId = payloadAgentId;
         } else if (applied) {
