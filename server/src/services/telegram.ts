@@ -3,7 +3,7 @@ import { createWriteStream } from "node:fs";
 import fs from "node:fs/promises";
 import https from "node:https";
 import path from "node:path";
-import { Bot } from "grammy";
+import { Bot, InputFile } from "grammy";
 import { run as grammyRun, type RunnerHandle } from "@grammyjs/runner";
 import { and, asc, eq, isNull } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
@@ -996,7 +996,13 @@ export function telegramService(db: Db) {
 
   async function sendNotification(
     agentId: string,
-    text: string,
+    payload: {
+      text?: string;
+      mediaType?: "photo" | "document";
+      mediaUrl?: string;
+      mediaPath?: string;
+      caption?: string;
+    },
     opts?: { sessionId?: string },
   ): Promise<boolean> {
     const config = await getConfig(agentId);
@@ -1024,11 +1030,43 @@ export function telegramService(db: Db) {
 
     if (!targetChatId) return false;
 
-    const parts = splitMessage(text);
-    for (const part of parts) {
-      await instance.bot.api.sendMessage(Number(targetChatId), part);
+    const chatIdNum = Number(targetChatId);
+
+    if (payload.mediaType === "photo") {
+      const source = payload.mediaUrl
+        ? payload.mediaUrl
+        : payload.mediaPath
+          ? new InputFile(payload.mediaPath)
+          : null;
+      if (!source) return false;
+      await instance.bot.api.sendPhoto(chatIdNum, source, {
+        caption: payload.caption,
+      });
+      return true;
     }
-    return true;
+
+    if (payload.mediaType === "document") {
+      const source = payload.mediaUrl
+        ? payload.mediaUrl
+        : payload.mediaPath
+          ? new InputFile(payload.mediaPath)
+          : null;
+      if (!source) return false;
+      await instance.bot.api.sendDocument(chatIdNum, source, {
+        caption: payload.caption,
+      });
+      return true;
+    }
+
+    if (payload.text) {
+      const parts = splitMessage(payload.text);
+      for (const part of parts) {
+        await instance.bot.api.sendMessage(chatIdNum, part);
+      }
+      return true;
+    }
+
+    return false;
   }
 
   return {
