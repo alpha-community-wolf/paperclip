@@ -186,4 +186,12 @@ export const agentsApi = {
       agentPath(id, companyId, "/files/content"),
       { path: filePath, content },
     ),
+  rawFileUrl: (id: string, filePath: string, companyId?: string) => {
+    const suffix = `/files/raw?path=${encodeURIComponent(filePath)}`;
+    return `/api${agentPath(id, companyId, suffix)}`;
+  },
+  downloadFileUrl: (id: string, filePath: string, companyId?: string) => {
+    const suffix = `/files/raw?path=${encodeURIComponent(filePath)}&download=1`;
+    return `/api${agentPath(id, companyId, suffix)}`;
+  },
 };

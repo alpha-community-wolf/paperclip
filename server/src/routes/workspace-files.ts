@@ -8,7 +8,8 @@ import { agentService } from "../services/index.js";
 import { badRequest, forbidden, notFound, unprocessable, conflict } from "../errors.js";
 import { assertCompanyAccess } from "./authz.js";
 
-const MAX_FILE_SIZE = 1024 * 1024; // 1 MB
+const MAX_FILE_SIZE = 1024 * 1024; // 1 MB (text content API)
+const MAX_RAW_FILE_SIZE = 50 * 1024 * 1024; // 50 MB (raw binary streaming)
 const MAX_UPLOAD_SIZE = 5 * 1024 * 1024; // 5 MB
 
 const TEXT_EXTENSIONS = new Set([
@@ -31,14 +32,58 @@ function isTextFile(filename: string): boolean {
   return TEXT_EXTENSIONS.has(ext);
 }
 
+const BINARY_MIME_MAP: Record<string, string> = {
+  // Images
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".bmp": "image/bmp",
+  ".ico": "image/x-icon",
+  ".svg": "image/svg+xml",
+  ".avif": "image/avif",
+  // Video
+  ".mp4": "video/mp4",
+  ".webm": "video/webm",
+  ".ogg": "video/ogg",
+  ".ogv": "video/ogg",
+  ".mov": "video/quicktime",
+  ".avi": "video/x-msvideo",
+  ".mkv": "video/x-matroska",
+  // Audio
+  ".mp3": "audio/mpeg",
+  ".wav": "audio/wav",
+  ".flac": "audio/flac",
+  ".aac": "audio/aac",
+  ".oga": "audio/ogg",
+  ".m4a": "audio/mp4",
+  ".wma": "audio/x-ms-wma",
+  // Documents
+  ".pdf": "application/pdf",
+  // Text / code
+  ".json": "application/json",
+  ".jsonl": "application/json",
+  ".md": "text/markdown",
+  ".mdx": "text/markdown",
+  ".markdown": "text/markdown",
+  ".html": "text/html",
+  ".htm": "text/html",
+  ".css": "text/css",
+  ".js": "application/javascript",
+  ".mjs": "application/javascript",
+  ".ts": "text/plain",
+  ".tsx": "text/plain",
+};
+
 function mimeForExt(filename: string): string {
   const ext = path.extname(filename).toLowerCase();
-  if (ext === ".json" || ext === ".jsonl") return "application/json";
-  if (ext === ".md" || ext === ".mdx" || ext === ".markdown") return "text/markdown";
-  if (ext === ".html" || ext === ".htm") return "text/html";
-  if (ext === ".css") return "text/css";
-  if (ext === ".svg") return "image/svg+xml";
-  return "text/plain";
+  return BINARY_MIME_MAP[ext] ?? "text/plain";
+}
+
+function fullMimeForExt(filename: string): string {
+  const ext = path.extname(filename).toLowerCase();
+  return BINARY_MIME_MAP[ext] ?? "application/octet-stream";
 }
 
 function sanitizePath(workspaceRoot: string, requestedPath: string): string {
@@ -199,6 +244,58 @@ export function workspaceFileRoutes(db: Db) {
         size: stat.size,
         modified: stat.mtime.toISOString(),
       });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // ---- Stream raw file content (supports binary: images, video, audio, PDF) ----
+  router.get("/agents/:id/files/raw", async (req, res, next) => {
+    try {
+      const agent = await resolveAgent(req);
+      assertCompanyAccess(req, agent.companyId);
+
+      const cwd = (agent.adapterConfig as Record<string, unknown>)?.cwd;
+      if (!cwd || typeof cwd !== "string") {
+        throw badRequest("Agent has no workspace directory configured");
+      }
+
+      const requestedPath = typeof req.query.path === "string" ? req.query.path : "";
+      if (!requestedPath) {
+        throw badRequest("path query parameter is required");
+      }
+
+      const resolved = sanitizePath(cwd, requestedPath);
+
+      let stat;
+      try {
+        stat = await fs.stat(resolved);
+      } catch {
+        throw notFound("File not found");
+      }
+      if (!stat.isFile()) {
+        throw badRequest("Path is not a file");
+      }
+      if (stat.size > MAX_RAW_FILE_SIZE) {
+        throw badRequest(`File too large (${(stat.size / 1024 / 1024).toFixed(1)} MB). Maximum is 50 MB.`);
+      }
+
+      const filename = path.basename(resolved);
+      const mime = fullMimeForExt(filename);
+
+      res.setHeader("Content-Type", mime);
+      res.setHeader("Content-Length", stat.size);
+
+      // For inline display (not download)
+      const isDownload = req.query.download === "1";
+      if (isDownload) {
+        res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(filename)}"`);
+      } else {
+        res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(filename)}"`);
+      }
+
+      const buffer = await fs.readFile(resolved);
+      res.end(buffer);
     } catch (err) {
       next(err);
     }
