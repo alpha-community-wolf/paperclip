@@ -49,6 +49,8 @@ export function telegramRoutes(db: Db) {
         botToken: req.body.botToken,
         enabled: req.body.enabled,
         allowedUserIds: req.body.allowedUserIds,
+        requireMention: req.body.requireMention,
+        mentionPatterns: req.body.mentionPatterns,
       });
 
       const botInstance = telegram.getActiveBot(agent.id);
@@ -72,6 +74,8 @@ export function telegramRoutes(db: Db) {
         enabled: req.body.enabled,
         ownerChatId: req.body.ownerChatId,
         allowedUserIds: req.body.allowedUserIds,
+        requireMention: req.body.requireMention,
+        mentionPatterns: req.body.mentionPatterns,
       });
 
       if (!config) {
@@ -107,17 +111,13 @@ export function telegramRoutes(db: Db) {
       if (!agent) return;
 
       try {
-        const sent = await telegram.sendNotification(
-          agent.id,
-          {
-            text: req.body.text,
-            mediaType: req.body.mediaType,
-            mediaUrl: req.body.mediaUrl,
-            mediaPath: req.body.mediaPath,
-            caption: req.body.caption,
-          },
-          { sessionId: req.body.sessionId },
-        );
+        const sent = await telegram.sendNotification(agent.id, req.body.text, {
+          sessionId: req.body.sessionId,
+          mediaType: req.body.mediaType,
+          mediaUrl: req.body.mediaUrl,
+          mediaPath: req.body.mediaPath,
+          caption: req.body.caption,
+        });
         if (!sent) {
           const botInstance = telegram.getActiveBot(agent.id);
           const config = await telegram.getConfig(agent.id);
