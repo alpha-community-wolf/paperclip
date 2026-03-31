@@ -1,6 +1,6 @@
 import { Router } from "express";
 import type { Db } from "@paperclipai/db";
-import { createCostEventSchema, updateBudgetSchema } from "@paperclipai/shared";
+import { createCostEventSchema, updateBudgetSchema, updateAlertThresholdsSchema } from "@paperclipai/shared";
 import { validate } from "../middleware/validate.js";
 import { costService, companyService, agentService, logActivity } from "../services/index.js";
 import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
@@ -121,6 +121,40 @@ export function costRoutes(db: Db) {
     });
 
     res.json(company);
+  });
+
+  router.get("/companies/:companyId/costs/waste", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const range = parseDateRange(req.query);
+    const result = await costs.waste(companyId, range);
+    res.json(result);
+  });
+
+  router.get("/companies/:companyId/costs/alert-thresholds", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const thresholds = await costs.getAlertThresholds(companyId);
+    res.json(thresholds);
+  });
+
+  router.patch("/companies/:companyId/costs/alert-thresholds", validate(updateAlertThresholdsSchema), async (req, res) => {
+    assertBoard(req);
+    const companyId = req.params.companyId as string;
+    await costs.updateAlertThresholds(companyId, req.body);
+
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      action: "company.alert_thresholds_updated",
+      entityType: "company",
+      entityId: companyId,
+      details: { warning: req.body.warning, critical: req.body.critical },
+    });
+
+    res.json(req.body);
   });
 
   router.patch("/agents/:agentId/budgets", validate(updateBudgetSchema), async (req, res) => {

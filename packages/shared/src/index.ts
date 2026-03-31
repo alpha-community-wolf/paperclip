@@ -175,6 +175,9 @@ export type {
   CostForecast,
   CostEfficiencyAgent,
   CostByModel,
+  CostWaste,
+  CostByProjectEnhanced,
+  BudgetAlertThresholds,
   InboxFeedItem,
   InboxFeedActivity,
 } from "./types/index.js";
@@ -283,6 +286,7 @@ export {
   type UpdateSecret,
   createCostEventSchema,
   updateBudgetSchema,
+  updateAlertThresholdsSchema,
   createAssetImageMetadataSchema,
   createCompanyInviteSchema,
   createOpenClawInvitePromptSchema,
