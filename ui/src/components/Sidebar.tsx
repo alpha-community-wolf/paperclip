@@ -99,8 +99,7 @@ export function Sidebar() {
       </div>
 
       <nav className="flex-1 min-h-0 overflow-y-auto scrollbar-auto-hide flex flex-col gap-4 px-3 py-2">
-        <div className="flex flex-col gap-0.5">
-          {/* New Issue button aligned with nav items */}
+        <SidebarSection label="Work">
           <button
             onClick={() => openNewIssue()}
             className="flex items-center gap-2.5 px-3 py-2 text-[13px] font-medium text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors"
@@ -109,7 +108,6 @@ export function Sidebar() {
             <span className="truncate">New Issue</span>
           </button>
           <SidebarNavItem to="/dashboard" label="Dashboard" icon={LayoutDashboard} liveCount={liveRunCount} />
-          <SidebarNavItem to="/issues" label="Issues" icon={CircleDot} />
           <SidebarNavItem
             to="/inbox"
             label="Inbox"
@@ -119,9 +117,6 @@ export function Sidebar() {
             alert={inboxBadge.failedRuns > 0}
           />
           <SidebarNavItem to="/my-work" label="My Work" icon={Briefcase} />
-        </div>
-
-        <SidebarSection label="Work">
           <SidebarNavItem to="/issues" label="Issues" icon={CircleDot} />
           <SidebarNavItem to="/runs" label="Runs" icon={Play} />
         </SidebarSection>
