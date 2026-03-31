@@ -2336,6 +2336,53 @@ export function heartbeatService(db: Db) {
 
       if (lockedIssues.length === 0) return;
 
+      // COM-346: If this run was never started (startedAt null — e.g. reaped
+      // before being claimed), check whether another adapter process is still
+      // actively running for one of the locked issues. If so, transfer the
+      // execution lock to that run instead of clearing it, preventing the
+      // premature lock release that lets the orphaned process finish without
+      // issue-level tracking.
+      if (!run.startedAt) {
+        for (const lockedIssue of lockedIssues) {
+          const activeProcessRun = await tx
+            .select({ id: heartbeatRuns.id, agentId: heartbeatRuns.agentId })
+            .from(heartbeatRuns)
+            .where(
+              and(
+                eq(heartbeatRuns.companyId, lockedIssue.companyId),
+                ne(heartbeatRuns.id, run.id),
+                sql`${heartbeatRuns.contextSnapshot} ->> 'issueId' = ${lockedIssue.id}`,
+              ),
+            )
+            .then((rows) => rows.find((r) => runningProcesses.has(r.id)) ?? null);
+
+          if (activeProcessRun) {
+            const transferAgent = await tx
+              .select({ name: agents.name })
+              .from(agents)
+              .where(eq(agents.id, activeProcessRun.agentId))
+              .then((rows) => rows[0] ?? null);
+
+            logger.warn(
+              { releasingRunId: run.id, activeRunId: activeProcessRun.id, issueId: lockedIssue.id },
+              "run never started — transferring execution lock to still-running process",
+            );
+
+            await tx
+              .update(issues)
+              .set({
+                executionRunId: activeProcessRun.id,
+                executionAgentNameKey: normalizeAgentNameKey(transferAgent?.name),
+                executionLockedAt: new Date(),
+                updatedAt: new Date(),
+              })
+              .where(eq(issues.id, lockedIssue.id));
+
+            return null;
+          }
+        }
+      }
+
       // Clear execution lock on ALL issues owned by this run
       await tx
         .update(issues)
@@ -2613,7 +2660,18 @@ export function heartbeatService(db: Db) {
           : null;
 
         if (activeExecutionRun && activeExecutionRun.status !== "queued" && activeExecutionRun.status !== "running") {
-          activeExecutionRun = null;
+          // Even if the DB status is finalized (e.g. reaped as process_lost),
+          // the adapter child process may still be alive. Check the in-memory
+          // process map before discarding — creating a competing run while the
+          // original process is still executing causes a race condition (COM-346).
+          if (runningProcesses.has(activeExecutionRun.id)) {
+            logger.warn(
+              { runId: activeExecutionRun.id, issueId: issue.id, dbStatus: activeExecutionRun.status },
+              "executionRunId points to finalized run but adapter process is still alive — treating as active",
+            );
+          } else {
+            activeExecutionRun = null;
+          }
         }
 
         if (!activeExecutionRun && issue.executionRunId) {
