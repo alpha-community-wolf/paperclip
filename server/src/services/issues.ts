@@ -16,7 +16,7 @@ import {
   projectWorkspaces,
   projects,
 } from "@paperclipai/db";
-import { extractProjectMentionIds } from "@paperclipai/shared";
+import { extractProjectMentionIds, sanitizeCommentBody } from "@paperclipai/shared";
 import { conflict, notFound, unprocessable } from "../errors.js";
 import {
   defaultIssueExecutionWorkspaceSettingsForProject,
@@ -1224,6 +1224,8 @@ export function issueService(db: Db) {
 
       if (!issue) throw notFound("Issue not found");
 
+      const sanitizedBody = sanitizeCommentBody(body);
+
       const [comment] = await db
         .insert(issueComments)
         .values({
@@ -1231,7 +1233,7 @@ export function issueService(db: Db) {
           issueId,
           authorAgentId: actor.agentId ?? null,
           authorUserId: actor.userId ?? null,
-          body,
+          body: sanitizedBody,
         })
         .returning();
 
