@@ -1544,7 +1544,13 @@ export function IssueDetail() {
                     <Link
                       key={run.runId}
                       to={`/agents/${agentRef}/runs/${run.runId}`}
-                      state={{ fromIssue: { issueId: issue.identifier ?? issueId, label: issue.identifier ?? issue.title } }}
+                      state={{
+                        fromIssue: { issueId: issue.identifier ?? issueId, label: issue.identifier ?? issue.title },
+                        navigationPath: [
+                          sourceBreadcrumb,
+                          { label: issue.identifier ?? issue.title ?? "Issue", href: `/issues/${issue.identifier ?? issueId}` },
+                        ],
+                      }}
                       className="flex items-center justify-between px-3 py-2 text-xs hover:bg-accent/20 transition-colors cursor-pointer no-underline text-inherit"
                     >
                       <div className="flex items-center gap-2 min-w-0">

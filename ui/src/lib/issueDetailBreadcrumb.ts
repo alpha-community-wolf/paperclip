@@ -9,9 +9,15 @@ type FromRun = {
   label: string;
 };
 
+type NavigationPathEntry = {
+  label: string;
+  href: string;
+};
+
 type IssueDetailLocationState = {
   issueDetailBreadcrumb?: IssueDetailBreadcrumb;
   fromRun?: FromRun;
+  navigationPath?: NavigationPathEntry[];
 };
 
 function isIssueDetailBreadcrumb(value: unknown): value is IssueDetailBreadcrumb {
@@ -40,4 +46,17 @@ export function readFromRun(state: unknown): FromRun | null {
   if (typeof state !== "object" || state === null) return null;
   const candidate = (state as IssueDetailLocationState).fromRun;
   return isFromRun(candidate) ? candidate : null;
+}
+
+function isNavigationPathEntry(value: unknown): value is NavigationPathEntry {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Partial<NavigationPathEntry>;
+  return typeof candidate.label === "string" && typeof candidate.href === "string";
+}
+
+export function readNavigationPath(state: unknown): NavigationPathEntry[] | null {
+  if (typeof state !== "object" || state === null) return null;
+  const candidate = (state as IssueDetailLocationState).navigationPath;
+  if (!Array.isArray(candidate) || candidate.length === 0) return null;
+  return candidate.every(isNavigationPathEntry) ? candidate : null;
 }
