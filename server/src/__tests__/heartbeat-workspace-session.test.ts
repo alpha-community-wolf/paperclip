@@ -149,4 +149,14 @@ describe("shouldResetTaskSessionForWake", () => {
       }),
     ).toBe(false);
   });
+
+  it("does not reset session context on resume_process_lost_run wake", () => {
+    expect(
+      shouldResetTaskSessionForWake({
+        wakeReason: "resume_process_lost_run",
+        wakeSource: "on_demand",
+        wakeTriggerDetail: "manual",
+      }),
+    ).toBe(false);
+  });
 });
