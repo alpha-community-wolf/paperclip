@@ -1,9 +1,10 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { cn, formatTokens } from "../lib/utils";
 import type { TranscriptEntry } from "../adapters";
 import { CollapsibleContent } from "./CollapsibleContent";
+import { SpecializedToolResult } from "./ToolResultRenderers";
 
 const GRID = "grid grid-cols-[auto_auto_1fr] gap-x-2 sm:gap-x-3 items-baseline";
 const TS_CELL = "text-neutral-400 dark:text-neutral-600 select-none w-12 sm:w-16 text-[10px] sm:text-xs tabular-nums";
@@ -123,6 +124,17 @@ export function TranscriptRenderer({
   entries: TranscriptEntry[];
   compact?: boolean;
 }) {
+  // Build toolUseId → toolName map for correlating tool_call with tool_result
+  const toolNameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const entry of entries) {
+      if (entry.kind === "tool_call" && entry.toolUseId) {
+        map.set(entry.toolUseId, entry.name);
+      }
+    }
+    return map;
+  }, [entries]);
+
   if (entries.length === 0) {
     return <div className="text-neutral-500 text-xs">No transcript entries yet.</div>;
   }
@@ -260,6 +272,27 @@ export function TranscriptRenderer({
                     <CollapsibleContent>{entry.content}</CollapsibleContent>
                   </pre>
                 </div>
+              </div>
+            );
+          }
+
+          // Grep/Glob specialized rendering
+          const toolName = toolNameMap.get(entry.toolUseId);
+          const specializedResult = !entry.isError ? (
+            <SpecializedToolResult
+              toolName={toolName}
+              content={entry.content}
+              className={cn(EXPAND_CELL, "bg-neutral-50 dark:bg-neutral-900 rounded p-2 text-[11px]")}
+            />
+          ) : null;
+
+          if (specializedResult) {
+            return (
+              <div key={`${entry.ts}-toolres-${idx}`} className={cn(GRID, "gap-y-1 py-0.5")}>
+                <span className={TS_CELL}>{time}</span>
+                <span className={cn(LBL_CELL, "text-purple-600 dark:text-purple-300")}>tool_result</span>
+                <span />
+                {specializedResult}
               </div>
             );
           }
