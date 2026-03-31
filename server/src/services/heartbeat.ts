@@ -1834,6 +1834,7 @@ export function heartbeatService(db: Db) {
     let handle: RunLogHandle | null = null;
     let stdoutExcerpt = "";
     let stderrExcerpt = "";
+    let earlySessionId: string | null = null;
     try {
       const startedAt = run.startedAt ?? new Date();
       const runningWithSession = await db
@@ -1894,6 +1895,29 @@ export function heartbeatService(db: Db) {
       const onLog = async (stream: "stdout" | "stderr", chunk: string) => {
         if (stream === "stdout") stdoutExcerpt = appendExcerpt(stdoutExcerpt, chunk);
         if (stream === "stderr") stderrExcerpt = appendExcerpt(stderrExcerpt, chunk);
+
+        // Early session ID capture: detect session_id from adapter streaming
+        // output and persist immediately so it survives process_lost events.
+        if (stream === "stdout" && !earlySessionId && taskKey) {
+          const jsonMatch = chunk.match(/"session_id"\s*:\s*"([^"]+)"/);
+          const plainMatch = !jsonMatch ? chunk.match(/^session_id:\s*(\S+)/m) : null;
+          const detected = jsonMatch?.[1] ?? plainMatch?.[1];
+          if (detected) {
+            earlySessionId = detected;
+            upsertTaskSession({
+              companyId: agent.companyId,
+              agentId: agent.id,
+              adapterType: agent.adapterType,
+              taskKey,
+              sessionParamsJson: { sessionId: detected },
+              sessionDisplayId: detected.length > 16 ? detected.slice(0, 16) : detected,
+              lastRunId: run.id,
+              lastError: null,
+            }).catch((err) =>
+              logger.warn({ err, runId: run.id }, "failed to persist early session ID"),
+            );
+          }
+        }
 
         if (handle) {
           await runLogStore.append(handle, {
