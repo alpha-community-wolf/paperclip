@@ -315,7 +315,7 @@ export function MarkdownBody({ children, className }: MarkdownBodyProps) {
               }
             }
             return (
-              <a href={href} rel="noreferrer">
+              <a href={href} target="_blank" rel="noreferrer">
                 {linkChildren}
               </a>
             );
