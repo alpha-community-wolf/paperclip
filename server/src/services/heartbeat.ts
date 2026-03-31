@@ -2973,13 +2973,24 @@ export function heartbeatService(db: Db) {
   } as const;
 
   return {
-    list: async (companyId: string, agentId?: string, limit?: number): Promise<{ runs: (typeof heartbeatRuns.$inferSelect)[]; degraded: boolean }> => {
-      const where = agentId
-        ? and(eq(heartbeatRuns.companyId, companyId), eq(heartbeatRuns.agentId, agentId))
-        : eq(heartbeatRuns.companyId, companyId);
+    list: async (companyId: string, agentId?: string, limit?: number, projectId?: string): Promise<{ runs: (typeof heartbeatRuns.$inferSelect)[]; degraded: boolean }> => {
+      const conditions = [eq(heartbeatRuns.companyId, companyId)];
+      if (agentId) conditions.push(eq(heartbeatRuns.agentId, agentId));
+
+      const issueIdExpr = sql`${heartbeatRuns.contextSnapshot} ->> 'issueId'`;
+      const needsJoin = !!projectId;
+      if (projectId) {
+        conditions.push(sql`${issues.projectId} = ${projectId}`);
+      }
+
+      const where = and(...conditions);
 
       const buildQuery = (columns: typeof heartbeatRunListColumns | typeof heartbeatRunListColumnsSafe) => {
-        const q = db.select(columns).from(heartbeatRuns).where(where).orderBy(desc(heartbeatRuns.createdAt));
+        let q = db.select(columns).from(heartbeatRuns) as any;
+        if (needsJoin) {
+          q = q.innerJoin(issues, sql`${issues.id}::text = ${issueIdExpr}`);
+        }
+        q = q.where(where).orderBy(desc(heartbeatRuns.createdAt));
         return limit ? q.limit(limit) : q;
       };
 

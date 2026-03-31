@@ -44,10 +44,11 @@ export interface HeartbeatRunListResult {
 }
 
 export const heartbeatsApi = {
-  list: (companyId: string, agentId?: string, limit?: number) => {
+  list: (companyId: string, agentId?: string, limit?: number, projectId?: string) => {
     const searchParams = new URLSearchParams();
     if (agentId) searchParams.set("agentId", agentId);
     if (limit) searchParams.set("limit", String(limit));
+    if (projectId) searchParams.set("projectId", projectId);
     const qs = searchParams.toString();
     return api.get<HeartbeatRunListResult>(`/companies/${companyId}/heartbeat-runs${qs ? `?${qs}` : ""}`);
   },
