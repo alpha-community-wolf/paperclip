@@ -209,6 +209,7 @@ export function RunDetailPanel({ run: initialRun, agent, onClose }: RunDetailPan
               <Link
                 key={issue.issueId}
                 to={`/issues/${issue.identifier ?? issue.issueId}`}
+                state={{ fromRun: { runId: run.id, agentRouteId: agentRef, label: `Run ${run.id.slice(0, 8)}` } }}
                 className="flex items-center justify-between w-full px-3 py-2 text-xs hover:bg-accent/20 transition-colors text-left no-underline text-inherit"
               >
                 <div className="flex items-center gap-2 min-w-0">

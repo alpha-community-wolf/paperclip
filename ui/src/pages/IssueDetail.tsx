@@ -14,7 +14,7 @@ import { usePanel } from "../context/PanelContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { WorkspaceFileProvider } from "../context/WorkspaceFileContext";
 import { queryKeys } from "../lib/queryKeys";
-import { readIssueDetailBreadcrumb } from "../lib/issueDetailBreadcrumb";
+import { readIssueDetailBreadcrumb, readFromRun } from "../lib/issueDetailBreadcrumb";
 import { cronPresetOptions } from "../lib/cron-presets";
 import { useProjectOrder } from "../hooks/useProjectOrder";
 import { relativeTime, cn, formatTokens, agentRouteRef } from "../lib/utils";
@@ -38,6 +38,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
+  ArrowLeft,
   ChevronDown,
   ChevronRight,
   EyeOff,
@@ -196,6 +197,7 @@ export function IssueDetail() {
     () => readIssueDetailBreadcrumb(location.state) ?? { label: "Issues", href: "/issues" },
     [location.state],
   );
+  const fromRun = useMemo(() => readFromRun(location.state), [location.state]);
 
   // Filter out runs already shown by the live widget to avoid duplication
   const timelineRuns = useMemo(() => {
@@ -744,6 +746,16 @@ export function IssueDetail() {
               </span>
               Live
             </span>
+          )}
+
+          {fromRun && (
+            <Link
+              to={`/agents/${fromRun.agentRouteId}/runs/${fromRun.runId}`}
+              className="inline-flex items-center gap-1 rounded-full bg-accent/60 border border-border px-2 py-0.5 text-[10px] font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors no-underline shrink-0"
+            >
+              <ArrowLeft className="h-3 w-3" />
+              {fromRun.label}
+            </Link>
           )}
 
           {issue.projectId ? (
@@ -1527,10 +1539,13 @@ export function IssueDetail() {
                   const runTokens =
                     usageNumber(usage, "inputTokens", "input_tokens") +
                     usageNumber(usage, "outputTokens", "output_tokens");
+                  const agentRef = agent ? agentRouteRef(agent) : run.agentId;
                   return (
-                    <div
+                    <Link
                       key={run.runId}
-                      className="flex items-center justify-between px-3 py-2 text-xs hover:bg-accent/20 transition-colors"
+                      to={`/agents/${agentRef}/runs/${run.runId}`}
+                      state={{ fromIssue: { issueId: issue.identifier ?? issueId, label: issue.identifier ?? issue.title } }}
+                      className="flex items-center justify-between px-3 py-2 text-xs hover:bg-accent/20 transition-colors cursor-pointer no-underline text-inherit"
                     >
                       <div className="flex items-center gap-2 min-w-0">
                         {agent && <Identity name={agent.name} size="sm" />}
@@ -1542,7 +1557,7 @@ export function IssueDetail() {
                         {runTokens > 0 && <span className="tabular-nums">{formatTokens(runTokens)} tokens</span>}
                         <span>{relativeTime(run.startedAt ?? run.createdAt)}</span>
                       </div>
-                    </div>
+                    </Link>
                   );
                 })}
               </div>

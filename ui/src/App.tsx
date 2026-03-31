@@ -38,6 +38,9 @@ import { queryKeys } from "./lib/queryKeys";
 import { useCompany } from "./context/CompanyContext";
 import { useDialog } from "./context/DialogContext";
 import { loadLastInboxTab } from "./lib/inbox";
+import { heartbeatsApi } from "./api/heartbeats";
+import { agentsApi } from "./api/agents";
+import { agentRouteRef } from "./lib/utils";
 
 function BootstrapPendingPage({ hasActiveInvite = false }: { hasActiveInvite?: boolean }) {
   return (
@@ -138,7 +141,7 @@ function boardRoutes() {
       <Route path="issues/recent" element={<Navigate to="/issues" replace />} />
       <Route path="issues/:issueId" element={<IssueDetail />} />
       <Route path="runs" element={<Runs />} />
-      <Route path="runs/:runId" element={<Runs />} />
+      <Route path="runs/:runId" element={<RunRedirect />} />
       <Route path="goals" element={<Goals />} />
       <Route path="goals/:goalId" element={<GoalDetail />} />
       <Route path="schedules" element={<Schedules />} />
@@ -167,6 +170,37 @@ function boardRoutes() {
 function ChatRedirect() {
   const { agentId } = useParams<{ agentId: string }>();
   return <Navigate to={`/agents/${agentId}/chat`} replace />;
+}
+
+/** Redirect /runs/:runId to /agents/:agentRef/runs/:runId (full detail view) */
+function RunRedirect() {
+  const { runId } = useParams<{ runId: string }>();
+  const { selectedCompanyId } = useCompany();
+
+  const { data: run } = useQuery({
+    queryKey: queryKeys.runDetail(runId!),
+    queryFn: () => heartbeatsApi.get(runId!),
+    enabled: !!runId,
+  });
+
+  const { data: agents } = useQuery({
+    queryKey: queryKeys.agents.list(selectedCompanyId!),
+    queryFn: () => agentsApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+
+  if (run && agents) {
+    const agent = agents.find((a) => a.id === run.agentId);
+    const ref = agent ? agentRouteRef(agent) : run.agentId;
+    return <Navigate to={`/agents/${ref}/runs/${run.id}`} replace />;
+  }
+
+  // Show loading while resolving
+  return (
+    <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
+      Loading run…
+    </div>
+  );
 }
 
 function InboxRootRedirect() {
