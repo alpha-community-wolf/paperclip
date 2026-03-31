@@ -105,6 +105,17 @@ function CollapsiblePre({ children, className }: { children: React.ReactNode; cl
   );
 }
 
+/** Find the name of the most recent tool_call before a given index */
+function findPrecedingToolCallName(entries: TranscriptEntry[], idx: number): string | null {
+  for (let i = idx - 1; i >= 0; i--) {
+    const e = entries[i];
+    if (e.kind === "tool_call") return e.name;
+    // Stop searching if we hit another tool_result (different pair)
+    if (e.kind === "tool_result") return null;
+  }
+  return null;
+}
+
 export function TranscriptRenderer({
   entries,
   compact = false,
@@ -158,23 +169,50 @@ export function TranscriptRenderer({
         }
 
         if (entry.kind === "tool_call") {
+          const isBash = entry.name === "Bash";
+          const bashInput = isBash ? (entry.input as { command?: string; description?: string }) : null;
+
           if (compact) {
             return (
               <div key={`${entry.ts}-tool-${idx}`} className={cn(GRID, "py-0.5")}>
                 <span className={TS_CELL}>{time}</span>
-                <span className={cn(LBL_CELL, "text-yellow-700 dark:text-yellow-300")}>tool</span>
-                <span className="text-yellow-900 dark:text-yellow-100 min-w-0 truncate">{entry.name}</span>
+                <span className={cn(LBL_CELL, isBash ? "text-green-500 dark:text-green-400" : "text-yellow-700 dark:text-yellow-300")}>
+                  {isBash ? "bash" : "tool"}
+                </span>
+                <span className={cn("min-w-0 truncate", isBash ? "text-green-300 dark:text-green-400 font-mono" : "text-yellow-900 dark:text-yellow-100")}>
+                  {isBash && bashInput?.command ? `$ ${bashInput.command}` : entry.name}
+                </span>
               </div>
             );
           }
+
+          // Bash tool calls get terminal-style rendering
+          if (isBash && bashInput) {
+            return (
+              <div key={`${entry.ts}-tool-${idx}`} className={cn(GRID, "gap-y-1 py-0.5")}>
+                <span className={TS_CELL}>{time}</span>
+                <span className={cn(LBL_CELL, "text-green-500 dark:text-green-400 font-mono")}>bash</span>
+                <span className="text-neutral-500 dark:text-neutral-400 min-w-0 text-[11px] truncate">
+                  {bashInput.description || ""}
+                </span>
+                <div className={cn(EXPAND_CELL, "bg-neutral-900 dark:bg-neutral-950 rounded-md border border-neutral-700/50 dark:border-neutral-700/30 overflow-hidden")}>
+                  <div className="flex items-center gap-2 px-3 py-1.5 bg-neutral-800/60 dark:bg-neutral-800/40 border-b border-neutral-700/30">
+                    <span className="text-green-400 text-[11px] font-mono font-medium select-none">$</span>
+                    <code className="text-green-300 dark:text-green-300 text-[11px] font-mono break-all">
+                      {bashInput.command || ""}
+                    </code>
+                  </div>
+                </div>
+              </div>
+            );
+          }
+
+          // Default tool_call rendering
           return (
             <div key={`${entry.ts}-tool-${idx}`} className={cn(GRID, "gap-y-1 py-0.5")}>
               <span className={TS_CELL}>{time}</span>
               <span className={cn(LBL_CELL, "text-yellow-700 dark:text-yellow-300")}>tool_call</span>
               <span className="text-yellow-900 dark:text-yellow-100 min-w-0">{entry.name}</span>
-              <pre className={cn(EXPAND_CELL, "bg-neutral-200 dark:bg-neutral-900 rounded p-2 text-[11px] overflow-x-auto whitespace-pre-wrap text-neutral-800 dark:text-neutral-200")}>
-                <CollapsibleContent>{JSON.stringify(entry.input, null, 2)}</CollapsibleContent>
-              </pre>
               <CollapsiblePre className={cn(EXPAND_CELL, "bg-neutral-200 dark:bg-neutral-900 rounded p-2 text-[11px] overflow-x-auto whitespace-pre-wrap text-neutral-800 dark:text-neutral-200")}>
                 <JsonHighlight value={JSON.stringify(entry.input, null, 2)} />
               </CollapsiblePre>
@@ -183,25 +221,55 @@ export function TranscriptRenderer({
         }
 
         if (entry.kind === "tool_result") {
+          const precedingToolName = findPrecedingToolCallName(entries, idx);
+          const isBashResult = precedingToolName === "Bash";
+
           if (compact) {
             return (
               <div key={`${entry.ts}-toolres-${idx}`} className={cn(GRID, "py-0.5")}>
                 <span className={TS_CELL}>{time}</span>
-                <span className={cn(LBL_CELL, entry.isError ? "text-red-600 dark:text-red-300" : "text-purple-600 dark:text-purple-300")}>result</span>
+                <span className={cn(LBL_CELL, entry.isError ? "text-red-600 dark:text-red-300" : isBashResult ? "text-green-500 dark:text-green-400" : "text-purple-600 dark:text-purple-300")}>
+                  {isBashResult ? "output" : "result"}
+                </span>
                 <span className={cn(CONTENT_CELL, entry.isError ? "text-red-600 dark:text-red-400" : "text-neutral-500", "truncate")}>
                   {entry.isError ? "error" : entry.content.slice(0, 80)}
                 </span>
               </div>
             );
           }
+
+          // Bash tool results get terminal-style output rendering
+          if (isBashResult) {
+            return (
+              <div key={`${entry.ts}-toolres-${idx}`} className={cn(GRID, "gap-y-1 py-0.5")}>
+                <span className={TS_CELL}>{time}</span>
+                <span className={cn(LBL_CELL, "text-green-500 dark:text-green-400 font-mono")}>output</span>
+                <span className="min-w-0 flex items-center gap-1.5">
+                  {entry.isError ? (
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-red-900/30 text-red-400 border border-red-700/30">
+                      ✕ error
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-900/30 text-green-400 border border-green-700/30">
+                      ✓ exit 0
+                    </span>
+                  )}
+                </span>
+                <div className={cn(EXPAND_CELL, "bg-neutral-900 dark:bg-neutral-950 rounded-md border border-neutral-700/50 dark:border-neutral-700/30 overflow-hidden")}>
+                  <pre className="px-3 py-2 text-[11px] font-mono whitespace-pre-wrap break-words overflow-x-auto text-neutral-300 dark:text-neutral-400">
+                    <CollapsibleContent>{entry.content}</CollapsibleContent>
+                  </pre>
+                </div>
+              </div>
+            );
+          }
+
+          // Default tool_result rendering
           return (
             <div key={`${entry.ts}-toolres-${idx}`} className={cn(GRID, "gap-y-1 py-0.5")}>
               <span className={TS_CELL}>{time}</span>
               <span className={cn(LBL_CELL, entry.isError ? "text-red-600 dark:text-red-300" : "text-purple-600 dark:text-purple-300")}>tool_result</span>
               {entry.isError ? <span className="text-red-600 dark:text-red-400 min-w-0">error</span> : <span />}
-              <pre className={cn(EXPAND_CELL, "bg-neutral-100 dark:bg-neutral-900 rounded p-2 text-[11px] overflow-x-auto whitespace-pre-wrap text-neutral-700 dark:text-neutral-300")}>
-                <CollapsibleContent>{(() => { try { return JSON.stringify(JSON.parse(entry.content), null, 2); } catch { return entry.content; } })()}</CollapsibleContent>
-              </pre>
               <CollapsiblePre className={cn(EXPAND_CELL, "bg-neutral-100 dark:bg-neutral-900 rounded p-2 text-[11px] overflow-x-auto whitespace-pre-wrap text-neutral-700 dark:text-neutral-300")}>
                 {formatContent(entry.content)}
               </CollapsiblePre>
