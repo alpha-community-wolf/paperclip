@@ -46,11 +46,13 @@ function parseToolUse(parsed: Record<string, unknown>, ts: string): TranscriptEn
   const toolName = asString(part.tool, "tool");
   const state = asRecord(part.state);
   const input = state?.input ?? {};
+  const callId = asString(part.callID) || asString(part.id) || undefined;
   const callEntry: TranscriptEntry = {
     kind: "tool_call",
     ts,
     name: toolName,
     input,
+    toolUseId: callId,
   };
 
   const status = asString(state?.status);
