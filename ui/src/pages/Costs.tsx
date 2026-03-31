@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Bar,
   ComposedChart,
@@ -32,8 +32,13 @@ import {
   ArrowUpDown,
   Users,
   Cpu,
+  AlertTriangle,
+  ShieldAlert,
+  FolderKanban,
+  Settings,
+  Check,
 } from "lucide-react";
-import type { CostForecast, CostEfficiencyAgent, CostByAgent, CostByModel } from "@paperclipai/shared";
+import type { CostForecast, CostEfficiencyAgent, CostByAgent, CostByModel, CostWaste, CostByProjectEnhanced, BudgetAlertThresholds } from "@paperclipai/shared";
 
 type DatePreset = "mtd" | "7d" | "30d" | "ytd" | "all" | "custom";
 
@@ -487,6 +492,249 @@ function ModelBreakdownCard({ models }: { models: CostByModel[] }) {
   );
 }
 
+function WasteHealthCard({ waste }: { waste: CostWaste }) {
+  const failureColor =
+    waste.failureRate > 0.2 ? "text-red-400" : waste.failureRate > 0.1 ? "text-amber-400" : "text-emerald-400";
+  const failureBg =
+    waste.failureRate > 0.2 ? "bg-red-400" : waste.failureRate > 0.1 ? "bg-amber-400" : "bg-emerald-400";
+
+  return (
+    <Card>
+      <CardContent className="p-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <ShieldAlert className="h-4 w-4 text-muted-foreground" />
+          <h3 className="text-sm font-semibold">Health &amp; Waste</h3>
+        </div>
+
+        <div className="grid grid-cols-3 gap-4">
+          {/* Failure Rate */}
+          <div>
+            <p className="text-xs text-muted-foreground mb-1">Failure Rate</p>
+            <div className="flex items-center gap-2">
+              <p className={`text-lg font-bold tabular-nums ${failureColor}`}>
+                {(waste.failureRate * 100).toFixed(1)}%
+              </p>
+              <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full ${failureBg}`}
+                  style={{ width: `${Math.min(100, waste.failureRate * 100)}%` }}
+                />
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground mt-0.5 tabular-nums">
+              {waste.failedRunCount} / {waste.totalRunCount} runs
+            </p>
+          </div>
+
+          {/* Failed Run Cost */}
+          <div>
+            <p className="text-xs text-muted-foreground mb-1">Failed Run Cost</p>
+            <p className="text-lg font-bold tabular-nums">
+              {formatCents(waste.failedRunCostCents)}
+            </p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              wasted on error/cancelled
+            </p>
+          </div>
+
+          {/* Blocked Task Spend */}
+          <div>
+            <p className="text-xs text-muted-foreground mb-1">Blocked Task Spend</p>
+            <p className="text-lg font-bold tabular-nums">
+              {formatCents(waste.blockedTaskCostCents)}
+            </p>
+            <p className="text-xs text-muted-foreground mt-0.5 tabular-nums">
+              across {waste.blockedTaskCount} blocked task{waste.blockedTaskCount !== 1 ? "s" : ""}
+            </p>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ProjectROITable({ projects }: { projects: CostByProjectEnhanced[] }) {
+  if (projects.length === 0) {
+    return (
+      <Card>
+        <CardContent className="p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <FolderKanban className="h-4 w-4 text-muted-foreground" />
+            <h3 className="text-sm font-semibold">By Project</h3>
+          </div>
+          <p className="text-sm text-muted-foreground">No project-attributed run costs yet.</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardContent className="p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <FolderKanban className="h-4 w-4 text-muted-foreground" />
+          <h3 className="text-sm font-semibold">By Project</h3>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border/50">
+                <th className="text-left font-medium text-muted-foreground pb-2 pr-4">Project</th>
+                <th className="text-right font-medium text-muted-foreground pb-2 px-2">Cost</th>
+                <th className="text-right font-medium text-muted-foreground pb-2 px-2">Tasks Done</th>
+                <th className="text-right font-medium text-muted-foreground pb-2 px-2">$/Task</th>
+                <th className="text-right font-medium text-muted-foreground pb-2 pl-2">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {projects.map((row) => (
+                <tr key={row.projectId ?? "na"} className="border-b border-border/20 last:border-0">
+                  <td className="py-2 pr-4 font-medium">
+                    {row.projectName ?? row.projectId ?? "Unattributed"}
+                  </td>
+                  <td className="text-right py-2 px-2 tabular-nums font-medium">
+                    {formatCents(row.costCents)}
+                  </td>
+                  <td className="text-right py-2 px-2 tabular-nums text-muted-foreground">
+                    {row.tasksCompleted}
+                  </td>
+                  <td className="text-right py-2 px-2 tabular-nums text-muted-foreground">
+                    {row.costPerTask !== null ? formatCents(row.costPerTask) : "\u2014"}
+                  </td>
+                  <td className="text-right py-2 pl-2">
+                    {row.isStale ? (
+                      <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium border bg-amber-400/10 text-amber-400 border-amber-400/20">
+                        <AlertTriangle className="h-3 w-3" />
+                        Stale
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">Active</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function AlertThresholdsCard({ companyId }: { companyId: string }) {
+  const queryClient = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [warning, setWarning] = useState(80);
+  const [critical, setCritical] = useState(100);
+
+  const { data: thresholds } = useQuery({
+    queryKey: queryKeys.costsAlertThresholds(companyId),
+    queryFn: () => costsApi.getAlertThresholds(companyId),
+    enabled: !!companyId,
+  });
+
+  useEffect(() => {
+    if (thresholds) {
+      setWarning(thresholds.warning);
+      setCritical(thresholds.critical);
+    }
+  }, [thresholds]);
+
+  const mutation = useMutation({
+    mutationFn: (t: BudgetAlertThresholds) => costsApi.updateAlertThresholds(companyId, t),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.costsAlertThresholds(companyId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.costsForecast(companyId) });
+      setEditing(false);
+    },
+  });
+
+  return (
+    <Card>
+      <CardContent className="p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Settings className="h-4 w-4 text-muted-foreground" />
+            <h3 className="text-sm font-semibold">Alert Thresholds</h3>
+          </div>
+          {!editing && (
+            <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setEditing(true)}>
+              Edit
+            </Button>
+          )}
+        </div>
+
+        {editing ? (
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">Warning (%)</label>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={warning}
+                  onChange={(e) => setWarning(Number(e.target.value))}
+                  className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm text-foreground tabular-nums"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">Critical (%)</label>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={critical}
+                  onChange={(e) => setCritical(Number(e.target.value))}
+                  className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm text-foreground tabular-nums"
+                />
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                className="h-7 text-xs"
+                disabled={mutation.isPending}
+                onClick={() => mutation.mutate({ warning, critical })}
+              >
+                <Check className="h-3 w-3 mr-1" />
+                Save
+              </Button>
+              <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => {
+                setEditing(false);
+                if (thresholds) {
+                  setWarning(thresholds.warning);
+                  setCritical(thresholds.critical);
+                }
+              }}>
+                Cancel
+              </Button>
+              {mutation.isError && (
+                <span className="text-xs text-destructive">Failed to save</span>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs text-muted-foreground mb-0.5">Warning</p>
+              <p className="text-lg font-bold tabular-nums text-amber-400">
+                {thresholds?.warning ?? 80}%
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-0.5">Critical (Auto-Pause)</p>
+              <p className="text-lg font-bold tabular-nums text-red-400">
+                {thresholds?.critical ?? 100}%
+              </p>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export function Costs() {
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
@@ -546,6 +794,13 @@ export function Costs() {
     queryKey: queryKeys.costsByModel(selectedCompanyId!, from || undefined, to || undefined),
     queryFn: () =>
       costsApi.byModel(selectedCompanyId!, from || undefined, to || undefined),
+    enabled: !!selectedCompanyId,
+  });
+
+  const { data: wasteData } = useQuery({
+    queryKey: queryKeys.costsWaste(selectedCompanyId!, from || undefined, to || undefined),
+    queryFn: () =>
+      costsApi.waste(selectedCompanyId!, from || undefined, to || undefined),
     enabled: !!selectedCompanyId,
   });
 
@@ -723,32 +978,19 @@ export function Costs() {
             efficiencyData={efficiencyData ?? []}
           />
 
+          {/* Health & Waste */}
+          {wasteData && wasteData.totalRunCount > 0 && (
+            <WasteHealthCard waste={wasteData} />
+          )}
+
           {/* Model Cost Breakdown */}
           {byModelData && <ModelBreakdownCard models={byModelData.models} />}
 
-          {/* By Project */}
-          <Card>
-            <CardContent className="p-4">
-              <h3 className="text-sm font-semibold mb-3">By Project</h3>
-              {data.byProject.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No project-attributed run costs yet.</p>
-              ) : (
-                <div className="space-y-2">
-                  {data.byProject.map((row) => (
-                    <div
-                      key={row.projectId ?? "na"}
-                      className="flex items-center justify-between text-sm"
-                    >
-                      <span className="truncate">
-                        {row.projectName ?? row.projectId ?? "Unattributed"}
-                      </span>
-                      <span className="font-medium tabular-nums">{formatCents(row.costCents)}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          {/* By Project with ROI */}
+          <ProjectROITable projects={data.byProject} />
+
+          {/* Alert Thresholds */}
+          <AlertThresholdsCard companyId={selectedCompanyId} />
         </>
       )}
     </div>

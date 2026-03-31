@@ -5,6 +5,7 @@ export interface CostEvent {
   issueId: string | null;
   projectId: string | null;
   goalId: string | null;
+  runId: string | null;
   billingCode: string | null;
   provider: string;
   model: string;
@@ -76,4 +77,29 @@ export interface CostByModel {
   outputTokens: number;
   costPerKTokens: number | null;
   eventCount: number;
+}
+
+export interface CostWaste {
+  failureRate: number;
+  failedRunCount: number;
+  totalRunCount: number;
+  failedRunCostCents: number;
+  blockedTaskCostCents: number;
+  blockedTaskCount: number;
+}
+
+export interface CostByProjectEnhanced {
+  projectId: string | null;
+  projectName: string | null;
+  costCents: number;
+  inputTokens: number;
+  outputTokens: number;
+  tasksCompleted: number;
+  costPerTask: number | null;
+  isStale: boolean;
+}
+
+export interface BudgetAlertThresholds {
+  warning: number;
+  critical: number;
 }

@@ -1,4 +1,9 @@
-import { pgTable, uuid, text, integer, timestamp, boolean, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, integer, timestamp, boolean, uniqueIndex, jsonb } from "drizzle-orm/pg-core";
+
+export interface BudgetAlertThresholds {
+  warning: number;
+  critical: number;
+}
 
 export const companies = pgTable(
   "companies",
@@ -15,6 +20,7 @@ export const companies = pgTable(
       .notNull()
       .default(true),
     brandColor: text("brand_color"),
+    budgetAlertThresholds: jsonb("budget_alert_thresholds").$type<BudgetAlertThresholds>(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

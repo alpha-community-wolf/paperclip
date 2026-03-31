@@ -5,6 +5,7 @@ export const createCostEventSchema = z.object({
   issueId: z.string().uuid().optional().nullable(),
   projectId: z.string().uuid().optional().nullable(),
   goalId: z.string().uuid().optional().nullable(),
+  runId: z.string().uuid().optional().nullable(),
   billingCode: z.string().optional().nullable(),
   provider: z.string().min(1),
   model: z.string().min(1),
@@ -12,6 +13,11 @@ export const createCostEventSchema = z.object({
   outputTokens: z.number().int().nonnegative().optional().default(0),
   costCents: z.number().int().nonnegative(),
   occurredAt: z.string().datetime(),
+});
+
+export const updateAlertThresholdsSchema = z.object({
+  warning: z.number().min(0).max(100),
+  critical: z.number().min(0).max(100),
 });
 
 export type CreateCostEvent = z.infer<typeof createCostEventSchema>;

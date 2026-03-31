@@ -145,6 +145,7 @@ export {
 export {
   createCostEventSchema,
   updateBudgetSchema,
+  updateAlertThresholdsSchema,
   type CreateCostEvent,
   type UpdateBudget,
 } from "./cost.js";

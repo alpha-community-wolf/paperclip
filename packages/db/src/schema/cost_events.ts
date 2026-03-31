@@ -4,6 +4,7 @@ import { agents } from "./agents.js";
 import { issues } from "./issues.js";
 import { projects } from "./projects.js";
 import { goals } from "./goals.js";
+import { heartbeatRuns } from "./heartbeat_runs.js";
 
 export const costEvents = pgTable(
   "cost_events",
@@ -14,6 +15,7 @@ export const costEvents = pgTable(
     issueId: uuid("issue_id").references(() => issues.id),
     projectId: uuid("project_id").references(() => projects.id),
     goalId: uuid("goal_id").references(() => goals.id),
+    runId: uuid("run_id").references(() => heartbeatRuns.id),
     billingCode: text("billing_code"),
     provider: text("provider").notNull(),
     model: text("model").notNull(),
@@ -30,5 +32,6 @@ export const costEvents = pgTable(
       table.agentId,
       table.occurredAt,
     ),
+    companyRunIdx: index("cost_events_company_run_idx").on(table.companyId, table.runId),
   }),
 );

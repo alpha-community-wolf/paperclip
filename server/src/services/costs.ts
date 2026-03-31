@@ -1,7 +1,10 @@
-import { and, desc, eq, gte, isNotNull, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, lte, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { activityLog, agents, companies, costEvents, heartbeatRuns, issues, projects } from "@paperclipai/db";
+import type { BudgetAlertThresholds } from "@paperclipai/shared";
 import { notFound, unprocessable } from "../errors.js";
+
+const DEFAULT_THRESHOLDS: BudgetAlertThresholds = { warning: 80, critical: 100 };
 
 export interface CostDateRange {
   from?: Date;
@@ -238,12 +241,14 @@ export function costService(db: Db) {
           ? Math.max(0, Math.round(remaining / dailyAvgCents))
           : null;
 
+      const thresholds: BudgetAlertThresholds = (company.budgetAlertThresholds as BudgetAlertThresholds | null) ?? DEFAULT_THRESHOLDS;
+
       let pacingStatus: "on_track" | "over_pacing" | "critical";
       if (budgetCents <= 0) {
         pacingStatus = "on_track";
-      } else if (projectedMonthEndCents > budgetCents) {
+      } else if (projectedMonthEndCents > budgetCents * (thresholds.critical / 100)) {
         pacingStatus = "critical";
-      } else if (projectedMonthEndCents > budgetCents * 0.8) {
+      } else if (projectedMonthEndCents > budgetCents * (thresholds.warning / 100)) {
         pacingStatus = "over_pacing";
       } else {
         pacingStatus = "on_track";
@@ -254,6 +259,7 @@ export function costService(db: Db) {
         daysUntilExhaustion,
         dailyAvgCents,
         pacingStatus,
+        thresholds,
       };
     },
 
@@ -372,6 +378,72 @@ export function costService(db: Db) {
       };
     },
 
+    waste: async (companyId: string, range?: CostDateRange) => {
+      const runConditions: ReturnType<typeof eq>[] = [eq(heartbeatRuns.companyId, companyId)];
+      if (range?.from) runConditions.push(gte(heartbeatRuns.finishedAt, range.from));
+      if (range?.to) runConditions.push(lte(heartbeatRuns.finishedAt, range.to));
+
+      const runStats = await db
+        .select({
+          totalRunCount: sql<number>`count(*)::int`,
+          failedRunCount: sql<number>`coalesce(sum(case when ${heartbeatRuns.status} in ('error', 'cancelled') then 1 else 0 end), 0)::int`,
+        })
+        .from(heartbeatRuns)
+        .where(and(...runConditions));
+
+      const { totalRunCount, failedRunCount } = runStats[0] ?? { totalRunCount: 0, failedRunCount: 0 };
+      const failureRate = totalRunCount > 0 ? Number((failedRunCount / totalRunCount).toFixed(4)) : 0;
+
+      // Failed run cost: cost_events joined to heartbeat_runs via runId where run status = error
+      const costConditions: ReturnType<typeof eq>[] = [eq(costEvents.companyId, companyId)];
+      if (range?.from) costConditions.push(gte(costEvents.occurredAt, range.from));
+      if (range?.to) costConditions.push(lte(costEvents.occurredAt, range.to));
+
+      const failedCostRows = await db
+        .select({
+          failedRunCostCents: sql<number>`coalesce(sum(${costEvents.costCents}), 0)::int`,
+        })
+        .from(costEvents)
+        .innerJoin(heartbeatRuns, eq(costEvents.runId, heartbeatRuns.id))
+        .where(
+          and(
+            ...costConditions,
+            inArray(heartbeatRuns.status, ["error", "cancelled"]),
+          ),
+        );
+
+      const failedRunCostCents = Number(failedCostRows[0]?.failedRunCostCents ?? 0);
+
+      // Blocked task spend: cost_events on issues currently in blocked status
+      const blockedRows = await db
+        .select({
+          blockedTaskCostCents: sql<number>`coalesce(sum(${costEvents.costCents}), 0)::int`,
+          blockedTaskCount: sql<number>`count(distinct ${costEvents.issueId})::int`,
+        })
+        .from(costEvents)
+        .innerJoin(issues, eq(costEvents.issueId, issues.id))
+        .where(
+          and(
+            ...costConditions,
+            eq(issues.status, "blocked"),
+          ),
+        );
+
+      const { blockedTaskCostCents, blockedTaskCount } = blockedRows[0] ?? {
+        blockedTaskCostCents: 0,
+        blockedTaskCount: 0,
+      };
+
+      return {
+        failureRate,
+        failedRunCount: Number(failedRunCount),
+        totalRunCount: Number(totalRunCount),
+        failedRunCostCents,
+        blockedTaskCostCents: Number(blockedTaskCostCents),
+        blockedTaskCount: Number(blockedTaskCount),
+      };
+    },
+
     byProject: async (companyId: string, range?: CostDateRange) => {
       const issueIdAsText = sql<string>`${issues.id}::text`;
       const runProjectLinks = db
@@ -404,7 +476,7 @@ export function costService(db: Db) {
 
       const costCentsExpr = sql<number>`coalesce(sum(round(coalesce((${heartbeatRuns.usageJson} ->> 'costUsd')::numeric, 0) * 100)), 0)::int`;
 
-      return db
+      const costRows = await db
         .select({
           projectId: runProjectLinks.projectId,
           projectName: projects.name,
@@ -418,6 +490,65 @@ export function costService(db: Db) {
         .where(and(...conditions))
         .groupBy(runProjectLinks.projectId, projects.name)
         .orderBy(desc(costCentsExpr));
+
+      // Get tasks completed per project in the date range
+      const taskConditions: ReturnType<typeof eq>[] = [
+        eq(issues.companyId, companyId),
+        eq(issues.status, "done"),
+        isNotNull(issues.projectId),
+      ];
+      if (range?.from) taskConditions.push(gte(issues.completedAt, range.from));
+      if (range?.to) taskConditions.push(lte(issues.completedAt, range.to));
+
+      const taskRows = await db
+        .select({
+          projectId: issues.projectId,
+          tasksCompleted: sql<number>`count(*)::int`,
+        })
+        .from(issues)
+        .where(and(...taskConditions))
+        .groupBy(issues.projectId);
+
+      const taskMap = new Map(taskRows.map((r) => [r.projectId, Number(r.tasksCompleted)]));
+
+      return costRows.map((row) => {
+        const cost = Number(row.costCents);
+        const completed = taskMap.get(row.projectId) ?? 0;
+        return {
+          ...row,
+          costCents: cost,
+          inputTokens: Number(row.inputTokens),
+          outputTokens: Number(row.outputTokens),
+          tasksCompleted: completed,
+          costPerTask: completed > 0 ? Math.round(cost / completed) : null,
+          isStale: cost > 0 && completed === 0,
+        };
+      });
+    },
+
+    updateAlertThresholds: async (companyId: string, thresholds: BudgetAlertThresholds) => {
+      const rows = await db
+        .update(companies)
+        .set({
+          budgetAlertThresholds: thresholds,
+          updatedAt: new Date(),
+        })
+        .where(eq(companies.id, companyId))
+        .returning();
+
+      if (rows.length === 0) throw notFound("Company not found");
+      return rows[0];
+    },
+
+    getAlertThresholds: async (companyId: string): Promise<BudgetAlertThresholds> => {
+      const company = await db
+        .select()
+        .from(companies)
+        .where(eq(companies.id, companyId))
+        .then((rows) => rows[0] ?? null);
+
+      if (!company) throw notFound("Company not found");
+      return (company.budgetAlertThresholds as BudgetAlertThresholds | null) ?? DEFAULT_THRESHOLDS;
     },
   };
 }

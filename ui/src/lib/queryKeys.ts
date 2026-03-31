@@ -79,6 +79,10 @@ export const queryKeys = {
     ["costs-efficiency", companyId, from, to] as const,
   costsByModel: (companyId: string, from?: string, to?: string) =>
     ["costs-by-model", companyId, from, to] as const,
+  costsWaste: (companyId: string, from?: string, to?: string) =>
+    ["costs-waste", companyId, from, to] as const,
+  costsAlertThresholds: (companyId: string) =>
+    ["costs-alert-thresholds", companyId] as const,
   heartbeats: (companyId: string, agentId?: string) =>
     ["heartbeats", companyId, agentId] as const,
   runDetail: (runId: string) => ["heartbeat-run", runId] as const,
