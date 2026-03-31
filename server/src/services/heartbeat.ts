@@ -2539,7 +2539,37 @@ export function heartbeatService(db: Db) {
 
     if (issueId && !bypassIssueExecutionLock) {
       const agentNameKey = normalizeAgentNameKey(agent.name);
-      const sessionBefore = await resolveSessionBeforeForWakeup(agent, taskKey);
+      let sessionBefore = await resolveSessionBeforeForWakeup(agent, taskKey);
+
+      // When resuming a process_lost run, if no session was found (e.g. the
+      // early capture didn't fire before the process was killed), fall back to
+      // the failed run's sessionIdBefore — the last session the adapter used.
+      if (!sessionBefore && reason === "resume_process_lost_run" && taskKey) {
+        const resumeFromRunId = readNonEmptyString(payload?.["resumeFromRunId"]);
+        if (resumeFromRunId) {
+          const failedRun = await db
+            .select({ sessionIdBefore: heartbeatRuns.sessionIdBefore })
+            .from(heartbeatRuns)
+            .where(eq(heartbeatRuns.id, resumeFromRunId))
+            .then((rows) => rows[0] ?? null);
+          if (failedRun?.sessionIdBefore) {
+            sessionBefore = failedRun.sessionIdBefore;
+            // Seed the task session so executeRun picks it up
+            await upsertTaskSession({
+              companyId: agent.companyId,
+              agentId: agent.id,
+              adapterType: agent.adapterType,
+              taskKey,
+              sessionParamsJson: { sessionId: failedRun.sessionIdBefore },
+              sessionDisplayId: failedRun.sessionIdBefore.length > 16
+                ? failedRun.sessionIdBefore.slice(0, 16)
+                : failedRun.sessionIdBefore,
+              lastRunId: resumeFromRunId,
+              lastError: "process_lost",
+            });
+          }
+        }
+      }
 
       const outcome = await db.transaction(async (tx) => {
         await tx.execute(
