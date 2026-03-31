@@ -675,6 +675,8 @@ export function AgentDetail() {
           runtimeState={runtimeState}
           agentId={agent.id}
           agentRouteId={canonicalAgentRef}
+          reportsToAgent={reportsToAgent ?? null}
+          directReports={directReports}
           schedules={agentSchedules ?? []}
           onUpdateSchedule={(scheduleId, fields) => updateAgentSchedule.mutate({ scheduleId, ...fields })}
           onDeleteSchedule={(scheduleId) => deleteAgentSchedule.mutate(scheduleId)}
@@ -818,6 +820,8 @@ function AgentOverview({
   runtimeState,
   agentId,
   agentRouteId,
+  reportsToAgent,
+  directReports,
   schedules,
   onUpdateSchedule,
   onDeleteSchedule,
@@ -830,6 +834,8 @@ function AgentOverview({
   runtimeState?: AgentRuntimeState;
   agentId: string;
   agentRouteId: string;
+  reportsToAgent: Agent | null;
+  directReports: Agent[];
   schedules: TaskCronSchedule[];
   onUpdateSchedule: (scheduleId: string, fields: Partial<{ name: string; expression: string; timezone: string; enabled: boolean; issueMode: "create_new" | "reuse_existing" | "reopen_existing" }>) => void;
   onDeleteSchedule: (scheduleId: string) => void;
@@ -838,6 +844,42 @@ function AgentOverview({
 }) {
   return (
     <div className="space-y-8">
+      {/* Reporting Chain */}
+      {(reportsToAgent || directReports.length > 0) && (
+        <div className="space-y-3">
+          <h3 className="text-sm font-medium">Reporting Chain</h3>
+          <div className="border border-border rounded-lg p-4 space-y-2">
+            {reportsToAgent && (
+              <div className="flex items-center gap-2 text-sm">
+                <span className="text-muted-foreground">Reports to:</span>
+                <Link
+                  to={`/agents/${agentRouteRef(reportsToAgent)}`}
+                  className="inline-flex items-center gap-1.5 hover:underline"
+                >
+                  <Identity name={reportsToAgent.name} size="sm" />
+                </Link>
+              </div>
+            )}
+            {directReports.length > 0 && (
+              <div className="flex items-start gap-2 text-sm">
+                <span className="text-muted-foreground shrink-0 pt-0.5">Direct reports:</span>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  {directReports.map((dr) => (
+                    <Link
+                      key={dr.id}
+                      to={`/agents/${agentRouteRef(dr)}`}
+                      className="inline-flex items-center gap-1.5 hover:underline"
+                    >
+                      <Identity name={dr.name} size="sm" />
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Latest Run */}
       <LatestRunCard runs={runs} agentId={agentRouteId} />
 
