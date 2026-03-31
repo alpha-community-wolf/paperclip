@@ -1,3 +1,6 @@
+import { useState, useRef, useEffect, useCallback } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { cn, formatTokens } from "../lib/utils";
 import type { TranscriptEntry } from "../adapters";
 
@@ -7,8 +10,98 @@ const LBL_CELL = "w-14 sm:w-20 text-[10px] sm:text-xs";
 const CONTENT_CELL = "min-w-0 whitespace-pre-wrap break-words overflow-hidden";
 const EXPAND_CELL = "col-span-full md:col-start-3 md:col-span-1";
 
+const COLLAPSE_HEIGHT = 144; // ~6 lines at 11px font + padding
+
 function fmtTime(ts: string): string {
   return new Date(ts).toLocaleTimeString("en-US", { hour12: false });
+}
+
+/** Syntax-highlighted JSON rendering */
+function JsonHighlight({ value }: { value: string }) {
+  // Tokenize JSON string into colored spans
+  const tokens = value.split(/("(?:[^"\\]|\\.)*")\s*(:)?|(true|false|null)|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g);
+  const parts: React.ReactNode[] = [];
+  let i = 0;
+
+  for (const token of tokens) {
+    if (token === undefined || token === "") { i++; continue; }
+    const key = `t${i++}`;
+    // Key (string followed by colon)
+    if (/^"/.test(token) && tokens[i] === ":") {
+      parts.push(<span key={key} className="text-purple-600 dark:text-purple-400">{token}</span>);
+    }
+    // Colon separator
+    else if (token === ":") {
+      parts.push(<span key={key}>{token} </span>);
+    }
+    // String value
+    else if (/^"/.test(token)) {
+      parts.push(<span key={key} className="text-green-700 dark:text-green-400">{token}</span>);
+    }
+    // Boolean / null
+    else if (/^(true|false|null)$/.test(token)) {
+      parts.push(<span key={key} className="text-red-600 dark:text-red-400">{token}</span>);
+    }
+    // Number
+    else if (/^-?\d/.test(token)) {
+      parts.push(<span key={key} className="text-orange-600 dark:text-orange-400">{token}</span>);
+    }
+    // Structural characters and whitespace
+    else {
+      parts.push(<span key={key}>{token}</span>);
+    }
+  }
+
+  return <>{parts}</>;
+}
+
+/** Format and optionally highlight content that might be JSON */
+function formatContent(content: string): React.ReactNode {
+  try {
+    const formatted = JSON.stringify(JSON.parse(content), null, 2);
+    return <JsonHighlight value={formatted} />;
+  } catch {
+    return content;
+  }
+}
+
+/** Wraps a pre block with expand/collapse when content exceeds COLLAPSE_HEIGHT */
+function CollapsiblePre({ children, className }: { children: React.ReactNode; className?: string }) {
+  const ref = useRef<HTMLPreElement>(null);
+  const [overflows, setOverflows] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    if (ref.current) {
+      setOverflows(ref.current.scrollHeight > COLLAPSE_HEIGHT);
+    }
+  }, [children]);
+
+  const toggle = useCallback(() => setExpanded((v) => !v), []);
+
+  return (
+    <div className="relative">
+      <pre
+        ref={ref}
+        className={cn(className, !expanded && overflows && "overflow-hidden")}
+        style={!expanded && overflows ? { maxHeight: COLLAPSE_HEIGHT } : undefined}
+      >
+        {children}
+      </pre>
+      {!expanded && overflows && (
+        <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-neutral-200 dark:from-neutral-900 to-transparent pointer-events-none" />
+      )}
+      {overflows && (
+        <button
+          type="button"
+          onClick={toggle}
+          className="text-[10px] text-primary hover:underline mt-0.5 cursor-pointer"
+        >
+          {expanded ? "Show less" : "Show more"}
+        </button>
+      )}
+    </div>
+  );
 }
 
 export function TranscriptRenderer({
@@ -32,7 +125,9 @@ export function TranscriptRenderer({
             <div key={`${entry.ts}-assistant-${idx}`} className={cn(GRID, "py-0.5")}>
               <span className={TS_CELL}>{time}</span>
               <span className={cn(LBL_CELL, "text-green-700 dark:text-green-300")}>assistant</span>
-              <span className={cn(CONTENT_CELL, "text-green-900 dark:text-green-100")}>{entry.text}</span>
+              <div className={cn(CONTENT_CELL, "text-green-900 dark:text-green-100 prose prose-sm dark:prose-invert prose-green max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0")}>
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{entry.text}</ReactMarkdown>
+              </div>
             </div>
           );
         }
@@ -42,7 +137,9 @@ export function TranscriptRenderer({
             <div key={`${entry.ts}-thinking-${idx}`} className={cn(GRID, "py-0.5")}>
               <span className={TS_CELL}>{time}</span>
               <span className={cn(LBL_CELL, "text-green-600/60 dark:text-green-300/60")}>thinking</span>
-              <span className={cn(CONTENT_CELL, "text-green-800/60 dark:text-green-100/60 italic")}>{entry.text}</span>
+              <div className={cn(CONTENT_CELL, "text-green-800/60 dark:text-green-100/60 italic prose prose-sm dark:prose-invert prose-green max-w-none opacity-60 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0")}>
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{entry.text}</ReactMarkdown>
+              </div>
             </div>
           );
         }
@@ -52,7 +149,9 @@ export function TranscriptRenderer({
             <div key={`${entry.ts}-user-${idx}`} className={cn(GRID, "py-0.5")}>
               <span className={TS_CELL}>{time}</span>
               <span className={cn(LBL_CELL, "text-neutral-500 dark:text-neutral-400")}>user</span>
-              <span className={cn(CONTENT_CELL, "text-neutral-700 dark:text-neutral-300")}>{entry.text}</span>
+              <div className={cn(CONTENT_CELL, "text-neutral-700 dark:text-neutral-300 prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0")}>
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{entry.text}</ReactMarkdown>
+              </div>
             </div>
           );
         }
@@ -72,9 +171,9 @@ export function TranscriptRenderer({
               <span className={TS_CELL}>{time}</span>
               <span className={cn(LBL_CELL, "text-yellow-700 dark:text-yellow-300")}>tool_call</span>
               <span className="text-yellow-900 dark:text-yellow-100 min-w-0">{entry.name}</span>
-              <pre className={cn(EXPAND_CELL, "bg-neutral-200 dark:bg-neutral-900 rounded p-2 text-[11px] overflow-x-auto whitespace-pre-wrap text-neutral-800 dark:text-neutral-200")}>
-                {JSON.stringify(entry.input, null, 2)}
-              </pre>
+              <CollapsiblePre className={cn(EXPAND_CELL, "bg-neutral-200 dark:bg-neutral-900 rounded p-2 text-[11px] overflow-x-auto whitespace-pre-wrap text-neutral-800 dark:text-neutral-200")}>
+                <JsonHighlight value={JSON.stringify(entry.input, null, 2)} />
+              </CollapsiblePre>
             </div>
           );
         }
@@ -96,9 +195,9 @@ export function TranscriptRenderer({
               <span className={TS_CELL}>{time}</span>
               <span className={cn(LBL_CELL, entry.isError ? "text-red-600 dark:text-red-300" : "text-purple-600 dark:text-purple-300")}>tool_result</span>
               {entry.isError ? <span className="text-red-600 dark:text-red-400 min-w-0">error</span> : <span />}
-              <pre className={cn(EXPAND_CELL, "bg-neutral-100 dark:bg-neutral-900 rounded p-2 text-[11px] overflow-x-auto whitespace-pre-wrap text-neutral-700 dark:text-neutral-300 max-h-60 overflow-y-auto")}>
-                {(() => { try { return JSON.stringify(JSON.parse(entry.content), null, 2); } catch { return entry.content; } })()}
-              </pre>
+              <CollapsiblePre className={cn(EXPAND_CELL, "bg-neutral-100 dark:bg-neutral-900 rounded p-2 text-[11px] overflow-x-auto whitespace-pre-wrap text-neutral-700 dark:text-neutral-300")}>
+                {formatContent(entry.content)}
+              </CollapsiblePre>
             </div>
           );
         }
@@ -134,19 +233,31 @@ export function TranscriptRenderer({
           );
         }
 
-        const label =
-          entry.kind === "stderr" ? "stderr" :
-          entry.kind === "system" ? "system" :
-          "stdout";
-        const color =
-          entry.kind === "stderr" ? "text-red-600 dark:text-red-300" :
-          entry.kind === "system" ? "text-blue-600 dark:text-blue-300" :
-          "text-neutral-500";
+        if (entry.kind === "stderr" || entry.kind === "stdout") {
+          const isErr = entry.kind === "stderr";
+          return (
+            <div key={`${entry.ts}-${entry.kind}-${idx}`} className={cn(GRID, "py-0.5")}>
+              <span className={TS_CELL}>{time}</span>
+              <span className={cn(LBL_CELL, isErr ? "text-red-600 dark:text-red-300" : "text-neutral-500")}>{entry.kind}</span>
+              <pre className={cn(
+                CONTENT_CELL,
+                "rounded px-2 py-1 text-[11px] font-mono",
+                isErr
+                  ? "bg-red-950/20 dark:bg-red-950/40 text-red-700 dark:text-red-300 border border-red-200/30 dark:border-red-800/30"
+                  : "bg-neutral-900/5 dark:bg-neutral-950 text-neutral-600 dark:text-neutral-400 border border-neutral-200/30 dark:border-neutral-800/30",
+              )}>
+                {entry.text}
+              </pre>
+            </div>
+          );
+        }
+
+        const isSystem = entry.kind === "system";
         return (
           <div key={`${entry.ts}-raw-${idx}`} className={GRID}>
             <span className={TS_CELL}>{time}</span>
-            <span className={cn(LBL_CELL, color)}>{label}</span>
-            <span className={cn(CONTENT_CELL, color)}>{entry.text}</span>
+            <span className={cn(LBL_CELL, isSystem ? "text-blue-600 dark:text-blue-300" : "text-neutral-500")}>{isSystem ? "system" : "stdout"}</span>
+            <span className={cn(CONTENT_CELL, isSystem ? "text-blue-600 dark:text-blue-300" : "text-neutral-500")}>{entry.text}</span>
           </div>
         );
       })}
