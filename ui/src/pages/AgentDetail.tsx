@@ -61,6 +61,7 @@ import {
   Eye,
   EyeOff,
   Copy,
+  ChevronLeft,
   ChevronRight,
   ChevronDown,
   ArrowLeft,
@@ -1518,6 +1519,10 @@ function RunsTab({
   const effectiveRunId = isMobile ? selectedRunId : (selectedRunId ?? sorted[0]?.id ?? null);
   const selectedRun = sorted.find((r) => r.id === effectiveRunId) ?? null;
 
+  const selectedRunIndex = effectiveRunId ? sorted.findIndex((r) => r.id === effectiveRunId) : -1;
+  const nextRunId = selectedRunIndex > 0 ? sorted[selectedRunIndex - 1]?.id ?? null : null;
+  const prevRunId = selectedRunIndex >= 0 && selectedRunIndex < sorted.length - 1 ? sorted[selectedRunIndex + 1]?.id ?? null : null;
+
   const degradedBanner = degraded ? (
     <div className="flex items-center gap-2 rounded-md border border-yellow-500/30 bg-yellow-500/10 px-3 py-2 text-xs text-yellow-700 dark:text-yellow-400 mb-3">
       <span className="shrink-0">⚠</span>
@@ -1607,7 +1612,7 @@ function RunsTab({
             <ArrowLeft className="h-3.5 w-3.5" />
             Back to runs
           </Link>
-          <RunDetail key={selectedRun.id} run={selectedRun} agentRouteId={agentRouteId} adapterType={adapterType} />
+          <RunDetail key={selectedRun.id} run={selectedRun} agentRouteId={agentRouteId} adapterType={adapterType} prevRunId={prevRunId} nextRunId={nextRunId} />
         </div>
       );
     }
@@ -1648,7 +1653,7 @@ function RunsTab({
 
       {selectedRun && (
         <div className="flex-1 min-w-0 pl-4">
-          <RunDetail key={selectedRun.id} run={selectedRun} agentRouteId={agentRouteId} adapterType={adapterType} />
+          <RunDetail key={selectedRun.id} run={selectedRun} agentRouteId={agentRouteId} adapterType={adapterType} prevRunId={prevRunId} nextRunId={nextRunId} />
         </div>
       )}
     </div>
@@ -1658,7 +1663,7 @@ function RunsTab({
 
 /* ---- Run Detail (expanded) ---- */
 
-function RunDetail({ run: initialRun, agentRouteId, adapterType }: { run: HeartbeatRun; agentRouteId: string; adapterType: string }) {
+function RunDetail({ run: initialRun, agentRouteId, adapterType, prevRunId, nextRunId }: { run: HeartbeatRun; agentRouteId: string; adapterType: string; prevRunId?: string | null; nextRunId?: string | null }) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { data: hydratedRun } = useQuery({
@@ -1850,6 +1855,42 @@ function RunDetail({ run: initialRun, agentRouteId, adapterType }: { run: Heartb
                   <RotateCcw className="h-3.5 w-3.5 mr-1" />
                   {retryRun.isPending ? "Retrying…" : "Retry"}
                 </Button>
+              )}
+              {(prevRunId || nextRunId) && (
+                <div className="ml-auto flex items-center gap-0.5">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 w-6 p-0"
+                    disabled={!nextRunId}
+                    asChild={!!nextRunId}
+                    title="Newer run"
+                  >
+                    {nextRunId ? (
+                      <Link to={`/agents/${agentRouteId}/runs/${nextRunId}`}>
+                        <ChevronLeft className="h-3.5 w-3.5" />
+                      </Link>
+                    ) : (
+                      <span><ChevronLeft className="h-3.5 w-3.5" /></span>
+                    )}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 w-6 p-0"
+                    disabled={!prevRunId}
+                    asChild={!!prevRunId}
+                    title="Older run"
+                  >
+                    {prevRunId ? (
+                      <Link to={`/agents/${agentRouteId}/runs/${prevRunId}`}>
+                        <ChevronRight className="h-3.5 w-3.5" />
+                      </Link>
+                    ) : (
+                      <span><ChevronRight className="h-3.5 w-3.5" /></span>
+                    )}
+                  </Button>
+                </div>
               )}
             </div>
             {resumeRun.isError && (
