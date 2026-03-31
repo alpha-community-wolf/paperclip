@@ -3,6 +3,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { cn, formatTokens } from "../lib/utils";
 import type { TranscriptEntry } from "../adapters";
+import { CollapsibleContent } from "./CollapsibleContent";
 
 const GRID = "grid grid-cols-[auto_auto_1fr] gap-x-2 sm:gap-x-3 items-baseline";
 const TS_CELL = "text-neutral-400 dark:text-neutral-600 select-none w-12 sm:w-16 text-[10px] sm:text-xs tabular-nums";
@@ -171,6 +172,9 @@ export function TranscriptRenderer({
               <span className={TS_CELL}>{time}</span>
               <span className={cn(LBL_CELL, "text-yellow-700 dark:text-yellow-300")}>tool_call</span>
               <span className="text-yellow-900 dark:text-yellow-100 min-w-0">{entry.name}</span>
+              <pre className={cn(EXPAND_CELL, "bg-neutral-200 dark:bg-neutral-900 rounded p-2 text-[11px] overflow-x-auto whitespace-pre-wrap text-neutral-800 dark:text-neutral-200")}>
+                <CollapsibleContent>{JSON.stringify(entry.input, null, 2)}</CollapsibleContent>
+              </pre>
               <CollapsiblePre className={cn(EXPAND_CELL, "bg-neutral-200 dark:bg-neutral-900 rounded p-2 text-[11px] overflow-x-auto whitespace-pre-wrap text-neutral-800 dark:text-neutral-200")}>
                 <JsonHighlight value={JSON.stringify(entry.input, null, 2)} />
               </CollapsiblePre>
@@ -195,6 +199,9 @@ export function TranscriptRenderer({
               <span className={TS_CELL}>{time}</span>
               <span className={cn(LBL_CELL, entry.isError ? "text-red-600 dark:text-red-300" : "text-purple-600 dark:text-purple-300")}>tool_result</span>
               {entry.isError ? <span className="text-red-600 dark:text-red-400 min-w-0">error</span> : <span />}
+              <pre className={cn(EXPAND_CELL, "bg-neutral-100 dark:bg-neutral-900 rounded p-2 text-[11px] overflow-x-auto whitespace-pre-wrap text-neutral-700 dark:text-neutral-300")}>
+                <CollapsibleContent>{(() => { try { return JSON.stringify(JSON.parse(entry.content), null, 2); } catch { return entry.content; } })()}</CollapsibleContent>
+              </pre>
               <CollapsiblePre className={cn(EXPAND_CELL, "bg-neutral-100 dark:bg-neutral-900 rounded p-2 text-[11px] overflow-x-auto whitespace-pre-wrap text-neutral-700 dark:text-neutral-300")}>
                 {formatContent(entry.content)}
               </CollapsiblePre>
