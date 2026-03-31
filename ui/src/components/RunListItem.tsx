@@ -3,6 +3,7 @@ import { Clock } from "lucide-react";
 import { cn, relativeTime, formatTokens } from "../lib/utils";
 import { runStatusIcons, runMetrics, runSummary } from "../lib/run-utils";
 import { invocationSourceLabel, invocationSourceBadge, invocationSourceBadgeDefault } from "../lib/status-colors";
+import { Identity } from "./Identity";
 import type { HeartbeatRun, Agent } from "@paperclipai/shared";
 
 interface RunListItemProps {
@@ -43,9 +44,7 @@ export function RunListItem({ run, isSelected, linkTo, deselectTo, agentName }: 
           {invocationSourceLabel[run.invocationSource] ?? run.invocationSource}
         </span>
         {agentName && (
-          <span className="text-[11px] font-medium text-foreground/70 truncate max-w-[120px]">
-            {agentName}
-          </span>
+          <Identity name={agentName} size="xs" className="max-w-[140px] text-foreground/70" />
         )}
         <span className="ml-auto text-[11px] text-muted-foreground shrink-0 tabular-nums">
           {relativeTime(run.createdAt)}
