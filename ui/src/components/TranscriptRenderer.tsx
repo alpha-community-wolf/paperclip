@@ -1,3 +1,5 @@
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { cn, formatTokens } from "../lib/utils";
 import type { TranscriptEntry } from "../adapters";
 
@@ -32,7 +34,9 @@ export function TranscriptRenderer({
             <div key={`${entry.ts}-assistant-${idx}`} className={cn(GRID, "py-0.5")}>
               <span className={TS_CELL}>{time}</span>
               <span className={cn(LBL_CELL, "text-green-700 dark:text-green-300")}>assistant</span>
-              <span className={cn(CONTENT_CELL, "text-green-900 dark:text-green-100")}>{entry.text}</span>
+              <div className={cn(CONTENT_CELL, "text-green-900 dark:text-green-100 prose prose-sm dark:prose-invert prose-green max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0")}>
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{entry.text}</ReactMarkdown>
+              </div>
             </div>
           );
         }
@@ -42,7 +46,9 @@ export function TranscriptRenderer({
             <div key={`${entry.ts}-thinking-${idx}`} className={cn(GRID, "py-0.5")}>
               <span className={TS_CELL}>{time}</span>
               <span className={cn(LBL_CELL, "text-green-600/60 dark:text-green-300/60")}>thinking</span>
-              <span className={cn(CONTENT_CELL, "text-green-800/60 dark:text-green-100/60 italic")}>{entry.text}</span>
+              <div className={cn(CONTENT_CELL, "text-green-800/60 dark:text-green-100/60 italic prose prose-sm dark:prose-invert prose-green max-w-none opacity-60 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0")}>
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{entry.text}</ReactMarkdown>
+              </div>
             </div>
           );
         }
@@ -52,7 +58,9 @@ export function TranscriptRenderer({
             <div key={`${entry.ts}-user-${idx}`} className={cn(GRID, "py-0.5")}>
               <span className={TS_CELL}>{time}</span>
               <span className={cn(LBL_CELL, "text-neutral-500 dark:text-neutral-400")}>user</span>
-              <span className={cn(CONTENT_CELL, "text-neutral-700 dark:text-neutral-300")}>{entry.text}</span>
+              <div className={cn(CONTENT_CELL, "text-neutral-700 dark:text-neutral-300 prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0")}>
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{entry.text}</ReactMarkdown>
+              </div>
             </div>
           );
         }
