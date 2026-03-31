@@ -1,7 +1,18 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { Link, useNavigate, useLocation } from "@/lib/router";
 import { useQuery } from "@tanstack/react-query";
+import {
+  DndContext,
+  PointerSensor,
+  closestCenter,
+  type DragEndEvent,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { agentsApi, type OrgNode } from "../api/agents";
+import { authApi } from "../api/auth";
 import { heartbeatsApi } from "../api/heartbeats";
 import { useCompany } from "../context/CompanyContext";
 import { useDialog } from "../context/DialogContext";
@@ -18,9 +29,10 @@ import { relativeTime, cn, agentRouteRef, agentSwitchUrl } from "../lib/utils";
 import { PageTabBar } from "../components/PageTabBar";
 import { Tabs } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Bot, Plus, List, GitBranch, SlidersHorizontal } from "lucide-react";
+import { Bot, Plus, List, GitBranch, SlidersHorizontal, GripVertical } from "lucide-react";
 import { AGENT_ROLE_LABELS, type Agent } from "@paperclipai/shared";
 import { useAgentActivity, formatActivity, toolColor } from "../context/AgentActivityContext";
+import { useAgentOrder } from "../hooks/useAgentOrder";
 
 const adapterLabels: Record<string, string> = {
   claude_local: "Claude",
@@ -60,6 +72,96 @@ function filterOrgTree(nodes: OrgNode[], tab: FilterTab, showTerminated: boolean
   }, []);
 }
 
+function SortableAgentRow({
+  agent,
+  activity,
+  liveRun,
+  switchUrl,
+}: {
+  agent: Agent;
+  activity: import("../context/AgentActivityContext").AgentActivity | undefined;
+  liveRun: { runId: string; liveCount: number } | undefined;
+  switchUrl: string;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: agent.id });
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        zIndex: isDragging ? 10 : undefined,
+      }}
+      className={cn(isDragging && "opacity-80 bg-background")}
+    >
+      <EntityRow
+        title={agent.name}
+        subtitle={
+          activity
+            ? formatActivity(activity)
+            : `${roleLabels[agent.role] ?? agent.role}${agent.title ? ` - ${agent.title}` : ""}`
+        }
+        subtitleClassName={activity ? cn("animate-pulse", toolColor(activity.toolName)) : undefined}
+        to={switchUrl}
+        leading={
+          <div className="flex items-center gap-2">
+            <span
+              className="cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-muted-foreground transition-colors"
+              {...attributes}
+              {...listeners}
+              onClick={(e) => e.preventDefault()}
+            >
+              <GripVertical className="h-3.5 w-3.5" />
+            </span>
+            <StatusDot status={agent.status} size="md" toolName={activity?.toolName} />
+          </div>
+        }
+        trailing={
+          <div className="flex items-center gap-3">
+            <span className="sm:hidden">
+              {liveRun ? (
+                <LiveRunIndicator
+                  agentRef={agentRouteRef(agent)}
+                  runId={liveRun.runId}
+                  liveCount={liveRun.liveCount}
+                />
+              ) : (
+                <StatusBadge status={agent.status} />
+              )}
+            </span>
+            <div className="hidden sm:flex items-center gap-3">
+              {liveRun && (
+                <LiveRunIndicator
+                  agentRef={agentRouteRef(agent)}
+                  runId={liveRun.runId}
+                  liveCount={liveRun.liveCount}
+                />
+              )}
+              <span className="text-xs text-muted-foreground font-mono w-14 text-right">
+                {adapterLabels[agent.adapterType] ?? agent.adapterType}
+              </span>
+              <span className="text-xs text-muted-foreground w-16 text-right">
+                {agent.lastHeartbeatAt ? relativeTime(agent.lastHeartbeatAt) : "\u2014"}
+              </span>
+              <span className="w-20 flex justify-end">
+                <StatusBadge status={agent.status} />
+              </span>
+            </div>
+          </div>
+        }
+      />
+    </div>
+  );
+}
+
 export function Agents() {
   const { selectedCompanyId } = useCompany();
   const { openNewAgent } = useDialog();
@@ -77,6 +179,12 @@ export function Agents() {
   const switchAgentUrl = (agent: Agent) => agentSwitchUrl(location.pathname, agent);
 
   const agentActivity = useAgentActivity();
+
+  const { data: session } = useQuery({
+    queryKey: queryKeys.auth.session,
+    queryFn: () => authApi.getSession(),
+  });
+  const currentUserId = session?.user?.id ?? session?.session?.userId ?? null;
 
   const { data: agents, isLoading, error } = useQuery({
     queryKey: queryKeys.agents.list(selectedCompanyId!),
@@ -118,6 +226,36 @@ export function Agents() {
     for (const a of agents ?? []) map.set(a.id, a);
     return map;
   }, [agents]);
+
+  const { orderedAgents, persistOrder } = useAgentOrder({
+    agents: agents ?? [],
+    companyId: selectedCompanyId,
+    userId: currentUserId,
+  });
+
+  const filteredOrdered = useMemo(
+    () => filterAgents(orderedAgents, tab, showTerminated),
+    [orderedAgents, tab, showTerminated],
+  );
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 8 },
+    }),
+  );
+
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
+      if (!over || active.id === over.id) return;
+      const ids = orderedAgents.map((a) => a.id);
+      const oldIndex = ids.indexOf(active.id as string);
+      const newIndex = ids.indexOf(over.id as string);
+      if (oldIndex === -1 || newIndex === -1) return;
+      persistOrder(arrayMove(ids, oldIndex, newIndex));
+    },
+    [orderedAgents, persistOrder],
+  );
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Agents" }]);
@@ -226,62 +364,30 @@ export function Agents() {
         />
       )}
 
-      {/* List view */}
-      {effectiveView === "list" && filtered.length > 0 && (
-        <div className="border border-border">
-          {filtered.map((agent) => {
-            const activity = agentActivity.get(agent.id);
-            return (
-              <EntityRow
-                key={agent.id}
-                title={agent.name}
-                subtitle={
-                  activity
-                    ? formatActivity(activity)
-                    : `${roleLabels[agent.role] ?? agent.role}${agent.title ? ` - ${agent.title}` : ""}`
-                }
-                subtitleClassName={activity ? cn("animate-pulse", toolColor(activity.toolName)) : undefined}
-                to={switchAgentUrl(agent)}
-                leading={
-                  <StatusDot status={agent.status} size="md" toolName={activity?.toolName} />
-                }
-                trailing={
-                  <div className="flex items-center gap-3">
-                    <span className="sm:hidden">
-                      {liveRunByAgent.has(agent.id) ? (
-                        <LiveRunIndicator
-                          agentRef={agentRouteRef(agent)}
-                          runId={liveRunByAgent.get(agent.id)!.runId}
-                          liveCount={liveRunByAgent.get(agent.id)!.liveCount}
-                        />
-                      ) : (
-                        <StatusBadge status={agent.status} />
-                      )}
-                    </span>
-                    <div className="hidden sm:flex items-center gap-3">
-                      {liveRunByAgent.has(agent.id) && (
-                        <LiveRunIndicator
-                          agentRef={agentRouteRef(agent)}
-                          runId={liveRunByAgent.get(agent.id)!.runId}
-                          liveCount={liveRunByAgent.get(agent.id)!.liveCount}
-                        />
-                      )}
-                      <span className="text-xs text-muted-foreground font-mono w-14 text-right">
-                        {adapterLabels[agent.adapterType] ?? agent.adapterType}
-                      </span>
-                      <span className="text-xs text-muted-foreground w-16 text-right">
-                        {agent.lastHeartbeatAt ? relativeTime(agent.lastHeartbeatAt) : "—"}
-                      </span>
-                      <span className="w-20 flex justify-end">
-                        <StatusBadge status={agent.status} />
-                      </span>
-                    </div>
-                  </div>
-                }
-              />
-            );
-          })}
-        </div>
+      {/* List view with drag-and-drop reordering */}
+      {effectiveView === "list" && filteredOrdered.length > 0 && (
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+        >
+          <SortableContext
+            items={filteredOrdered.map((a) => a.id)}
+            strategy={verticalListSortingStrategy}
+          >
+            <div className="border border-border">
+              {filteredOrdered.map((agent) => (
+                <SortableAgentRow
+                  key={agent.id}
+                  agent={agent}
+                  activity={agentActivity.get(agent.id)}
+                  liveRun={liveRunByAgent.get(agent.id)}
+                  switchUrl={switchAgentUrl(agent)}
+                />
+              ))}
+            </div>
+          </SortableContext>
+        </DndContext>
       )}
 
       {effectiveView === "list" && agents && agents.length > 0 && filtered.length === 0 && (
@@ -386,7 +492,7 @@ function OrgTreeNode({
                   {adapterLabels[agent.adapterType] ?? agent.adapterType}
                 </span>
                 <span className="text-xs text-muted-foreground w-16 text-right">
-                  {agent.lastHeartbeatAt ? relativeTime(agent.lastHeartbeatAt) : "—"}
+                  {agent.lastHeartbeatAt ? relativeTime(agent.lastHeartbeatAt) : "\u2014"}
                 </span>
               </>
             )}
