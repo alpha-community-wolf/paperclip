@@ -15,6 +15,9 @@ import {
   FileText,
   FileCode,
   FileJson,
+  FileImage,
+  FileVideo,
+  FileAudio,
   ChevronRight,
   ArrowLeft,
   FolderOpen,
@@ -25,6 +28,7 @@ import {
   Upload,
   FilePlus,
   Loader2,
+  Download,
 } from "lucide-react";
 
 interface AgentWorkspaceTabProps {
@@ -59,6 +63,10 @@ function formatModified(iso: string): string {
 
 function fileIcon(entry: WorkspaceFileEntry) {
   if (entry.type === "directory") return Folder;
+  const cat = categorizeFile(entry.name);
+  if (cat === "image") return FileImage;
+  if (cat === "video") return FileVideo;
+  if (cat === "audio") return FileAudio;
   const ext = entry.name.split(".").pop()?.toLowerCase() ?? "";
   if (["md", "mdx", "markdown", "txt", "log"].includes(ext)) return FileText;
   if (["json", "jsonl"].includes(ext)) return FileJson;
@@ -84,6 +92,50 @@ function extensionLanguage(filename: string): string {
 function isMarkdown(filename: string): boolean {
   const ext = filename.split(".").pop()?.toLowerCase() ?? "";
   return ["md", "mdx", "markdown"].includes(ext);
+}
+
+function isImage(filename: string): boolean {
+  const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+  return ["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg", "avif"].includes(ext);
+}
+
+function isVideo(filename: string): boolean {
+  const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+  return ["mp4", "webm", "ogg", "ogv", "mov", "avi", "mkv"].includes(ext);
+}
+
+function isAudio(filename: string): boolean {
+  const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+  return ["mp3", "wav", "flac", "aac", "oga", "m4a", "wma"].includes(ext);
+}
+
+function isPdf(filename: string): boolean {
+  const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+  return ext === "pdf";
+}
+
+type FileCategory = "markdown" | "image" | "video" | "audio" | "pdf" | "text" | "binary";
+
+function categorizeFile(filename: string): FileCategory {
+  if (isMarkdown(filename)) return "markdown";
+  if (isImage(filename)) return "image";
+  if (isVideo(filename)) return "video";
+  if (isAudio(filename)) return "audio";
+  if (isPdf(filename)) return "pdf";
+  // Check if it's a known text extension
+  const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+  const textExts = [
+    "txt", "log", "csv", "json", "jsonl",
+    "ts", "tsx", "js", "jsx", "mjs", "cjs",
+    "py", "rb", "go", "rs", "java", "kt", "swift", "c", "cpp", "h",
+    "sh", "bash", "zsh", "fish",
+    "yaml", "yml", "toml", "ini", "cfg",
+    "html", "htm", "css", "scss", "less",
+    "xml", "env", "gitignore", "dockerignore",
+    "sql", "graphql", "gql", "lock", "editorconfig",
+  ];
+  if (ext === "" || textExts.includes(ext)) return "text";
+  return "binary";
 }
 
 function Breadcrumbs({
@@ -224,6 +276,118 @@ function FileActionButtons({
   );
 }
 
+function MediaFileViewer({
+  agentId,
+  filePath,
+  companyId,
+  category,
+}: {
+  agentId: string;
+  filePath: string;
+  companyId?: string;
+  category: FileCategory;
+}) {
+  const rawUrl = agentsApi.rawFileUrl(agentId, filePath, companyId);
+  const downloadUrl = agentsApi.downloadFileUrl(agentId, filePath, companyId);
+  const filename = filePath.split("/").pop() ?? filePath;
+
+  if (category === "image") {
+    return (
+      <div className="flex flex-col items-center gap-3 p-4">
+        <img
+          src={rawUrl}
+          alt={filename}
+          className="max-w-full max-h-[600px] rounded object-contain"
+        />
+        <a
+          href={downloadUrl}
+          className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <Download className="h-3 w-3" />
+          Download original
+        </a>
+      </div>
+    );
+  }
+
+  if (category === "video") {
+    return (
+      <div className="flex flex-col items-center gap-3 p-4">
+        <video
+          src={rawUrl}
+          controls
+          className="max-w-full max-h-[600px] rounded"
+        >
+          Your browser does not support this video format.
+        </video>
+        <a
+          href={downloadUrl}
+          className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <Download className="h-3 w-3" />
+          Download original
+        </a>
+      </div>
+    );
+  }
+
+  if (category === "audio") {
+    return (
+      <div className="flex flex-col items-center gap-3 p-6">
+        <FileAudio className="h-12 w-12 text-muted-foreground/40" />
+        <audio src={rawUrl} controls className="w-full max-w-md">
+          Your browser does not support this audio format.
+        </audio>
+        <a
+          href={downloadUrl}
+          className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <Download className="h-3 w-3" />
+          Download original
+        </a>
+      </div>
+    );
+  }
+
+  if (category === "pdf") {
+    return (
+      <div className="flex flex-col gap-3">
+        <iframe
+          src={rawUrl}
+          className="w-full h-[700px] rounded border-0"
+          title={filename}
+        />
+        <div className="flex justify-center">
+          <a
+            href={downloadUrl}
+            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <Download className="h-3 w-3" />
+            Download original
+          </a>
+        </div>
+      </div>
+    );
+  }
+
+  // Binary fallback — show download link
+  return (
+    <div className="flex flex-col items-center gap-3 p-8 text-center">
+      <File className="h-12 w-12 text-muted-foreground/40" />
+      <p className="text-sm text-muted-foreground">
+        This file type cannot be previewed in the browser.
+      </p>
+      <a
+        href={downloadUrl}
+        className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:text-primary/80 transition-colors"
+      >
+        <Download className="h-3.5 w-3.5" />
+        Download {filename}
+      </a>
+    </div>
+  );
+}
+
 function FileViewer({
   agentId,
   agentRouteId,
@@ -237,12 +401,15 @@ function FileViewer({
   companyId?: string;
   onBack: () => void;
 }) {
+  const filename = filePath.split("/").pop() ?? filePath;
+  const category = categorizeFile(filename);
+  const isTextCategory = category === "markdown" || category === "text";
+
   const contentQuery = useQuery({
     queryKey: queryKeys.workspace.content(agentId, filePath),
     queryFn: () => agentsApi.getFileContent(agentId, filePath, companyId),
+    enabled: isTextCategory,
   });
-
-  const filename = filePath.split("/").pop() ?? filePath;
 
   return (
     <div className="animate-page-enter">
@@ -252,22 +419,40 @@ function FileViewer({
           Back
         </Button>
         <span className="text-sm font-mono text-muted-foreground truncate flex-1">{filePath}</span>
-        <FileActionButtons
-          filePath={filePath}
-          agentId={agentId}
-          agentRouteId={agentRouteId}
-          companyId={companyId}
-          fileContent={contentQuery.data?.content}
-        />
+        {isTextCategory && (
+          <FileActionButtons
+            filePath={filePath}
+            agentId={agentId}
+            agentRouteId={agentRouteId}
+            companyId={companyId}
+            fileContent={contentQuery.data?.content}
+          />
+        )}
       </div>
 
-      {contentQuery.isLoading && (
+      {/* Media / binary files — rendered via raw URL, no text content fetch needed */}
+      {!isTextCategory && (
+        <div className="rounded-lg border border-border bg-card overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-muted/30">
+            <span className="text-xs font-mono text-muted-foreground">{filename}</span>
+          </div>
+          <MediaFileViewer
+            agentId={agentId}
+            filePath={filePath}
+            companyId={companyId}
+            category={category}
+          />
+        </div>
+      )}
+
+      {/* Text files — fetch content via JSON API */}
+      {isTextCategory && contentQuery.isLoading && (
         <div className="rounded-lg border border-border bg-card p-8 text-center">
           <p className="text-sm text-muted-foreground">Loading file...</p>
         </div>
       )}
 
-      {contentQuery.isError && (
+      {isTextCategory && contentQuery.isError && (
         <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-6 flex items-start gap-3">
           <AlertCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
           <div>
@@ -287,7 +472,7 @@ function FileViewer({
         </div>
       )}
 
-      {contentQuery.data && (
+      {isTextCategory && contentQuery.data && (
         <div className="rounded-lg border border-border bg-card overflow-hidden">
           <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-muted/30">
             <span className="text-xs font-mono text-muted-foreground">{filename}</span>
