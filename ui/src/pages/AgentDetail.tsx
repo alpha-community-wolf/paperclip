@@ -857,6 +857,52 @@ function AgentOverview({
         </ChartCard>
       </div>
 
+      {/* Recent Runs */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-medium">Recent Runs</h3>
+          <Link to={`/agents/${agentRouteId}/runs`} className="text-xs text-muted-foreground hover:text-foreground transition-colors">
+            See All &rarr;
+          </Link>
+        </div>
+        {runs.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No runs yet.</p>
+        ) : (
+          <div className="border border-border rounded-lg">
+            {runs
+              .slice()
+              .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+              .slice(0, 5)
+              .map((run) => {
+                const statusInfo = sharedRunStatusIcons[run.status] ?? { icon: sharedRunStatusIcons.queued?.icon, color: "text-neutral-400" };
+                const StatusIcon = statusInfo.icon;
+                const metrics = sharedRunMetrics(run);
+                const durationSec = run.startedAt && run.finishedAt
+                  ? Math.round((new Date(run.finishedAt).getTime() - new Date(run.startedAt).getTime()) / 1000)
+                  : null;
+                const durationLabel = durationSec != null
+                  ? durationSec < 60 ? `${durationSec}s` : `${Math.round(durationSec / 60)}m`
+                  : null;
+                return (
+                  <EntityRow
+                    key={run.id}
+                    leading={<StatusIcon className={cn("h-3.5 w-3.5 shrink-0", statusInfo.color, run.status === "running" && "animate-spin")} />}
+                    identifier={run.id.slice(0, 8)}
+                    title={run.status}
+                    subtitle={[
+                      durationLabel,
+                      metrics.cost > 0 ? `$${metrics.cost.toFixed(3)}` : null,
+                      metrics.totalTokens > 0 ? `${formatTokens(metrics.totalTokens)} tok` : null,
+                    ].filter(Boolean).join(" · ") || undefined}
+                    trailing={<span className="text-[11px] text-muted-foreground tabular-nums">{relativeTime(run.createdAt)}</span>}
+                    to={`/agents/${agentRouteId}/runs/${run.id}`}
+                  />
+                );
+              })}
+          </div>
+        )}
+      </div>
+
       {/* Recent Issues */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
