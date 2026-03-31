@@ -8,6 +8,11 @@ import {
   saveDismissedInboxItems,
 } from "../lib/inbox";
 
+// Stable empty array to avoid new-reference-per-render when query data is undefined.
+// Using [] inline in destructuring default creates a new array every render,
+// which triggers useEffect deps to fire continuously → infinite update loop.
+const EMPTY_DISMISSALS: never[] = [];
+
 function parseDismissedKey(key: string): { itemType: "failed_run" | "alert"; itemId: string } | null {
   if (key.startsWith("run:")) {
     const itemId = key.slice("run:".length).trim();
@@ -24,7 +29,7 @@ export function useDismissedInboxItems(companyId?: string | null) {
   const queryClient = useQueryClient();
   const [dismissed, setDismissed] = useState<Set<string>>(loadDismissedInboxItems);
 
-  const { data: persistedDismissals = [] } = useQuery({
+  const { data: persistedDismissals = EMPTY_DISMISSALS } = useQuery({
     queryKey: companyId ? queryKeys.inboxDismissals(companyId) : ["inbox-dismissals", "none"],
     queryFn: () => inboxDismissalsApi.list(companyId!),
     enabled: Boolean(companyId),
