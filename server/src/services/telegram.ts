@@ -5,9 +5,9 @@ import https from "node:https";
 import path from "node:path";
 import { Bot } from "grammy";
 import { run as grammyRun, type RunnerHandle } from "@grammyjs/runner";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { agents, agentTelegramConfigs, chatSessions } from "@paperclipai/db";
+import { agents, agentTelegramConfigs, chatMessages, chatSessions } from "@paperclipai/db";
 import type { AgentTelegramConfig, AgentTelegramTestResult } from "@paperclipai/shared";
 import { logger } from "../middleware/logger.js";
 import { resolvePaperclipInstanceRoot } from "../home-paths.js";
@@ -95,6 +95,88 @@ async function maybeExtractTextContent(
     return null;
   }
 }
+
+// ---------------------------------------------------------------------------
+// TelegramContextBuilder — builds rich context to inject into agent wake
+// ---------------------------------------------------------------------------
+
+interface TelegramContext {
+  platform: "Telegram";
+  chatType: "DM" | "group" | "channel";
+  userDisplayName: string;
+  /** Group/channel title; null for DMs. */
+  chatName: string | null;
+  /** Brief formatted summary of recent session messages; null if no history. */
+  historySummary: string | null;
+}
+
+const HISTORY_SUMMARY_MAX_CHARS = 1200;
+const HISTORY_FETCH_LIMIT = 10;
+
+async function buildTelegramContext(
+  db: Db,
+  opts: {
+    senderId: string;
+    senderFirstName: string;
+    senderLastName?: string;
+    senderUsername?: string;
+    chatType: "private" | "group" | "supergroup" | "channel";
+    chatTitle?: string;
+    sessionId: string;
+  },
+): Promise<TelegramContext> {
+  const { senderId, senderFirstName, senderLastName, senderUsername, chatType, chatTitle, sessionId } = opts;
+
+  // Resolve user display name
+  const nameParts = [senderFirstName, senderLastName].filter(Boolean);
+  const displayName = nameParts.length > 0
+    ? `${nameParts.join(" ")}${senderUsername ? ` (@${senderUsername})` : ""}`
+    : (senderUsername ? `@${senderUsername}` : `user:${senderId}`);
+
+  // Map Telegram chat type
+  const resolvedChatType: TelegramContext["chatType"] =
+    chatType === "private" ? "DM"
+    : chatType === "channel" ? "channel"
+    : "group";
+
+  // Chat name (null for DMs)
+  const chatName = resolvedChatType !== "DM" ? (chatTitle ?? null) : null;
+
+  // Fetch recent session history for summary
+  let historySummary: string | null = null;
+  try {
+    const recentMessages = await db
+      .select({ role: chatMessages.role, content: chatMessages.content, createdAt: chatMessages.createdAt })
+      .from(chatMessages)
+      .where(eq(chatMessages.chatSessionId, sessionId))
+      .orderBy(asc(chatMessages.createdAt))
+      .limit(HISTORY_FETCH_LIMIT);
+
+    if (recentMessages.length > 0) {
+      const lines: string[] = [];
+      let totalChars = 0;
+      for (const msg of recentMessages) {
+        const prefix = msg.role === "user" ? "User" : "Agent";
+        // Truncate very long individual messages
+        const body = msg.content.length > 300 ? `${msg.content.slice(0, 300)}…` : msg.content;
+        const line = `${prefix}: ${body}`;
+        if (totalChars + line.length > HISTORY_SUMMARY_MAX_CHARS) {
+          lines.push("_(earlier messages omitted)_");
+          break;
+        }
+        lines.push(line);
+        totalChars += line.length;
+      }
+      if (lines.length > 0) historySummary = lines.join("\n");
+    }
+  } catch (err) {
+    logger.warn({ err, sessionId }, "telegram: failed to load session history for context");
+  }
+
+  return { platform: "Telegram", chatType: resolvedChatType, userDisplayName: displayName, chatName, historySummary };
+}
+
+// ---------------------------------------------------------------------------
 
 const TELEGRAM_MESSAGE_LIMIT = 4096;
 const STREAM_POLL_INTERVAL_MS = 1500;
@@ -558,11 +640,22 @@ export function telegramService(db: Db) {
           telegramChatId,
         });
 
+        const telegramContext = await buildTelegramContext(db, {
+          senderId,
+          senderFirstName: ctx.from.first_name,
+          senderLastName: ctx.from.last_name,
+          senderUsername: ctx.from.username,
+          chatType: ctx.chat.type as "private" | "group" | "supergroup" | "channel",
+          chatTitle: "title" in ctx.chat ? ctx.chat.title : undefined,
+          sessionId: session.id,
+        });
+
         const result = await chat.createMessage({
           agentId,
           sessionId: session.id,
           content: messageText,
           actor: { actorType: "system", actorId: `telegram:${senderId}` },
+          extraContext: { telegramContext },
         });
 
         if (!result.runId) {
@@ -591,6 +684,11 @@ export function telegramService(db: Db) {
       fileSize: number | undefined;
       captionText: string;
       reply: (text: string) => Promise<unknown>;
+      senderFirstName?: string;
+      senderLastName?: string;
+      senderUsername?: string;
+      chatType?: "private" | "group" | "supergroup" | "channel";
+      chatTitle?: string;
     }): Promise<void> {
       const { chatId, senderId, fileId, fileName, mimeType, fileSize, captionText, reply } = opts;
       const telegramChatId = String(chatId);
@@ -659,11 +757,22 @@ export function telegramService(db: Db) {
           telegramChatId,
         });
 
+        const telegramContext = await buildTelegramContext(db, {
+          senderId,
+          senderFirstName: opts.senderFirstName ?? senderId,
+          senderLastName: opts.senderLastName,
+          senderUsername: opts.senderUsername,
+          chatType: opts.chatType ?? "private",
+          chatTitle: opts.chatTitle,
+          sessionId: session.id,
+        });
+
         const result = await chat.createMessage({
           agentId,
           sessionId: session.id,
           content: messageContent,
           actor: { actorType: "system", actorId: `telegram:${senderId}` },
+          extraContext: { telegramContext },
         });
 
         if (!result.runId) {
@@ -697,6 +806,11 @@ export function telegramService(db: Db) {
         fileSize: largest.file_size,
         captionText: ctx.message.caption ?? "",
         reply: (text) => ctx.reply(text),
+        senderFirstName: ctx.from.first_name,
+        senderLastName: ctx.from.last_name,
+        senderUsername: ctx.from.username,
+        chatType: ctx.chat.type as "private" | "group" | "supergroup" | "channel",
+        chatTitle: "title" in ctx.chat ? ctx.chat.title : undefined,
       });
     });
 
@@ -711,6 +825,11 @@ export function telegramService(db: Db) {
         fileSize: doc.file_size,
         captionText: ctx.message.caption ?? "",
         reply: (text) => ctx.reply(text),
+        senderFirstName: ctx.from.first_name,
+        senderLastName: ctx.from.last_name,
+        senderUsername: ctx.from.username,
+        chatType: ctx.chat.type as "private" | "group" | "supergroup" | "channel",
+        chatTitle: "title" in ctx.chat ? ctx.chat.title : undefined,
       });
     });
 
