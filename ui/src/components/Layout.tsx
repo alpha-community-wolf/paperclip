@@ -7,6 +7,7 @@ import { Sidebar } from "./Sidebar";
 import { SidebarNavItem } from "./SidebarNavItem";
 import { BreadcrumbBar } from "./BreadcrumbBar";
 import { PropertiesPanel } from "./PropertiesPanel";
+import { AgentsSidebar } from "./AgentsSidebar";
 import { CommandPalette } from "./CommandPalette";
 import { NewIssueDialog } from "./NewIssueDialog";
 import { NewProjectDialog } from "./NewProjectDialog";
@@ -443,6 +444,7 @@ export function Layout() {
           <PropertiesPanel />
         </div>
       </div>
+      {!isMobile && <AgentsSidebar />}
       {isMobile && <MobileBottomNav visible={mobileNavVisible} />}
       <CommandPalette />
       <NewIssueDialog />

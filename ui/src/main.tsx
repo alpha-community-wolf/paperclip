@@ -9,6 +9,7 @@ import { LiveUpdatesProvider } from "./context/LiveUpdatesProvider";
 import { BreadcrumbProvider } from "./context/BreadcrumbContext";
 import { PanelProvider } from "./context/PanelContext";
 import { SidebarProvider } from "./context/SidebarContext";
+import { AgentsSidebarProvider } from "./context/AgentsSidebarContext";
 import { DialogProvider } from "./context/DialogContext";
 import { ToastProvider } from "./context/ToastContext";
 import { ThemeProvider } from "./context/ThemeContext";
@@ -42,6 +43,7 @@ createRoot(document.getElementById("root")!).render(
                 <TooltipProvider>
                   <BreadcrumbProvider>
                     <SidebarProvider>
+                      <AgentsSidebarProvider>
                       <PanelProvider>
                         <DialogProvider>
                           <ErrorBoundary>
@@ -49,6 +51,7 @@ createRoot(document.getElementById("root")!).render(
                           </ErrorBoundary>
                         </DialogProvider>
                       </PanelProvider>
+                      </AgentsSidebarProvider>
                     </SidebarProvider>
                   </BreadcrumbProvider>
                 </TooltipProvider>
