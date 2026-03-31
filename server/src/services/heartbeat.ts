@@ -292,6 +292,7 @@ export function shouldResetTaskSessionForWake(
   const wakeReason = readNonEmptyString(contextSnapshot?.wakeReason);
   if (wakeReason === "issue_assigned") return true;
   if (wakeReason === "chat_message") return false;
+  if (wakeReason === "resume_process_lost_run") return false;
 
   const wakeSource = readNonEmptyString(contextSnapshot?.wakeSource);
   if (wakeSource === "timer") return true;
@@ -306,6 +307,7 @@ function describeSessionResetReason(
   const wakeReason = readNonEmptyString(contextSnapshot?.wakeReason);
   if (wakeReason === "issue_assigned") return "wake reason is issue_assigned";
   if (wakeReason === "chat_message") return null;
+  if (wakeReason === "resume_process_lost_run") return null;
 
   const wakeSource = readNonEmptyString(contextSnapshot?.wakeSource);
   if (wakeSource === "timer") return "wake source is timer";
@@ -1832,6 +1834,7 @@ export function heartbeatService(db: Db) {
     let handle: RunLogHandle | null = null;
     let stdoutExcerpt = "";
     let stderrExcerpt = "";
+    let earlySessionId: string | null = null;
     try {
       const startedAt = run.startedAt ?? new Date();
       const runningWithSession = await db
@@ -1892,6 +1895,29 @@ export function heartbeatService(db: Db) {
       const onLog = async (stream: "stdout" | "stderr", chunk: string) => {
         if (stream === "stdout") stdoutExcerpt = appendExcerpt(stdoutExcerpt, chunk);
         if (stream === "stderr") stderrExcerpt = appendExcerpt(stderrExcerpt, chunk);
+
+        // Early session ID capture: detect session_id from adapter streaming
+        // output and persist immediately so it survives process_lost events.
+        if (stream === "stdout" && !earlySessionId && taskKey) {
+          const jsonMatch = chunk.match(/"session_id"\s*:\s*"([^"]+)"/);
+          const plainMatch = !jsonMatch ? chunk.match(/^session_id:\s*(\S+)/m) : null;
+          const detected = jsonMatch?.[1] ?? plainMatch?.[1];
+          if (detected) {
+            earlySessionId = detected;
+            upsertTaskSession({
+              companyId: agent.companyId,
+              agentId: agent.id,
+              adapterType: agent.adapterType,
+              taskKey,
+              sessionParamsJson: { sessionId: detected },
+              sessionDisplayId: detected.length > 16 ? detected.slice(0, 16) : detected,
+              lastRunId: run.id,
+              lastError: null,
+            }).catch((err) =>
+              logger.warn({ err, runId: run.id }, "failed to persist early session ID"),
+            );
+          }
+        }
 
         if (handle) {
           await runLogStore.append(handle, {
@@ -2513,7 +2539,37 @@ export function heartbeatService(db: Db) {
 
     if (issueId && !bypassIssueExecutionLock) {
       const agentNameKey = normalizeAgentNameKey(agent.name);
-      const sessionBefore = await resolveSessionBeforeForWakeup(agent, taskKey);
+      let sessionBefore = await resolveSessionBeforeForWakeup(agent, taskKey);
+
+      // When resuming a process_lost run, if no session was found (e.g. the
+      // early capture didn't fire before the process was killed), fall back to
+      // the failed run's sessionIdBefore — the last session the adapter used.
+      if (!sessionBefore && reason === "resume_process_lost_run" && taskKey) {
+        const resumeFromRunId = readNonEmptyString(payload?.["resumeFromRunId"]);
+        if (resumeFromRunId) {
+          const failedRun = await db
+            .select({ sessionIdBefore: heartbeatRuns.sessionIdBefore })
+            .from(heartbeatRuns)
+            .where(eq(heartbeatRuns.id, resumeFromRunId))
+            .then((rows) => rows[0] ?? null);
+          if (failedRun?.sessionIdBefore) {
+            sessionBefore = failedRun.sessionIdBefore;
+            // Seed the task session so executeRun picks it up
+            await upsertTaskSession({
+              companyId: agent.companyId,
+              agentId: agent.id,
+              adapterType: agent.adapterType,
+              taskKey,
+              sessionParamsJson: { sessionId: failedRun.sessionIdBefore },
+              sessionDisplayId: failedRun.sessionIdBefore.length > 16
+                ? failedRun.sessionIdBefore.slice(0, 16)
+                : failedRun.sessionIdBefore,
+              lastRunId: resumeFromRunId,
+              lastError: "process_lost",
+            });
+          }
+        }
+      }
 
       const outcome = await db.transaction(async (tx) => {
         await tx.execute(
