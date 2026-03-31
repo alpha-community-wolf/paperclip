@@ -303,8 +303,13 @@ export function Layout() {
     };
   }, [zoom]);
 
+  const contentWidthValue = useMemo<ContentWidthContextValue>(
+    () => ({ contentWidth: effectiveContentWidth, toggleContentWidth, forceFullWidth, releaseFullWidth, zoom, cycleZoom }),
+    [effectiveContentWidth, toggleContentWidth, forceFullWidth, releaseFullWidth, zoom, cycleZoom],
+  );
+
   return (
-    <ContentWidthContext.Provider value={{ contentWidth: effectiveContentWidth, toggleContentWidth, forceFullWidth, releaseFullWidth, zoom, cycleZoom }}>
+    <ContentWidthContext.Provider value={contentWidthValue}>
     <div
       className={cn(
         "bg-background text-foreground pt-[env(safe-area-inset-top)]",

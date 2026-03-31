@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 
 const STORAGE_KEY = "paperclip:panel-visible";
 
@@ -55,10 +55,13 @@ export function PanelProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const value = useMemo<PanelContextValue>(
+    () => ({ panelContent, panelVisible, openPanel, closePanel, setPanelVisible, togglePanelVisible }),
+    [panelContent, panelVisible, openPanel, closePanel, setPanelVisible, togglePanelVisible],
+  );
+
   return (
-    <PanelContext.Provider
-      value={{ panelContent, panelVisible, openPanel, closePanel, setPanelVisible, togglePanelVisible }}
-    >
+    <PanelContext.Provider value={value}>
       {children}
     </PanelContext.Provider>
   );

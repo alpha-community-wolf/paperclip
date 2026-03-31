@@ -718,6 +718,7 @@ export function IssuesList({
             )}
           </span>
         )}
+        <span className="hidden sm:inline-flex" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
         <Popover
           open={assigneePickerIssueId === issue.id}
           onOpenChange={(open) => {
@@ -728,10 +729,6 @@ export function IssuesList({
           <PopoverTrigger asChild>
             <button
               className="flex w-[180px] shrink-0 items-center rounded-md px-2 py-1 hover:bg-accent/50 transition-colors"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-              }}
             >
               {issue.assigneeAgentId && agentName(issue.assigneeAgentId) ? (
                 <Identity name={agentName(issue.assigneeAgentId)!} size="sm" />
@@ -796,6 +793,8 @@ export function IssuesList({
             </div>
           </PopoverContent>
         </Popover>
+        </span>
+        <span className="hidden sm:inline-flex" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
         <Popover
           open={projectPickerIssueId === issue.id}
           onOpenChange={(open) => {
@@ -806,10 +805,6 @@ export function IssuesList({
           <PopoverTrigger asChild>
             <button
               className="flex w-[150px] shrink-0 items-center rounded-md px-2 py-1 hover:bg-accent/50 transition-colors"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-              }}
             >
               {issue.projectId && issue.project ? (
                 <span className="inline-flex items-center gap-1.5 text-xs min-w-0">
@@ -886,6 +881,7 @@ export function IssuesList({
             </div>
           </PopoverContent>
         </Popover>
+        </span>
         <span className="text-xs text-muted-foreground tabular-nums whitespace-nowrap">
           {formatDateTime(issue.updatedAt)}
         </span>
