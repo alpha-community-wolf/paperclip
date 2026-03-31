@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useParams, useNavigate, useLocation, Navigate } from "@/lib/router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PROJECT_COLORS, isUuidLike } from "@paperclipai/shared";
+import type { HeartbeatRun, Agent } from "@paperclipai/shared";
 import { projectsApi } from "../api/projects";
 import { issuesApi } from "../api/issues";
 import { agentsApi } from "../api/agents";
@@ -15,15 +16,19 @@ import { ProjectProperties, type ProjectConfigFieldKey, type ProjectFieldSaveSta
 import { InlineEditor } from "../components/InlineEditor";
 import { StatusBadge } from "../components/StatusBadge";
 import { IssuesList } from "../components/IssuesList";
+import { RunListItem } from "../components/RunListItem";
+import { RunDetailPanel } from "../components/RunDetailPanel";
+import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { PageTabBar } from "../components/PageTabBar";
 import { projectRouteRef, cn } from "../lib/utils";
 import { useProjectLiveRuns } from "../hooks/useProjectLiveRuns";
 import { Tabs } from "@/components/ui/tabs";
+import { Play } from "lucide-react";
 
 /* ── Top-level tab types ── */
 
-type ProjectTab = "overview" | "list" | "configuration";
+type ProjectTab = "overview" | "list" | "runs" | "configuration";
 
 function resolveProjectTab(pathname: string, projectId: string): ProjectTab | null {
   const segments = pathname.split("/").filter(Boolean);
@@ -33,6 +38,7 @@ function resolveProjectTab(pathname: string, projectId: string): ProjectTab | nu
   if (tab === "overview") return "overview";
   if (tab === "configuration") return "configuration";
   if (tab === "issues") return "list";
+  if (tab === "runs") return "runs";
   return null;
 }
 
@@ -213,13 +219,93 @@ function ProjectIssuesList({ projectId, companyId }: { projectId: string; compan
   );
 }
 
+/* ── Runs tab content ── */
+
+function ProjectRunsList({ projectId, projectRef, companyId, selectedRunId }: { projectId: string; projectRef: string; companyId: string; selectedRunId?: string }) {
+  const { data: runsResult, isLoading } = useQuery({
+    queryKey: [...queryKeys.heartbeats(companyId), "project", projectId],
+    queryFn: () => heartbeatsApi.list(companyId, undefined, 200, projectId),
+    enabled: !!companyId && !!projectId,
+    refetchInterval: 10_000,
+  });
+
+  const { data: agents } = useQuery({
+    queryKey: queryKeys.agents.list(companyId),
+    queryFn: () => agentsApi.list(companyId),
+    enabled: !!companyId,
+  });
+
+  const agentMap = useMemo(() => {
+    const map = new Map<string, Agent>();
+    for (const a of agents ?? []) map.set(a.id, a);
+    return map;
+  }, [agents]);
+
+  const runs = useMemo(() => {
+    const list = (runsResult?.runs ?? []).filter((r): r is HeartbeatRun => r != null);
+    return list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }, [runsResult]);
+
+  const effectiveRunId = selectedRunId ?? runs[0]?.id ?? null;
+  const selectedRun = runs.find((r) => r.id === effectiveRunId) ?? null;
+  const basePath = `/projects/${projectRef}/runs`;
+
+  if (isLoading) return <PageSkeleton variant="list" />;
+
+  if (runs.length === 0) {
+    return (
+      <EmptyState
+        icon={Play}
+        message="No runs yet for this project."
+        description="Runs will appear here when agents work on issues in this project."
+      />
+    );
+  }
+
+  return (
+    <div className="flex gap-0">
+      <div className={cn(
+        "shrink-0 border border-border rounded-lg",
+        selectedRun ? "w-72" : "w-full",
+      )}>
+        <div className="sticky top-4 overflow-y-auto" style={{ maxHeight: "calc(100vh - 2rem)" }}>
+          {runs.map((run) => {
+            const agent = agentMap.get(run.agentId);
+            return (
+              <RunListItem
+                key={run.id}
+                run={run}
+                isSelected={run.id === effectiveRunId}
+                linkTo={`${basePath}/${run.id}`}
+                deselectTo={basePath}
+                agentName={agent?.name}
+              />
+            );
+          })}
+        </div>
+      </div>
+      {selectedRun && (
+        <div className="flex-1 min-w-0 pl-4">
+          <div className="sticky top-4">
+            <RunDetailPanel
+              run={selectedRun}
+              agent={agentMap.get(selectedRun.agentId)}
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── Main project page ── */
 
 export function ProjectDetail() {
-  const { companyPrefix, projectId, filter } = useParams<{
+  const { companyPrefix, projectId, filter, runId } = useParams<{
     companyPrefix?: string;
     projectId: string;
     filter?: string;
+    runId?: string;
   }>();
   const { companies, selectedCompanyId, setSelectedCompanyId } = useCompany();
   const { closePanel } = usePanel();
@@ -341,8 +427,13 @@ export function ProjectDetail() {
       navigate(`/projects/${canonicalProjectRef}/issues`, { replace: true });
       return;
     }
+    if (activeTab === "runs") {
+      const suffix = runId ? `/runs/${runId}` : "/runs";
+      navigate(`/projects/${canonicalProjectRef}${suffix}`, { replace: true });
+      return;
+    }
     navigate(`/projects/${canonicalProjectRef}`, { replace: true });
-  }, [project, routeProjectRef, canonicalProjectRef, activeTab, filter, navigate]);
+  }, [project, routeProjectRef, canonicalProjectRef, activeTab, filter, runId, navigate]);
 
   useEffect(() => {
     closePanel();
@@ -407,6 +498,8 @@ export function ProjectDetail() {
   const handleTabChange = (tab: ProjectTab) => {
     if (tab === "overview") {
       navigate(`/projects/${canonicalProjectRef}/overview`);
+    } else if (tab === "runs") {
+      navigate(`/projects/${canonicalProjectRef}/runs`);
     } else if (tab === "configuration") {
       navigate(`/projects/${canonicalProjectRef}/configuration`);
     } else {
@@ -465,6 +558,7 @@ export function ProjectDetail() {
           items={[
             { value: "overview", label: "Overview" },
             { value: "list", label: "List" },
+            { value: "runs", label: "Runs" },
             { value: "configuration", label: "Configuration" },
           ]}
           align="start"
@@ -486,6 +580,10 @@ export function ProjectDetail() {
 
       {activeTab === "list" && project?.id && resolvedCompanyId && (
         <ProjectIssuesList projectId={project.id} companyId={resolvedCompanyId} />
+      )}
+
+      {activeTab === "runs" && project?.id && resolvedCompanyId && (
+        <ProjectRunsList projectId={project.id} projectRef={canonicalProjectRef} companyId={resolvedCompanyId} selectedRunId={runId} />
       )}
 
       {activeTab === "configuration" && (
