@@ -53,6 +53,9 @@ import {
   Loader2,
   FolderKanban,
   Keyboard,
+  CheckSquare,
+  Square,
+  MinusSquare,
 } from "lucide-react";
 import { KanbanBoard } from "./KanbanBoard";
 import { useIssueTriageKeyboard } from "../hooks/useIssueTriageKeyboard";
@@ -253,6 +256,26 @@ export function IssuesList({
     },
   });
 
+  // Multi-select state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkAssigneeOpen, setBulkAssigneeOpen] = useState(false);
+  const [bulkProjectOpen, setBulkProjectOpen] = useState(false);
+  const [bulkAssigneeSearch, setBulkAssigneeSearch] = useState("");
+  const [bulkProjectSearch, setBulkProjectSearch] = useState("");
+  const [bulkUpdating, setBulkUpdating] = useState(false);
+
+  const toggleSelect = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
+  const hasSelection = selectedIds.size > 0;
+
   const [assigneePickerIssueId, setAssigneePickerIssueId] = useState<string | null>(null);
   const [projectPickerIssueId, setProjectPickerIssueId] = useState<string | null>(null);
   const [recurringPickerIssueId, setRecurringPickerIssueId] = useState<string | null>(null);
@@ -352,6 +375,31 @@ export function IssuesList({
     const filteredByControls = applyFilters(sourceIssues, viewState, recurringIssueIds);
     return sortIssues(filteredByControls, viewState);
   }, [issues, searchedIssues, viewState, normalizedIssueSearch, recurringIssueIds]);
+
+  // Clear multi-selection when filtered list changes
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [filtered.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const selectAll = useCallback(() => {
+    setSelectedIds(new Set(filtered.map((i) => i.id)));
+  }, [filtered]);
+
+  const bulkUpdate = useCallback(async (data: Record<string, unknown>) => {
+    setBulkUpdating(true);
+    try {
+      const promises = Array.from(selectedIds).map((id) =>
+        issuesApi.update(id, data),
+      );
+      await Promise.all(promises);
+      if (selectedCompanyId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(selectedCompanyId) });
+      }
+      clearSelection();
+    } finally {
+      setBulkUpdating(false);
+    }
+  }, [selectedIds, selectedCompanyId, queryClient, clearSelection]);
 
   const { data: labels } = useQuery({
     queryKey: queryKeys.issues.labels(selectedCompanyId!),
@@ -493,7 +541,8 @@ export function IssuesList({
 
   const renderIssueRow = useCallback((issue: Issue) => {
     const visibleIdx = flatVisibleIssues.indexOf(issue);
-    const isSelected = visibleIdx >= 0 && visibleIdx === selectedIndex;
+    const isKbSelected = visibleIdx >= 0 && visibleIdx === selectedIndex;
+    const isChecked = selectedIds.has(issue.id);
     return (
     <Link
       key={issue.id}
@@ -504,10 +553,24 @@ export function IssuesList({
       to={`/issues/${issue.identifier ?? issue.id}`}
       state={issueLinkState}
       className={cn(
-        "flex items-start gap-2 py-2.5 pl-3 pr-3 text-sm last:border-b-0 cursor-pointer hover:bg-accent/50 transition-colors no-underline text-inherit sm:items-center sm:py-2",
-        isSelected && "ring-2 ring-inset ring-primary bg-accent/60",
+        "group/row flex items-start gap-2 py-2.5 pl-3 pr-3 text-sm last:border-b-0 cursor-pointer hover:bg-accent/50 transition-colors no-underline text-inherit sm:items-center sm:py-2",
+        isKbSelected && "ring-2 ring-inset ring-primary bg-accent/60",
+        isChecked && "bg-primary/5",
       )}
     >
+      <span
+        className={cn(
+          "shrink-0 flex items-center justify-center w-5 h-5 mt-px",
+          hasSelection ? "visible" : "invisible group-hover/row:visible",
+        )}
+        onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleSelect(issue.id); }}
+      >
+        <Checkbox
+          checked={isChecked}
+          onCheckedChange={() => toggleSelect(issue.id)}
+          className="h-4 w-4"
+        />
+      </span>
       <span className="shrink-0 pt-px sm:hidden" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
         <StatusIcon
           status={issue.status}
@@ -887,7 +950,7 @@ export function IssuesList({
         </span>
       </span>
     </Link>
-  ); }, [issueLinkState, onUpdateIssue, recurringIssueIds, liveIssueIds, recurringByIssueId, recurringPickerIssueId, updateSchedule, scheduleDraftValue, recurringDrafts, assigneePickerIssueId, assigneeSearch, agentName, agents, projectPickerIssueId, projectSearch, allProjects, flatVisibleIssues, selectedIndex]); // eslint-disable-line react-hooks/exhaustive-deps
+  ); }, [issueLinkState, onUpdateIssue, recurringIssueIds, liveIssueIds, recurringByIssueId, recurringPickerIssueId, updateSchedule, scheduleDraftValue, recurringDrafts, assigneePickerIssueId, assigneeSearch, agentName, agents, projectPickerIssueId, projectSearch, allProjects, flatVisibleIssues, selectedIndex, selectedIds, hasSelection, toggleSelect]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="space-y-4">
@@ -1350,6 +1413,184 @@ export function IssuesList({
             ))
           )}
         </>
+      )}
+
+      {/* Floating bulk action bar */}
+      {hasSelection && viewState.viewMode === "list" && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-4 fade-in duration-200">
+          <div className="flex items-center gap-2 rounded-xl border border-border bg-background/95 backdrop-blur-sm shadow-lg px-4 py-2.5">
+            {/* Selection info */}
+            <div className="flex items-center gap-2 pr-3 border-r border-border">
+              <button
+                className="flex items-center gap-1.5 text-sm font-medium text-foreground hover:text-primary transition-colors"
+                onClick={() => {
+                  if (selectedIds.size === filtered.length) clearSelection();
+                  else selectAll();
+                }}
+                title={selectedIds.size === filtered.length ? "Deselect all" : "Select all"}
+              >
+                {selectedIds.size === filtered.length ? (
+                  <CheckSquare className="h-4 w-4" />
+                ) : (
+                  <MinusSquare className="h-4 w-4" />
+                )}
+                {selectedIds.size} selected
+              </button>
+            </div>
+
+            {/* Status picker */}
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="ghost" size="sm" className="text-xs gap-1.5" disabled={bulkUpdating}>
+                  <CircleDot className="h-3.5 w-3.5" />
+                  Status
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-44 p-1" align="center" side="top">
+                <div className="space-y-0.5">
+                  {statusOrder.map((s) => (
+                    <button
+                      key={s}
+                      className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 text-left"
+                      onClick={() => bulkUpdate({ status: s })}
+                    >
+                      <StatusIcon status={s} />
+                      <span>{statusLabel(s)}</span>
+                    </button>
+                  ))}
+                </div>
+              </PopoverContent>
+            </Popover>
+
+            {/* Assignee picker */}
+            <Popover
+              open={bulkAssigneeOpen}
+              onOpenChange={(open) => {
+                setBulkAssigneeOpen(open);
+                if (!open) setBulkAssigneeSearch("");
+              }}
+            >
+              <PopoverTrigger asChild>
+                <Button variant="ghost" size="sm" className="text-xs gap-1.5" disabled={bulkUpdating}>
+                  <User className="h-3.5 w-3.5" />
+                  Assignee
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-56 p-1" align="center" side="top">
+                <input
+                  className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-muted-foreground/50"
+                  placeholder="Search agents..."
+                  value={bulkAssigneeSearch}
+                  onChange={(e) => setBulkAssigneeSearch(e.target.value)}
+                  autoFocus
+                />
+                <div className="max-h-48 overflow-y-auto overscroll-contain">
+                  <button
+                    className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50"
+                    onClick={() => {
+                      bulkUpdate({ assigneeAgentId: null, assigneeUserId: null });
+                      setBulkAssigneeOpen(false);
+                    }}
+                  >
+                    No assignee
+                  </button>
+                  {(agents ?? [])
+                    .filter((agent) => {
+                      if (!bulkAssigneeSearch.trim()) return true;
+                      return agent.name.toLowerCase().includes(bulkAssigneeSearch.toLowerCase());
+                    })
+                    .map((agent) => (
+                      <button
+                        key={agent.id}
+                        className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 text-left"
+                        onClick={() => {
+                          bulkUpdate({ assigneeAgentId: agent.id, assigneeUserId: null });
+                          setBulkAssigneeOpen(false);
+                        }}
+                      >
+                        <Identity name={agent.name} size="sm" className="min-w-0" />
+                      </button>
+                    ))}
+                </div>
+              </PopoverContent>
+            </Popover>
+
+            {/* Project picker */}
+            <Popover
+              open={bulkProjectOpen}
+              onOpenChange={(open) => {
+                setBulkProjectOpen(open);
+                if (!open) setBulkProjectSearch("");
+              }}
+            >
+              <PopoverTrigger asChild>
+                <Button variant="ghost" size="sm" className="text-xs gap-1.5" disabled={bulkUpdating}>
+                  <FolderKanban className="h-3.5 w-3.5" />
+                  Project
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-56 p-1" align="center" side="top">
+                <input
+                  className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-muted-foreground/50"
+                  placeholder="Search projects..."
+                  value={bulkProjectSearch}
+                  onChange={(e) => setBulkProjectSearch(e.target.value)}
+                  autoFocus
+                />
+                <div className="max-h-48 overflow-y-auto overscroll-contain">
+                  <button
+                    className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50"
+                    onClick={() => {
+                      bulkUpdate({ projectId: null });
+                      setBulkProjectOpen(false);
+                    }}
+                  >
+                    No project
+                  </button>
+                  {(allProjects ?? [])
+                    .filter((proj) => {
+                      if (!bulkProjectSearch.trim()) return true;
+                      return proj.name.toLowerCase().includes(bulkProjectSearch.toLowerCase());
+                    })
+                    .map((proj) => (
+                      <button
+                        key={proj.id}
+                        className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 text-left"
+                        onClick={() => {
+                          bulkUpdate({ projectId: proj.id });
+                          setBulkProjectOpen(false);
+                        }}
+                      >
+                        <span
+                          className="shrink-0 h-3 w-3 rounded-sm"
+                          style={{ backgroundColor: proj.color ?? "#6366f1" }}
+                        />
+                        <span className="truncate">{proj.name}</span>
+                      </button>
+                    ))}
+                </div>
+              </PopoverContent>
+            </Popover>
+
+            {/* Loading indicator */}
+            {bulkUpdating && (
+              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+            )}
+
+            {/* Cancel */}
+            <div className="pl-1 border-l border-border">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-xs text-muted-foreground"
+                onClick={clearSelection}
+                disabled={bulkUpdating}
+              >
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
