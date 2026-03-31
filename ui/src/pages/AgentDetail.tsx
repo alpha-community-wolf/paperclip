@@ -1425,7 +1425,7 @@ function RunsTab({
   ) : null;
 
   const upcomingSection = upcomingSchedules.length > 0 ? (
-    <Collapsible defaultOpen>
+    <Collapsible>
       <div className="flex items-center py-1.5 pl-1 pr-3">
         <CollapsibleTrigger className="flex items-center gap-1.5">
           <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform [[data-state=open]>&]:rotate-90" />
