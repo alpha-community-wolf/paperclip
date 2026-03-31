@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
-import { useParams, useNavigate, Link, Navigate, useBeforeUnload } from "@/lib/router";
+import { useParams, useNavigate, useLocation, Link, Navigate, useBeforeUnload } from "@/lib/router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { agentsApi, type AgentKey, type ClaudeLoginResult } from "../api/agents";
 import { accessApi, type MemberWithGrants, type CompanyMembership } from "../api/access";
@@ -15,6 +15,7 @@ import { useCompany } from "../context/CompanyContext";
 import { useDialog } from "../context/DialogContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
+import { readNavigationPath } from "../lib/issueDetailBreadcrumb";
 import { AgentConfigForm } from "../components/AgentConfigForm";
 import { PageTabBar } from "../components/PageTabBar";
 import { adapterLabels, roleLabels } from "../components/agent-config-primitives";
@@ -216,6 +217,8 @@ export function AgentDetail() {
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const location = useLocation();
+  const navPath = useMemo(() => readNavigationPath(location.state), [location.state]);
   const [actionError, setActionError] = useState<string | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
   const activeView = urlRunId ? "runs" as AgentDetailView : parseAgentDetailView(urlTab ?? null);
@@ -412,6 +415,16 @@ export function AgentDetail() {
   });
 
   useEffect(() => {
+    // When navigating cross-entity (e.g. Issue → Run), use the navigation path
+    // to show breadcrumbs like "Issues > COM-123 > Run abc123"
+    if (urlRunId && navPath) {
+      setBreadcrumbs([
+        ...navPath,
+        { label: `Run ${urlRunId.slice(0, 8)}` },
+      ]);
+      return;
+    }
+
     const crumbs: { label: string; href?: string }[] = [
       { label: "Agents", href: "/agents" },
     ];
@@ -434,7 +447,7 @@ export function AgentDetail() {
       }
     }
     setBreadcrumbs(crumbs);
-  }, [setBreadcrumbs, agent, routeAgentRef, canonicalAgentRef, activeView, urlRunId]);
+  }, [setBreadcrumbs, agent, routeAgentRef, canonicalAgentRef, activeView, urlRunId, navPath]);
 
   useEffect(() => {
     closePanel();
