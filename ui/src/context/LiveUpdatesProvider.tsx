@@ -335,6 +335,7 @@ function invalidateHeartbeatQueries(
   payload: Record<string, unknown>,
 ) {
   queryClient.invalidateQueries({ queryKey: queryKeys.liveRuns(companyId) });
+  queryClient.invalidateQueries({ queryKey: queryKeys.failedRuns(companyId) });
   queryClient.invalidateQueries({ queryKey: queryKeys.heartbeats(companyId) });
   queryClient.invalidateQueries({ queryKey: queryKeys.agents.list(companyId) });
   queryClient.invalidateQueries({ queryKey: queryKeys.dashboard(companyId) });
