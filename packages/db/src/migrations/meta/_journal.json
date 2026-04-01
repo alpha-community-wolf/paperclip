@@ -309,6 +309,13 @@
       "when": 1743440000000,
       "tag": "0043_budgeting_phase3",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1743494400000,
+      "tag": "0044_activity_log_run_id_on_delete_set_null",
+      "breakpoints": true
     }
   ]
 }
