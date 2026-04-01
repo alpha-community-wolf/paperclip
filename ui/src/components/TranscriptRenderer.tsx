@@ -8,6 +8,7 @@ import { CollapsibleContent } from "./CollapsibleContent";
 import { SpecializedToolResult } from "./ToolResultRenderers";
 import { ToolCallAccordion } from "./ToolCallAccordion";
 import type { ToolCallPair } from "./ToolCallAccordion";
+import { CostBadge } from "./CostSummaryBar";
 
 const GRID = "grid grid-cols-[auto_auto_1fr] gap-x-2 sm:gap-x-3 items-baseline";
 const TS_CELL = "text-neutral-400 dark:text-neutral-600 select-none w-12 sm:w-16 text-[10px] sm:text-xs tabular-nums";
@@ -328,9 +329,11 @@ function AccordionResultContent({
 export function TranscriptRenderer({
   entries,
   compact = false,
+  costAttribution,
 }: {
   entries: TranscriptEntry[];
   compact?: boolean;
+  costAttribution?: Map<number, { costUsd: number; inputTokens: number; outputTokens: number; cachedTokens: number }>;
 }) {
   const { callMap, resultMap, consumedResultIndices } = useToolPairing(entries);
   const { indexToGroup } = useThinkingGroups(entries);
@@ -589,8 +592,20 @@ export function TranscriptRenderer({
             <div key={`${entry.ts}-result-${idx}`} className={cn(GRID, "gap-y-1 py-0.5")}>
               <span className={TS_CELL}>{time}</span>
               <span className={cn(LBL_CELL, "text-cyan-700 dark:text-cyan-300")}>result</span>
-              <span className={cn(CONTENT_CELL, "text-cyan-900 dark:text-cyan-100")}>
-                tokens in={formatTokens(entry.inputTokens)} out={formatTokens(entry.outputTokens)} cached={formatTokens(entry.cachedTokens)} cost=${entry.costUsd.toFixed(6)}
+              <span className={cn(CONTENT_CELL, "text-cyan-900 dark:text-cyan-100 flex flex-wrap items-center gap-2")}>
+                <span className="flex items-center gap-1.5 text-[11px] font-mono">
+                  <span className="text-neutral-400 dark:text-neutral-500">in</span>
+                  <span>{formatTokens(entry.inputTokens)}</span>
+                  <span className="text-neutral-400 dark:text-neutral-500">out</span>
+                  <span>{formatTokens(entry.outputTokens)}</span>
+                  {entry.cachedTokens > 0 && (
+                    <>
+                      <span className="text-neutral-400 dark:text-neutral-500">cached</span>
+                      <span>{formatTokens(entry.cachedTokens)}</span>
+                    </>
+                  )}
+                </span>
+                <CostBadge costUsd={entry.costUsd} />
               </span>
               {(entry.subtype || entry.isError || entry.errors.length > 0) && (
                 <div className={cn(EXPAND_CELL, "text-red-600 dark:text-red-300 whitespace-pre-wrap break-words")}>
