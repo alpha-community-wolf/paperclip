@@ -89,6 +89,7 @@ export const queryKeys = {
   liveRuns: (companyId: string) => ["live-runs", companyId] as const,
   failedRuns: (companyId: string) => ["failed-runs", companyId] as const,
   runIssues: (runId: string) => ["run-issues", runId] as const,
+  runDiff: (runId: string) => ["run-diff", runId] as const,
   chatCompanySessions: (companyId: string) =>
     ["chat", "company-sessions", companyId] as const,
   chatSessions: (agentId: string, includeArchived: boolean = false) =>
