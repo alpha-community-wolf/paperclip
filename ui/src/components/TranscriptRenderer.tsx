@@ -114,8 +114,114 @@ function CollapsiblePre({ children, className }: { children: React.ReactNode; cl
   );
 }
 
+type ThinkingEntry = Extract<TranscriptEntry, { kind: "thinking" }>;
 type ToolCallEntry = Extract<TranscriptEntry, { kind: "tool_call" }>;
 type ToolResultEntry = Extract<TranscriptEntry, { kind: "tool_result" }>;
+
+/** A run of consecutive thinking entries grouped together */
+interface ThinkingGroupData {
+  entries: ThinkingEntry[];
+  startIndex: number;
+  indices: Set<number>;
+}
+
+/** Group consecutive thinking entries into collapsible blocks */
+function useThinkingGroups(entries: TranscriptEntry[]) {
+  return useMemo(() => {
+    const groups: ThinkingGroupData[] = [];
+    const indexToGroup = new Map<number, ThinkingGroupData>();
+
+    let currentGroup: ThinkingGroupData | null = null;
+    for (let i = 0; i < entries.length; i++) {
+      if (entries[i].kind === "thinking") {
+        if (!currentGroup) {
+          currentGroup = { entries: [], startIndex: i, indices: new Set() };
+        }
+        currentGroup.entries.push(entries[i] as ThinkingEntry);
+        currentGroup.indices.add(i);
+        indexToGroup.set(i, currentGroup);
+      } else {
+        if (currentGroup) {
+          groups.push(currentGroup);
+          currentGroup = null;
+        }
+      }
+    }
+    if (currentGroup) groups.push(currentGroup);
+
+    return { groups, indexToGroup };
+  }, [entries]);
+}
+
+/** Collapsible block for a group of thinking entries */
+function ThinkingGroup({ group }: { group: ThinkingGroupData }) {
+  const [expanded, setExpanded] = useState(false);
+  const toggle = useCallback(() => setExpanded((v) => !v), []);
+  const entryCount = group.entries.length;
+  const firstTime = fmtTime(group.entries[0].ts);
+  const lastTime = entryCount > 1 ? fmtTime(group.entries[entryCount - 1].ts) : null;
+
+  return (
+    <div className="py-0.5">
+      <button
+        type="button"
+        onClick={toggle}
+        className={cn(
+          GRID,
+          "w-full text-left cursor-pointer group hover:bg-neutral-100/50 dark:hover:bg-neutral-800/30 rounded transition-colors",
+        )}
+      >
+        <span className={TS_CELL}>{firstTime}</span>
+        <span className={cn(LBL_CELL, "text-violet-500/70 dark:text-violet-400/70")}>
+          thinking
+        </span>
+        <span className="min-w-0 flex items-center gap-2 text-[11px] text-neutral-400 dark:text-neutral-500">
+          <svg
+            className={cn(
+              "w-3 h-3 shrink-0 transition-transform duration-150",
+              expanded && "rotate-90",
+            )}
+            viewBox="0 0 12 12"
+            fill="currentColor"
+          >
+            <path d="M4.5 2L9 6L4.5 10V2Z" />
+          </svg>
+          <span className="italic">
+            {expanded ? "Thinking" : "Thinking\u2026"}{" "}
+            <span className="text-neutral-400/60 dark:text-neutral-500/60 not-italic">
+              ({entryCount} {entryCount === 1 ? "block" : "blocks"}{lastTime ? `, ${firstTime}\u2013${lastTime}` : ""})
+            </span>
+          </span>
+        </span>
+      </button>
+
+      {expanded && (
+        <div className="ml-0 mt-1 mb-1 border-l-2 border-violet-300/30 dark:border-violet-500/20 pl-3">
+          {group.entries.map((entry, i) => (
+            <div
+              key={`thinking-group-${group.startIndex}-${i}`}
+              className={cn(GRID, "py-0.5")}
+            >
+              <span className={TS_CELL}>{fmtTime(entry.ts)}</span>
+              <span className={cn(LBL_CELL, "text-violet-500/50 dark:text-violet-400/50 text-[9px]")}>
+                {i + 1}/{entryCount}
+              </span>
+              <div className={cn(
+                CONTENT_CELL,
+                "text-neutral-600/80 dark:text-neutral-400/80 italic prose prose-sm dark:prose-invert max-w-none opacity-70",
+                "[&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
+              )}>
+                <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
+                  {entry.text}
+                </ReactMarkdown>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 /**
  * Build pairing data structures:
@@ -227,6 +333,7 @@ export function TranscriptRenderer({
   compact?: boolean;
 }) {
   const { callMap, resultMap, consumedResultIndices } = useToolPairing(entries);
+  const { indexToGroup } = useThinkingGroups(entries);
 
   // Build toolUseId → toolName map (for tool_results without accordion pairing)
   const toolNameMap = useMemo(() => {
@@ -261,11 +368,23 @@ export function TranscriptRenderer({
         }
 
         if (entry.kind === "thinking") {
+          const group = indexToGroup.get(idx);
+          if (group) {
+            // Only render at the group's first entry; skip subsequent entries
+            if (idx !== group.startIndex) return null;
+            return (
+              <ThinkingGroup
+                key={`thinking-group-${group.startIndex}`}
+                group={group}
+              />
+            );
+          }
+          // Orphan thinking entry (shouldn't happen, but fallback)
           return (
             <div key={`${entry.ts}-thinking-${idx}`} className={cn(GRID, "py-0.5")}>
               <span className={TS_CELL}>{time}</span>
-              <span className={cn(LBL_CELL, "text-green-600/60 dark:text-green-300/60")}>thinking</span>
-              <div className={cn(CONTENT_CELL, "text-green-800/60 dark:text-green-100/60 italic prose prose-sm dark:prose-invert prose-green max-w-none opacity-60 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0")}>
+              <span className={cn(LBL_CELL, "text-violet-500/70 dark:text-violet-400/70")}>thinking</span>
+              <div className={cn(CONTENT_CELL, "text-neutral-600/80 dark:text-neutral-400/80 italic prose prose-sm dark:prose-invert max-w-none opacity-70 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0")}>
                 <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>{entry.text}</ReactMarkdown>
               </div>
             </div>
