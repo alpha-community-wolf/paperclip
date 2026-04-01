@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { heartbeatsApi } from "../api/heartbeats";
 import { getUIAdapter, buildTranscript } from "../adapters";
+import type { TranscriptEntry } from "../adapters";
 import { TranscriptRenderer } from "./TranscriptRenderer";
 import type { HeartbeatRun } from "@paperclipai/shared";
+import { cn } from "../lib/utils";
 
 type LogChunk = { ts: string; stream: "stdout" | "stderr" | "system"; chunk: string };
 
@@ -24,6 +26,76 @@ function parseLogContent(content: string): LogChunk[] {
     }
   }
   return parsed;
+}
+
+// ---------------------------------------------------------------------------
+// Entry type filtering
+// ---------------------------------------------------------------------------
+
+type FilterKey = "thinking" | "tool_calls" | "stderr" | "system" | "stdout";
+
+const FILTER_DEFS: { key: FilterKey; label: string; match: (e: TranscriptEntry) => boolean }[] = [
+  { key: "thinking",   label: "Thinking",   match: (e) => e.kind === "thinking" },
+  { key: "tool_calls", label: "Tool Calls", match: (e) => e.kind === "tool_call" || e.kind === "tool_result" },
+  { key: "stderr",     label: "Stderr",     match: (e) => e.kind === "stderr" },
+  { key: "system",     label: "System",     match: (e) => e.kind === "system" },
+  { key: "stdout",     label: "Stdout",     match: (e) => e.kind === "stdout" },
+];
+
+const FILTER_COLORS: Record<FilterKey, { on: string; off: string }> = {
+  thinking:   { on: "bg-green-600/20 text-green-300 border-green-500/40", off: "bg-neutral-800 text-neutral-500 border-neutral-700" },
+  tool_calls: { on: "bg-yellow-600/20 text-yellow-300 border-yellow-500/40", off: "bg-neutral-800 text-neutral-500 border-neutral-700" },
+  stderr:     { on: "bg-red-600/20 text-red-300 border-red-500/40", off: "bg-neutral-800 text-neutral-500 border-neutral-700" },
+  system:     { on: "bg-blue-600/20 text-blue-300 border-blue-500/40", off: "bg-neutral-800 text-neutral-500 border-neutral-700" },
+  stdout:     { on: "bg-neutral-600/20 text-neutral-300 border-neutral-500/40", off: "bg-neutral-800 text-neutral-500 border-neutral-700" },
+};
+
+function countByFilter(entries: TranscriptEntry[]): Record<FilterKey, number> {
+  const counts = { thinking: 0, tool_calls: 0, stderr: 0, system: 0, stdout: 0 };
+  for (const e of entries) {
+    for (const def of FILTER_DEFS) {
+      if (def.match(e)) { counts[def.key]++; break; }
+    }
+  }
+  return counts;
+}
+
+function FilterToolbar({
+  counts,
+  active,
+  onToggle,
+}: {
+  counts: Record<FilterKey, number>;
+  active: Record<FilterKey, boolean>;
+  onToggle: (key: FilterKey) => void;
+}) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {FILTER_DEFS.map(({ key, label }) => {
+        const isOn = active[key];
+        const colors = FILTER_COLORS[key];
+        return (
+          <button
+            key={key}
+            type="button"
+            onClick={() => onToggle(key)}
+            className={cn(
+              "inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[11px] font-medium transition-colors cursor-pointer select-none",
+              isOn ? colors.on : colors.off,
+            )}
+          >
+            {label}
+            <span className={cn(
+              "inline-flex items-center justify-center min-w-[1.25rem] h-4 rounded-full px-1 text-[10px] font-semibold tabular-nums",
+              isOn ? "bg-white/10" : "bg-white/5",
+            )}>
+              {counts[key]}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 interface RunLogViewerProps {
@@ -122,6 +194,26 @@ export function RunLogViewer({ run, adapterType, compact = true, maxHeight = "32
   const adapter = useMemo(() => getUIAdapter(adapterType), [adapterType]);
   const transcript = useMemo(() => buildTranscript(logLines, adapter.parseStdoutLine), [logLines, adapter]);
 
+  // Filter state — all types visible by default
+  const [filters, setFilters] = useState<Record<FilterKey, boolean>>({
+    thinking: true, tool_calls: true, stderr: true, system: true, stdout: true,
+  });
+  const toggleFilter = (key: FilterKey) => setFilters((prev) => ({ ...prev, [key]: !prev[key] }));
+
+  const counts = useMemo(() => countByFilter(transcript), [transcript]);
+
+  const filteredTranscript = useMemo(() => {
+    // Check if anything is actually toggled off
+    const allOn = FILTER_DEFS.every((d) => filters[d.key]);
+    if (allOn) return transcript;
+    return transcript.filter((entry) => {
+      // Entry types not covered by any filter are always shown (assistant, user, init, result)
+      const matchedDef = FILTER_DEFS.find((d) => d.match(entry));
+      if (!matchedDef) return true;
+      return filters[matchedDef.key];
+    });
+  }, [transcript, filters]);
+
   if (loading) {
     return (
       <div className="bg-neutral-100 dark:bg-neutral-950 rounded-lg p-3 text-xs text-muted-foreground font-mono">
@@ -146,6 +238,8 @@ export function RunLogViewer({ run, adapterType, compact = true, maxHeight = "32
     );
   }
 
+  const anyFilterOff = FILTER_DEFS.some((d) => !filters[d.key]);
+
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
@@ -162,11 +256,20 @@ export function RunLogViewer({ run, adapterType, compact = true, maxHeight = "32
           </span>
         )}
       </div>
+      {!compact && (
+        <FilterToolbar counts={counts} active={filters} onToggle={toggleFilter} />
+      )}
       <div
         className="bg-neutral-100 dark:bg-neutral-950 rounded-lg p-3 font-mono text-xs space-y-0.5 overflow-x-hidden overflow-y-auto"
         style={{ maxHeight }}
       >
-        <TranscriptRenderer entries={transcript} compact={compact} />
+        {filteredTranscript.length === 0 ? (
+          <div className="text-neutral-500 text-xs py-4 text-center">
+            {anyFilterOff ? "All entries hidden by filters." : "No transcript entries yet."}
+          </div>
+        ) : (
+          <TranscriptRenderer entries={filteredTranscript} compact={compact} />
+        )}
         <div ref={bottomRef} />
       </div>
     </div>
