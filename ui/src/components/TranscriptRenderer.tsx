@@ -18,6 +18,7 @@ import {
   getReadFilePath,
   getCodeToolDescription,
 } from "./CodeToolRenderers";
+import { useTimelineSteps, TimelineWrapper } from "./TranscriptTimeline";
 
 const GRID = "grid grid-cols-[auto_auto_1fr] gap-x-2 sm:gap-x-3 items-baseline";
 const TS_CELL = "text-neutral-400 dark:text-neutral-600 select-none w-12 sm:w-16 text-[10px] sm:text-xs tabular-nums";
@@ -383,6 +384,7 @@ export function TranscriptRenderer({
 }) {
   const { callMap, resultMap, consumedResultIndices } = useToolPairing(entries);
   const { indexToGroup } = useThinkingGroups(entries);
+  const steps = useTimelineSteps(entries);
 
   // Build toolUseId → toolName map (for tool_results without accordion pairing)
   const toolNameMap = useMemo(() => {
@@ -395,319 +397,327 @@ export function TranscriptRenderer({
     return map;
   }, [entries]);
 
+  /** Render a single entry by index */
+  const renderEntry = useCallback((entry: TranscriptEntry, idx: number): React.ReactNode => {
+    const time = fmtTime(entry.ts);
+
+    if (entry.kind === "assistant") {
+      return (
+        <div key={`${entry.ts}-assistant-${idx}`} className={cn(GRID, "py-0.5 group/step")}>
+          <span className={TS_CELL}>{time}</span>
+          <span className={cn(LBL_CELL, "text-green-700 dark:text-green-300 flex items-center")}>
+            assistant
+            {stepFeedback && onStepFeedback && (
+              <StepFeedbackButtons stepIndex={idx} feedback={stepFeedback} onVote={onStepFeedback} />
+            )}
+          </span>
+          <div className={cn(CONTENT_CELL, "text-green-900 dark:text-green-100 prose prose-sm dark:prose-invert prose-green max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0")}>
+            <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>{entry.text}</ReactMarkdown>
+          </div>
+        </div>
+      );
+    }
+
+    if (entry.kind === "thinking") {
+      const group = indexToGroup.get(idx);
+      if (group) {
+        if (idx !== group.startIndex) return null;
+        return (
+          <ThinkingGroup
+            key={`thinking-group-${group.startIndex}`}
+            group={group}
+            stepFeedback={stepFeedback}
+            onStepFeedback={onStepFeedback}
+          />
+        );
+      }
+      return (
+        <div key={`${entry.ts}-thinking-${idx}`} className={cn(GRID, "py-0.5")}>
+          <span className={TS_CELL}>{time}</span>
+          <span className={cn(LBL_CELL, "text-violet-500/70 dark:text-violet-400/70")}>thinking</span>
+          <div className={cn(CONTENT_CELL, "text-neutral-600/80 dark:text-neutral-400/80 italic prose prose-sm dark:prose-invert max-w-none opacity-70 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0")}>
+            <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>{entry.text}</ReactMarkdown>
+          </div>
+        </div>
+      );
+    }
+
+    if (entry.kind === "user") {
+      return (
+        <div key={`${entry.ts}-user-${idx}`} className={cn(GRID, "py-0.5")}>
+          <span className={TS_CELL}>{time}</span>
+          <span className={cn(LBL_CELL, "text-neutral-500 dark:text-neutral-400")}>user</span>
+          <div className={cn(CONTENT_CELL, "text-neutral-700 dark:text-neutral-300 prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0")}>
+            <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>{entry.text}</ReactMarkdown>
+          </div>
+        </div>
+      );
+    }
+
+    if (entry.kind === "tool_call") {
+      if (compact) {
+        const isBash = entry.name === "Bash";
+        const bashInput = isBash ? (entry.input as { command?: string; description?: string }) : null;
+        return (
+          <div key={`${entry.ts}-tool-${idx}`} className={cn(GRID, "py-0.5")}>
+            <span className={TS_CELL}>{time}</span>
+            <span className={cn(LBL_CELL, isBash ? "text-green-500 dark:text-green-400" : "text-yellow-700 dark:text-yellow-300")}>
+              {isBash ? "bash" : "tool"}
+            </span>
+            <span className={cn("min-w-0 truncate", isBash ? "text-green-300 dark:text-green-400 font-mono" : "text-yellow-900 dark:text-yellow-100")}>
+              {isBash && bashInput?.command ? `$ ${bashInput.command}` : entry.name}
+            </span>
+          </div>
+        );
+      }
+
+      if (entry.toolUseId) {
+        const result = resultMap.get(entry.toolUseId) ?? null;
+        const pair: ToolCallPair = { call: entry, result, callIndex: idx };
+
+        return (
+          <div key={`${entry.ts}-toolpair-${idx}`} className={cn(GRID, "py-0.5 group/step")}>
+            <span className={TS_CELL}>{time}</span>
+            <span className={cn(LBL_CELL, "text-yellow-700 dark:text-yellow-300 text-[10px] flex items-center")}>
+              tool
+              {stepFeedback && onStepFeedback && (
+                <StepFeedbackButtons stepIndex={idx} feedback={stepFeedback} onVote={onStepFeedback} />
+              )}
+            </span>
+            <div className={cn(CONTENT_CELL)}>
+              <ToolCallAccordion
+                pair={pair}
+                description={getCodeToolDescription(entry.name, entry.input)}
+                renderCallContent={() => <AccordionCallContent entry={entry} />}
+                renderResultContent={() =>
+                  result ? (
+                    <AccordionResultContent
+                      entry={result}
+                      toolName={entry.name}
+                      toolInput={entry.input}
+                    />
+                  ) : null
+                }
+              />
+            </div>
+          </div>
+        );
+      }
+
+      const isBash = entry.name === "Bash";
+      const bashInput = isBash ? (entry.input as { command?: string; description?: string }) : null;
+
+      if (isBash && bashInput) {
+        return (
+          <div key={`${entry.ts}-tool-${idx}`} className={cn(GRID, "gap-y-1 py-0.5")}>
+            <span className={TS_CELL}>{time}</span>
+            <span className={cn(LBL_CELL, "text-green-500 dark:text-green-400 font-mono")}>bash</span>
+            <span className="text-neutral-500 dark:text-neutral-400 min-w-0 text-[11px] truncate">
+              {bashInput.description || ""}
+            </span>
+            <div className={cn(EXPAND_CELL, "bg-neutral-900 dark:bg-neutral-950 rounded-md border border-neutral-700/50 dark:border-neutral-700/30 overflow-hidden")}>
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-neutral-800/60 dark:bg-neutral-800/40 border-b border-neutral-700/30">
+                <span className="text-green-400 text-[11px] font-mono font-medium select-none">$</span>
+                <code className="text-green-300 dark:text-green-300 text-[11px] font-mono break-all">
+                  {bashInput.command || ""}
+                </code>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <div key={`${entry.ts}-tool-${idx}`} className={cn(GRID, "gap-y-1 py-0.5")}>
+          <span className={TS_CELL}>{time}</span>
+          <span className={cn(LBL_CELL, "text-yellow-700 dark:text-yellow-300")}>tool_call</span>
+          <span className="text-yellow-900 dark:text-yellow-100 min-w-0">{entry.name}</span>
+          <CollapsiblePre className={cn(EXPAND_CELL, "bg-neutral-200 dark:bg-neutral-900 rounded p-2 text-[11px] overflow-x-auto whitespace-pre-wrap text-neutral-800 dark:text-neutral-200")}>
+            <JsonHighlight value={JSON.stringify(entry.input, null, 2)} />
+          </CollapsiblePre>
+        </div>
+      );
+    }
+
+    if (entry.kind === "tool_result") {
+      if (consumedResultIndices.has(idx)) {
+        return null;
+      }
+
+      const precedingToolName = toolNameMap.get(entry.toolUseId) ?? null;
+      const isBashResult = precedingToolName === "Bash";
+
+      if (compact) {
+        return (
+          <div key={`${entry.ts}-toolres-${idx}`} className={cn(GRID, "py-0.5")}>
+            <span className={TS_CELL}>{time}</span>
+            <span className={cn(LBL_CELL, entry.isError ? "text-red-600 dark:text-red-300" : isBashResult ? "text-green-500 dark:text-green-400" : "text-purple-600 dark:text-purple-300")}>
+              {isBashResult ? "output" : "result"}
+            </span>
+            <span className={cn(CONTENT_CELL, entry.isError ? "text-red-600 dark:text-red-400" : "text-neutral-500", "truncate")}>
+              {entry.isError ? "error" : entry.content.slice(0, 80)}
+            </span>
+          </div>
+        );
+      }
+
+      if (isBashResult) {
+        return (
+          <div key={`${entry.ts}-toolres-${idx}`} className={cn(GRID, "gap-y-1 py-0.5")}>
+            <span className={TS_CELL}>{time}</span>
+            <span className={cn(LBL_CELL, "text-green-500 dark:text-green-400 font-mono")}>output</span>
+            <span className="min-w-0 flex items-center gap-1.5">
+              {entry.isError ? (
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-red-900/30 text-red-400 border border-red-700/30">
+                  error
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-900/30 text-green-400 border border-green-700/30">
+                  exit 0
+                </span>
+              )}
+            </span>
+            <div className={cn(EXPAND_CELL, "bg-neutral-900 dark:bg-neutral-950 rounded-md border border-neutral-700/50 dark:border-neutral-700/30 overflow-hidden")}>
+              <pre className="px-3 py-2 text-[11px] font-mono whitespace-pre-wrap break-words overflow-x-auto text-neutral-300 dark:text-neutral-400">
+                <CollapsibleContent>{entry.content}</CollapsibleContent>
+              </pre>
+            </div>
+          </div>
+        );
+      }
+
+      const toolName = toolNameMap.get(entry.toolUseId);
+      const specializedResult = !entry.isError ? (
+        <SpecializedToolResult
+          toolName={toolName}
+          content={entry.content}
+          className={cn(EXPAND_CELL, "bg-neutral-50 dark:bg-neutral-900 rounded p-2 text-[11px]")}
+        />
+      ) : null;
+
+      if (specializedResult) {
+        return (
+          <div key={`${entry.ts}-toolres-${idx}`} className={cn(GRID, "gap-y-1 py-0.5")}>
+            <span className={TS_CELL}>{time}</span>
+            <span className={cn(LBL_CELL, "text-purple-600 dark:text-purple-300")}>tool_result</span>
+            <span />
+            {specializedResult}
+          </div>
+        );
+      }
+
+      const hasCode = hasFencedCodeBlocks(entry.content);
+      return (
+        <div key={`${entry.ts}-toolres-${idx}`} className={cn(GRID, "gap-y-1 py-0.5")}>
+          <span className={TS_CELL}>{time}</span>
+          <span className={cn(LBL_CELL, entry.isError ? "text-red-600 dark:text-red-300" : "text-purple-600 dark:text-purple-300")}>tool_result</span>
+          {entry.isError ? <span className="text-red-600 dark:text-red-400 min-w-0">error</span> : <span />}
+          {hasCode ? (
+            <CollapsiblePre className={cn(EXPAND_CELL, "bg-neutral-100 dark:bg-neutral-900 rounded p-2 text-[11px] overflow-x-auto text-neutral-700 dark:text-neutral-300 prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0")}>
+              <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>{entry.content}</ReactMarkdown>
+            </CollapsiblePre>
+          ) : (
+            <CollapsiblePre className={cn(EXPAND_CELL, "bg-neutral-100 dark:bg-neutral-900 rounded p-2 text-[11px] overflow-x-auto whitespace-pre-wrap text-neutral-700 dark:text-neutral-300")}>
+              {formatContent(entry.content)}
+            </CollapsiblePre>
+          )}
+        </div>
+      );
+    }
+
+    if (entry.kind === "init") {
+      return (
+        <div key={`${entry.ts}-init-${idx}`} className={GRID}>
+          <span className={TS_CELL}>{time}</span>
+          <span className={cn(LBL_CELL, "text-blue-700 dark:text-blue-300")}>init</span>
+          <span className={cn(CONTENT_CELL, "text-blue-900 dark:text-blue-100")}>model: {entry.model}{entry.sessionId ? `, session: ${entry.sessionId}` : ""}</span>
+        </div>
+      );
+    }
+
+    if (entry.kind === "result") {
+      return (
+        <div key={`${entry.ts}-result-${idx}`} className={cn(GRID, "gap-y-1 py-0.5")}>
+          <span className={TS_CELL}>{time}</span>
+          <span className={cn(LBL_CELL, "text-cyan-700 dark:text-cyan-300")}>result</span>
+          <span className={cn(CONTENT_CELL, "text-cyan-900 dark:text-cyan-100 flex flex-wrap items-center gap-2")}>
+            <span className="flex items-center gap-1.5 text-[11px] font-mono">
+              <span className="text-neutral-400 dark:text-neutral-500">in</span>
+              <span>{formatTokens(entry.inputTokens)}</span>
+              <span className="text-neutral-400 dark:text-neutral-500">out</span>
+              <span>{formatTokens(entry.outputTokens)}</span>
+              {entry.cachedTokens > 0 && (
+                <>
+                  <span className="text-neutral-400 dark:text-neutral-500">cached</span>
+                  <span>{formatTokens(entry.cachedTokens)}</span>
+                </>
+              )}
+            </span>
+            <CostBadge costUsd={entry.costUsd} />
+          </span>
+          {(entry.subtype || entry.isError || entry.errors.length > 0) && (
+            <div className={cn(EXPAND_CELL, "text-red-600 dark:text-red-300 whitespace-pre-wrap break-words")}>
+              subtype={entry.subtype || "unknown"} is_error={entry.isError ? "true" : "false"}
+              {entry.errors.length > 0 ? ` errors=${entry.errors.join(" | ")}` : ""}
+            </div>
+          )}
+          {entry.text && (
+            <div className={cn(EXPAND_CELL, "whitespace-pre-wrap break-words text-neutral-800 dark:text-neutral-100")}>{entry.text}</div>
+          )}
+        </div>
+      );
+    }
+
+    if (entry.kind === "stderr" || entry.kind === "stdout") {
+      const isErr = entry.kind === "stderr";
+      return (
+        <div key={`${entry.ts}-${entry.kind}-${idx}`} className={cn(GRID, "py-0.5")}>
+          <span className={TS_CELL}>{time}</span>
+          <span className={cn(LBL_CELL, isErr ? "text-red-600 dark:text-red-300" : "text-neutral-500")}>{entry.kind}</span>
+          <pre className={cn(
+            CONTENT_CELL,
+            "rounded px-2 py-1 text-[11px] font-mono",
+            isErr
+              ? "bg-red-950/20 dark:bg-red-950/40 text-red-700 dark:text-red-300 border border-red-200/30 dark:border-red-800/30"
+              : "bg-neutral-900/5 dark:bg-neutral-950 text-neutral-600 dark:text-neutral-400 border border-neutral-200/30 dark:border-neutral-800/30",
+          )}>
+            {entry.text}
+          </pre>
+        </div>
+      );
+    }
+
+    const isSystem = entry.kind === "system";
+    return (
+      <div key={`${entry.ts}-raw-${idx}`} className={GRID}>
+        <span className={TS_CELL}>{time}</span>
+        <span className={cn(LBL_CELL, isSystem ? "text-blue-600 dark:text-blue-300" : "text-neutral-500")}>{isSystem ? "system" : "stdout"}</span>
+        <span className={cn(CONTENT_CELL, isSystem ? "text-blue-600 dark:text-blue-300" : "text-neutral-500")}>{entry.text}</span>
+      </div>
+    );
+  }, [compact, indexToGroup, resultMap, consumedResultIndices, toolNameMap]);
+
   if (entries.length === 0) {
     return <div className="text-neutral-500 text-xs">No transcript entries yet.</div>;
   }
 
+  // Compact mode: skip timeline rail
+  if (compact) {
+    return (
+      <>
+        {entries.map((entry, idx) => renderEntry(entry, idx))}
+      </>
+    );
+  }
+
   return (
-    <>
-      {entries.map((entry, idx) => {
-        const time = fmtTime(entry.ts);
-
-        if (entry.kind === "assistant") {
-          return (
-            <div key={`${entry.ts}-assistant-${idx}`} className={cn(GRID, "py-0.5 group/step")}>
-              <span className={TS_CELL}>{time}</span>
-              <span className={cn(LBL_CELL, "text-green-700 dark:text-green-300 flex items-center")}>
-                assistant
-                {stepFeedback && onStepFeedback && (
-                  <StepFeedbackButtons stepIndex={idx} feedback={stepFeedback} onVote={onStepFeedback} />
-                )}
-              </span>
-              <div className={cn(CONTENT_CELL, "text-green-900 dark:text-green-100 prose prose-sm dark:prose-invert prose-green max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0")}>
-                <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>{entry.text}</ReactMarkdown>
-              </div>
-            </div>
-          );
-        }
-
-        if (entry.kind === "thinking") {
-          const group = indexToGroup.get(idx);
-          if (group) {
-            // Only render at the group's first entry; skip subsequent entries
-            if (idx !== group.startIndex) return null;
-            return (
-              <ThinkingGroup
-                key={`thinking-group-${group.startIndex}`}
-                group={group}
-                stepFeedback={stepFeedback}
-                onStepFeedback={onStepFeedback}
-              />
-            );
-          }
-          // Orphan thinking entry (shouldn't happen, but fallback)
-          return (
-            <div key={`${entry.ts}-thinking-${idx}`} className={cn(GRID, "py-0.5")}>
-              <span className={TS_CELL}>{time}</span>
-              <span className={cn(LBL_CELL, "text-violet-500/70 dark:text-violet-400/70")}>thinking</span>
-              <div className={cn(CONTENT_CELL, "text-neutral-600/80 dark:text-neutral-400/80 italic prose prose-sm dark:prose-invert max-w-none opacity-70 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0")}>
-                <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>{entry.text}</ReactMarkdown>
-              </div>
-            </div>
-          );
-        }
-
-        if (entry.kind === "user") {
-          return (
-            <div key={`${entry.ts}-user-${idx}`} className={cn(GRID, "py-0.5")}>
-              <span className={TS_CELL}>{time}</span>
-              <span className={cn(LBL_CELL, "text-neutral-500 dark:text-neutral-400")}>user</span>
-              <div className={cn(CONTENT_CELL, "text-neutral-700 dark:text-neutral-300 prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0")}>
-                <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>{entry.text}</ReactMarkdown>
-              </div>
-            </div>
-          );
-        }
-
-        if (entry.kind === "tool_call") {
-          // Compact mode: unchanged
-          if (compact) {
-            const isBash = entry.name === "Bash";
-            const bashInput = isBash ? (entry.input as { command?: string; description?: string }) : null;
-            return (
-              <div key={`${entry.ts}-tool-${idx}`} className={cn(GRID, "py-0.5")}>
-                <span className={TS_CELL}>{time}</span>
-                <span className={cn(LBL_CELL, isBash ? "text-green-500 dark:text-green-400" : "text-yellow-700 dark:text-yellow-300")}>
-                  {isBash ? "bash" : "tool"}
-                </span>
-                <span className={cn("min-w-0 truncate", isBash ? "text-green-300 dark:text-green-400 font-mono" : "text-yellow-900 dark:text-yellow-100")}>
-                  {isBash && bashInput?.command ? `$ ${bashInput.command}` : entry.name}
-                </span>
-              </div>
-            );
-          }
-
-          // Accordion: pair tool_call with its tool_result
-          if (entry.toolUseId) {
-            const result = resultMap.get(entry.toolUseId) ?? null;
-            const pair: ToolCallPair = { call: entry, result, callIndex: idx };
-
-            return (
-              <div key={`${entry.ts}-toolpair-${idx}`} className={cn(GRID, "py-0.5 group/step")}>
-                <span className={TS_CELL}>{time}</span>
-                <span className={cn(LBL_CELL, "text-yellow-700 dark:text-yellow-300 text-[10px] flex items-center")}>
-                  tool
-                  {stepFeedback && onStepFeedback && (
-                    <StepFeedbackButtons stepIndex={idx} feedback={stepFeedback} onVote={onStepFeedback} />
-                  )}
-                </span>
-                <div className={cn(CONTENT_CELL)}>
-                  <ToolCallAccordion
-                    pair={pair}
-                    description={getCodeToolDescription(entry.name, entry.input)}
-                    renderCallContent={() => <AccordionCallContent entry={entry} />}
-                    renderResultContent={() =>
-                      result ? (
-                        <AccordionResultContent
-                          entry={result}
-                          toolName={entry.name}
-                          toolInput={entry.input}
-                        />
-                      ) : null
-                    }
-                  />
-                </div>
-              </div>
-            );
-          }
-
-          // Fallback: tool_call without toolUseId (legacy) — render inline
-          const isBash = entry.name === "Bash";
-          const bashInput = isBash ? (entry.input as { command?: string; description?: string }) : null;
-
-          if (isBash && bashInput) {
-            return (
-              <div key={`${entry.ts}-tool-${idx}`} className={cn(GRID, "gap-y-1 py-0.5")}>
-                <span className={TS_CELL}>{time}</span>
-                <span className={cn(LBL_CELL, "text-green-500 dark:text-green-400 font-mono")}>bash</span>
-                <span className="text-neutral-500 dark:text-neutral-400 min-w-0 text-[11px] truncate">
-                  {bashInput.description || ""}
-                </span>
-                <div className={cn(EXPAND_CELL, "bg-neutral-900 dark:bg-neutral-950 rounded-md border border-neutral-700/50 dark:border-neutral-700/30 overflow-hidden")}>
-                  <div className="flex items-center gap-2 px-3 py-1.5 bg-neutral-800/60 dark:bg-neutral-800/40 border-b border-neutral-700/30">
-                    <span className="text-green-400 text-[11px] font-mono font-medium select-none">$</span>
-                    <code className="text-green-300 dark:text-green-300 text-[11px] font-mono break-all">
-                      {bashInput.command || ""}
-                    </code>
-                  </div>
-                </div>
-              </div>
-            );
-          }
-
-          return (
-            <div key={`${entry.ts}-tool-${idx}`} className={cn(GRID, "gap-y-1 py-0.5")}>
-              <span className={TS_CELL}>{time}</span>
-              <span className={cn(LBL_CELL, "text-yellow-700 dark:text-yellow-300")}>tool_call</span>
-              <span className="text-yellow-900 dark:text-yellow-100 min-w-0">{entry.name}</span>
-              <CollapsiblePre className={cn(EXPAND_CELL, "bg-neutral-200 dark:bg-neutral-900 rounded p-2 text-[11px] overflow-x-auto whitespace-pre-wrap text-neutral-800 dark:text-neutral-200")}>
-                <JsonHighlight value={JSON.stringify(entry.input, null, 2)} />
-              </CollapsiblePre>
-            </div>
-          );
-        }
-
-        if (entry.kind === "tool_result") {
-          // Skip results already consumed by an accordion pair
-          if (consumedResultIndices.has(idx)) {
-            return null;
-          }
-
-          // Unpaired tool_result (orphan) — render standalone
-          const precedingToolName = toolNameMap.get(entry.toolUseId) ?? null;
-          const isBashResult = precedingToolName === "Bash";
-
-          if (compact) {
-            return (
-              <div key={`${entry.ts}-toolres-${idx}`} className={cn(GRID, "py-0.5")}>
-                <span className={TS_CELL}>{time}</span>
-                <span className={cn(LBL_CELL, entry.isError ? "text-red-600 dark:text-red-300" : isBashResult ? "text-green-500 dark:text-green-400" : "text-purple-600 dark:text-purple-300")}>
-                  {isBashResult ? "output" : "result"}
-                </span>
-                <span className={cn(CONTENT_CELL, entry.isError ? "text-red-600 dark:text-red-400" : "text-neutral-500", "truncate")}>
-                  {entry.isError ? "error" : entry.content.slice(0, 80)}
-                </span>
-              </div>
-            );
-          }
-
-          if (isBashResult) {
-            return (
-              <div key={`${entry.ts}-toolres-${idx}`} className={cn(GRID, "gap-y-1 py-0.5")}>
-                <span className={TS_CELL}>{time}</span>
-                <span className={cn(LBL_CELL, "text-green-500 dark:text-green-400 font-mono")}>output</span>
-                <span className="min-w-0 flex items-center gap-1.5">
-                  {entry.isError ? (
-                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-red-900/30 text-red-400 border border-red-700/30">
-                      error
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-900/30 text-green-400 border border-green-700/30">
-                      exit 0
-                    </span>
-                  )}
-                </span>
-                <div className={cn(EXPAND_CELL, "bg-neutral-900 dark:bg-neutral-950 rounded-md border border-neutral-700/50 dark:border-neutral-700/30 overflow-hidden")}>
-                  <pre className="px-3 py-2 text-[11px] font-mono whitespace-pre-wrap break-words overflow-x-auto text-neutral-300 dark:text-neutral-400">
-                    <CollapsibleContent>{entry.content}</CollapsibleContent>
-                  </pre>
-                </div>
-              </div>
-            );
-          }
-
-          // Grep/Glob specialized rendering
-          const toolName = toolNameMap.get(entry.toolUseId);
-          const specializedResult = !entry.isError ? (
-            <SpecializedToolResult
-              toolName={toolName}
-              content={entry.content}
-              className={cn(EXPAND_CELL, "bg-neutral-50 dark:bg-neutral-900 rounded p-2 text-[11px]")}
-            />
-          ) : null;
-
-          if (specializedResult) {
-            return (
-              <div key={`${entry.ts}-toolres-${idx}`} className={cn(GRID, "gap-y-1 py-0.5")}>
-                <span className={TS_CELL}>{time}</span>
-                <span className={cn(LBL_CELL, "text-purple-600 dark:text-purple-300")}>tool_result</span>
-                <span />
-                {specializedResult}
-              </div>
-            );
-          }
-
-          // Default tool_result rendering — use markdown when fenced code blocks present
-          const hasCode = hasFencedCodeBlocks(entry.content);
-          return (
-            <div key={`${entry.ts}-toolres-${idx}`} className={cn(GRID, "gap-y-1 py-0.5")}>
-              <span className={TS_CELL}>{time}</span>
-              <span className={cn(LBL_CELL, entry.isError ? "text-red-600 dark:text-red-300" : "text-purple-600 dark:text-purple-300")}>tool_result</span>
-              {entry.isError ? <span className="text-red-600 dark:text-red-400 min-w-0">error</span> : <span />}
-              {hasCode ? (
-                <CollapsiblePre className={cn(EXPAND_CELL, "bg-neutral-100 dark:bg-neutral-900 rounded p-2 text-[11px] overflow-x-auto text-neutral-700 dark:text-neutral-300 prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0")}>
-                  <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>{entry.content}</ReactMarkdown>
-                </CollapsiblePre>
-              ) : (
-                <CollapsiblePre className={cn(EXPAND_CELL, "bg-neutral-100 dark:bg-neutral-900 rounded p-2 text-[11px] overflow-x-auto whitespace-pre-wrap text-neutral-700 dark:text-neutral-300")}>
-                  {formatContent(entry.content)}
-                </CollapsiblePre>
-              )}
-            </div>
-          );
-        }
-
-        if (entry.kind === "init") {
-          return (
-            <div key={`${entry.ts}-init-${idx}`} className={GRID}>
-              <span className={TS_CELL}>{time}</span>
-              <span className={cn(LBL_CELL, "text-blue-700 dark:text-blue-300")}>init</span>
-              <span className={cn(CONTENT_CELL, "text-blue-900 dark:text-blue-100")}>model: {entry.model}{entry.sessionId ? `, session: ${entry.sessionId}` : ""}</span>
-            </div>
-          );
-        }
-
-        if (entry.kind === "result") {
-          return (
-            <div key={`${entry.ts}-result-${idx}`} className={cn(GRID, "gap-y-1 py-0.5")}>
-              <span className={TS_CELL}>{time}</span>
-              <span className={cn(LBL_CELL, "text-cyan-700 dark:text-cyan-300")}>result</span>
-              <span className={cn(CONTENT_CELL, "text-cyan-900 dark:text-cyan-100 flex flex-wrap items-center gap-2")}>
-                <span className="flex items-center gap-1.5 text-[11px] font-mono">
-                  <span className="text-neutral-400 dark:text-neutral-500">in</span>
-                  <span>{formatTokens(entry.inputTokens)}</span>
-                  <span className="text-neutral-400 dark:text-neutral-500">out</span>
-                  <span>{formatTokens(entry.outputTokens)}</span>
-                  {entry.cachedTokens > 0 && (
-                    <>
-                      <span className="text-neutral-400 dark:text-neutral-500">cached</span>
-                      <span>{formatTokens(entry.cachedTokens)}</span>
-                    </>
-                  )}
-                </span>
-                <CostBadge costUsd={entry.costUsd} />
-              </span>
-              {(entry.subtype || entry.isError || entry.errors.length > 0) && (
-                <div className={cn(EXPAND_CELL, "text-red-600 dark:text-red-300 whitespace-pre-wrap break-words")}>
-                  subtype={entry.subtype || "unknown"} is_error={entry.isError ? "true" : "false"}
-                  {entry.errors.length > 0 ? ` errors=${entry.errors.join(" | ")}` : ""}
-                </div>
-              )}
-              {entry.text && (
-                <div className={cn(EXPAND_CELL, "whitespace-pre-wrap break-words text-neutral-800 dark:text-neutral-100")}>{entry.text}</div>
-              )}
-            </div>
-          );
-        }
-
-        if (entry.kind === "stderr" || entry.kind === "stdout") {
-          const isErr = entry.kind === "stderr";
-          return (
-            <div key={`${entry.ts}-${entry.kind}-${idx}`} className={cn(GRID, "py-0.5")}>
-              <span className={TS_CELL}>{time}</span>
-              <span className={cn(LBL_CELL, isErr ? "text-red-600 dark:text-red-300" : "text-neutral-500")}>{entry.kind}</span>
-              <pre className={cn(
-                CONTENT_CELL,
-                "rounded px-2 py-1 text-[11px] font-mono",
-                isErr
-                  ? "bg-red-950/20 dark:bg-red-950/40 text-red-700 dark:text-red-300 border border-red-200/30 dark:border-red-800/30"
-                  : "bg-neutral-900/5 dark:bg-neutral-950 text-neutral-600 dark:text-neutral-400 border border-neutral-200/30 dark:border-neutral-800/30",
-              )}>
-                {entry.text}
-              </pre>
-            </div>
-          );
-        }
-
-        const isSystem = entry.kind === "system";
-        return (
-          <div key={`${entry.ts}-raw-${idx}`} className={GRID}>
-            <span className={TS_CELL}>{time}</span>
-            <span className={cn(LBL_CELL, isSystem ? "text-blue-600 dark:text-blue-300" : "text-neutral-500")}>{isSystem ? "system" : "stdout"}</span>
-            <span className={cn(CONTENT_CELL, isSystem ? "text-blue-600 dark:text-blue-300" : "text-neutral-500")}>{entry.text}</span>
-          </div>
-        );
-      })}
-    </>
+    <TimelineWrapper
+      steps={steps}
+      renderEntries={(startIdx, endIdx) => (
+        <>
+          {entries.slice(startIdx, endIdx).map((entry, i) => renderEntry(entry, startIdx + i))}
+        </>
+      )}
+    />
   );
 }
