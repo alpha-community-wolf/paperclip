@@ -557,7 +557,7 @@ export function IssuesList({
       to={`/issues/${issue.identifier ?? issue.id}`}
       state={issueLinkState}
       className={cn(
-        "group/row flex items-start gap-2 py-2.5 pl-3 pr-3 text-sm last:border-b-0 cursor-pointer hover:bg-accent/50 transition-colors no-underline text-inherit sm:items-center sm:py-2",
+        "group/row flex items-start gap-2 py-2.5 pl-3 pr-3 text-sm last:border-b-0 cursor-pointer hover:bg-accent/50 transition-colors no-underline text-inherit sm:grid sm:grid-cols-[auto_auto_1fr_auto] sm:items-center sm:py-2",
         isKbSelected && "ring-2 ring-inset ring-primary bg-accent/60",
         isChecked && "bg-primary/5",
       )}
@@ -585,7 +585,7 @@ export function IssuesList({
       </span>
 
       <span className="flex min-w-0 flex-1 flex-col gap-0.5 sm:contents">
-        <span className="sm:order-2 sm:flex-1 sm:min-w-0">
+        <span className="sm:order-2 sm:min-w-0 sm:overflow-hidden">
           <span className="line-clamp-2 text-sm sm:line-clamp-1 sm:truncate block">
             {issue.title}
           </span>
@@ -601,7 +601,7 @@ export function IssuesList({
           <span className="hidden sm:inline-flex" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
             <PriorityIcon priority={issue.priority} onChange={(p) => onUpdateIssue(issue.id, { priority: p })} />
           </span>
-          <span className="hidden shrink-0 sm:inline-flex" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
+          <span className="hidden shrink-0 sm:inline-flex sm:w-[105px]" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
             <StatusIcon
               status={issue.status}
               onChange={(s) => onUpdateIssue(issue.id, { status: s })}
@@ -609,7 +609,7 @@ export function IssuesList({
               linkSummary={issue.linkSummary}
             />
           </span>
-          <span className="text-xs text-muted-foreground font-mono shrink-0">
+          <span className="text-xs text-muted-foreground font-mono shrink-0 sm:w-[68px]">
             {issue.identifier ?? issue.id.slice(0, 8)}
           </span>
           {recurringIssueIds.has(issue.id) && (
@@ -670,7 +670,7 @@ export function IssuesList({
         </span>
       </span>
 
-      <span className="hidden sm:flex sm:order-3 items-center gap-2 sm:gap-3 shrink-0 ml-auto">
+      <span className="hidden sm:flex sm:order-3 items-center gap-2 sm:gap-3 shrink-0 sm:justify-end">
         {(() => {
           const issueSchedules = recurringByIssueId.get(issue.id) ?? [];
           if (issueSchedules.length === 0) return null;
