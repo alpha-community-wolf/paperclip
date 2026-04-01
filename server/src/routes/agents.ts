@@ -1792,6 +1792,19 @@ export function agentRoutes(db: Db) {
     res.json(result);
   });
 
+  router.get("/heartbeat-runs/:runId/diff", async (req, res) => {
+    const runId = req.params.runId as string;
+    const run = await heartbeat.getRun(runId);
+    if (!run) {
+      res.status(404).json({ error: "Heartbeat run not found" });
+      return;
+    }
+    assertCompanyAccess(req, run.companyId);
+
+    const result = await heartbeat.getRunDiff(runId);
+    res.json(result);
+  });
+
   router.get("/issues/:issueId/live-runs", async (req, res) => {
     const rawId = req.params.issueId as string;
     const issueSvc = issueService(db);
