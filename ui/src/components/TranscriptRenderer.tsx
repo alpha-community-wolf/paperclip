@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import rehypeHighlight from "rehype-highlight";
 import { cn, formatTokens } from "../lib/utils";
 import type { TranscriptEntry } from "../adapters";
 import { CollapsibleContent } from "./CollapsibleContent";
@@ -55,6 +56,11 @@ function JsonHighlight({ value }: { value: string }) {
   }
 
   return <>{parts}</>;
+}
+
+/** Check if content contains fenced code blocks */
+function hasFencedCodeBlocks(content: string): boolean {
+  return /^```[\w-]*/m.test(content);
 }
 
 /** Format and optionally highlight content that might be JSON */
@@ -150,7 +156,7 @@ export function TranscriptRenderer({
               <span className={TS_CELL}>{time}</span>
               <span className={cn(LBL_CELL, "text-green-700 dark:text-green-300")}>assistant</span>
               <div className={cn(CONTENT_CELL, "text-green-900 dark:text-green-100 prose prose-sm dark:prose-invert prose-green max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0")}>
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{entry.text}</ReactMarkdown>
+                <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>{entry.text}</ReactMarkdown>
               </div>
             </div>
           );
@@ -162,7 +168,7 @@ export function TranscriptRenderer({
               <span className={TS_CELL}>{time}</span>
               <span className={cn(LBL_CELL, "text-green-600/60 dark:text-green-300/60")}>thinking</span>
               <div className={cn(CONTENT_CELL, "text-green-800/60 dark:text-green-100/60 italic prose prose-sm dark:prose-invert prose-green max-w-none opacity-60 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0")}>
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{entry.text}</ReactMarkdown>
+                <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>{entry.text}</ReactMarkdown>
               </div>
             </div>
           );
@@ -174,7 +180,7 @@ export function TranscriptRenderer({
               <span className={TS_CELL}>{time}</span>
               <span className={cn(LBL_CELL, "text-neutral-500 dark:text-neutral-400")}>user</span>
               <div className={cn(CONTENT_CELL, "text-neutral-700 dark:text-neutral-300 prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0")}>
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{entry.text}</ReactMarkdown>
+                <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>{entry.text}</ReactMarkdown>
               </div>
             </div>
           );
@@ -297,15 +303,22 @@ export function TranscriptRenderer({
             );
           }
 
-          // Default tool_result rendering
+          // Default tool_result rendering — use markdown when fenced code blocks present
+          const hasCode = hasFencedCodeBlocks(entry.content);
           return (
             <div key={`${entry.ts}-toolres-${idx}`} className={cn(GRID, "gap-y-1 py-0.5")}>
               <span className={TS_CELL}>{time}</span>
               <span className={cn(LBL_CELL, entry.isError ? "text-red-600 dark:text-red-300" : "text-purple-600 dark:text-purple-300")}>tool_result</span>
               {entry.isError ? <span className="text-red-600 dark:text-red-400 min-w-0">error</span> : <span />}
-              <CollapsiblePre className={cn(EXPAND_CELL, "bg-neutral-100 dark:bg-neutral-900 rounded p-2 text-[11px] overflow-x-auto whitespace-pre-wrap text-neutral-700 dark:text-neutral-300")}>
-                {formatContent(entry.content)}
-              </CollapsiblePre>
+              {hasCode ? (
+                <CollapsiblePre className={cn(EXPAND_CELL, "bg-neutral-100 dark:bg-neutral-900 rounded p-2 text-[11px] overflow-x-auto text-neutral-700 dark:text-neutral-300 prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0")}>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>{entry.content}</ReactMarkdown>
+                </CollapsiblePre>
+              ) : (
+                <CollapsiblePre className={cn(EXPAND_CELL, "bg-neutral-100 dark:bg-neutral-900 rounded p-2 text-[11px] overflow-x-auto whitespace-pre-wrap text-neutral-700 dark:text-neutral-300")}>
+                  {formatContent(entry.content)}
+                </CollapsiblePre>
+              )}
             </div>
           );
         }

@@ -514,6 +514,62 @@
   color: var(--foreground);
 }
 
+/* highlight.js syntax theme — light mode */
+.hljs {
+  background: transparent;
+  color: inherit;
+}
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-built_in { color: oklch(0.52 0.18 280); }
+.hljs-string,
+.hljs-attr { color: oklch(0.50 0.14 145); }
+.hljs-number,
+.hljs-literal { color: oklch(0.55 0.16 40); }
+.hljs-comment,
+.hljs-doctag { color: oklch(0.55 0.02 260); font-style: italic; }
+.hljs-function .hljs-title,
+.hljs-title.function_,
+.hljs-title { color: oklch(0.52 0.16 250); }
+.hljs-type,
+.hljs-class .hljs-title { color: oklch(0.55 0.14 60); }
+.hljs-variable,
+.hljs-template-variable { color: oklch(0.50 0.12 20); }
+.hljs-meta { color: oklch(0.50 0.08 260); }
+.hljs-regexp { color: oklch(0.55 0.18 25); }
+.hljs-symbol,
+.hljs-bullet { color: oklch(0.55 0.14 310); }
+.hljs-params { color: oklch(0.45 0.06 260); }
+.hljs-tag { color: oklch(0.52 0.14 20); }
+.hljs-name { color: oklch(0.52 0.18 280); }
+.hljs-attribute { color: oklch(0.55 0.14 60); }
+
+/* highlight.js syntax theme — dark mode */
+.dark .hljs-keyword,
+.dark .hljs-selector-tag,
+.dark .hljs-built_in { color: oklch(0.75 0.16 280); }
+.dark .hljs-string,
+.dark .hljs-attr { color: oklch(0.75 0.14 145); }
+.dark .hljs-number,
+.dark .hljs-literal { color: oklch(0.75 0.16 55); }
+.dark .hljs-comment,
+.dark .hljs-doctag { color: oklch(0.55 0.02 260); font-style: italic; }
+.dark .hljs-function .hljs-title,
+.dark .hljs-title.function_,
+.dark .hljs-title { color: oklch(0.78 0.14 220); }
+.dark .hljs-type,
+.dark .hljs-class .hljs-title { color: oklch(0.78 0.14 70); }
+.dark .hljs-variable,
+.dark .hljs-template-variable { color: oklch(0.72 0.12 20); }
+.dark .hljs-meta { color: oklch(0.65 0.08 260); }
+.dark .hljs-regexp { color: oklch(0.72 0.18 25); }
+.dark .hljs-symbol,
+.dark .hljs-bullet { color: oklch(0.72 0.14 310); }
+.dark .hljs-params { color: oklch(0.70 0.04 260); }
+.dark .hljs-tag { color: oklch(0.72 0.14 20); }
+.dark .hljs-name { color: oklch(0.75 0.16 280); }
+.dark .hljs-attribute { color: oklch(0.78 0.14 70); }
+
 .prose code {
   font-family: var(--font-family-mono);
   font-size: 0.84em;
