@@ -33,6 +33,8 @@ export interface HeartbeatRun {
   externalRunId: string | null;
   contextSnapshot: Record<string, unknown> | null;
   metadata: Record<string, unknown> | null;
+  preRunCommit: string | null;
+  postRunCommit: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
