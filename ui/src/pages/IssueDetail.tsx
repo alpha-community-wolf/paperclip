@@ -10,7 +10,7 @@ import { agentsApi } from "../api/agents";
 import { authApi } from "../api/auth";
 import { projectsApi } from "../api/projects";
 import { useCompany } from "../context/CompanyContext";
-import { usePanel } from "../context/PanelContext";
+// Panel context no longer used — properties render inline in main content
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { WorkspaceFileProvider } from "../context/WorkspaceFileContext";
 import { queryKeys } from "../lib/queryKeys";
@@ -85,7 +85,7 @@ function truncate(text: string, max: number): string {
 export function IssueDetail() {
   const { issueId } = useParams<{ issueId: string }>();
   const { selectedCompanyId } = useCompany();
-  const { openPanel, closePanel, panelVisible, setPanelVisible } = usePanel();
+  // Properties panel removed — IssueProperties renders inline in main content
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -644,14 +644,7 @@ export function IssueDetail() {
     });
   }, [reviewBundle]);
 
-  useEffect(() => {
-    if (issue) {
-      openPanel(
-        <IssueProperties issue={issue} onUpdate={(data) => updateIssue.mutate(data)} />
-      );
-    }
-    return () => closePanel();
-  }, [issue]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Properties now rendered inline — no panel open/close needed
 
   if (isLoading) return <p className="text-sm text-muted-foreground">Loading...</p>;
   if (error) return <p className="text-sm text-destructive">{error.message}</p>;
@@ -697,7 +690,8 @@ export function IssueDetail() {
     : undefined;
 
   const issueContent = (
-    <div className="max-w-2xl space-y-6 pb-16 animate-page-enter">
+    <div className="flex gap-8 pb-16 animate-page-enter">
+    <div className="flex-1 min-w-0 space-y-6">
       {/* Parent chain breadcrumb */}
       {ancestors.length > 0 && (
         <nav className="flex items-center gap-1 text-xs text-muted-foreground flex-wrap">
@@ -805,19 +799,6 @@ export function IssueDetail() {
           </Button>
 
           <div className="hidden md:flex items-center md:ml-auto shrink-0">
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              className={cn(
-                "shrink-0 transition-opacity duration-200",
-                panelVisible ? "opacity-0 pointer-events-none w-0 overflow-hidden" : "opacity-100",
-              )}
-              onClick={() => setPanelVisible(true)}
-              title="Show properties"
-            >
-              <SlidersHorizontal className="h-4 w-4" />
-            </Button>
-
             <Popover open={moreOpen} onOpenChange={setMoreOpen}>
               <PopoverTrigger asChild>
                 <Button variant="ghost" size="icon-xs" className="shrink-0">
@@ -1610,6 +1591,13 @@ export function IssueDetail() {
         </SheetContent>
       </Sheet>
       <ScrollToBottom />
+    </div>
+    {/* Desktop inline properties panel */}
+    <aside className="hidden md:block w-72 shrink-0">
+      <div className="sticky top-6">
+        <IssueProperties issue={issue} onUpdate={(data) => updateIssue.mutate(data)} />
+      </div>
+    </aside>
     </div>
   );
 
