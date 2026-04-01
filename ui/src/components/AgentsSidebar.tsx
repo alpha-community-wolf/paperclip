@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { NavLink, Link, useLocation } from "@/lib/router";
 import { useQuery } from "@tanstack/react-query";
-import { PanelRightClose, Plus } from "lucide-react";
+import { PanelRightClose, PanelRightOpen, Plus } from "lucide-react";
 import { useCompany } from "../context/CompanyContext";
 import { useDialog } from "../context/DialogContext";
 import { useSidebar } from "../context/SidebarContext";
@@ -58,7 +58,7 @@ function CollapsedStrip({
   onExpand: () => void;
 }) {
   return (
-    <div className="flex flex-col items-center gap-1 py-3 w-full">
+    <div className="flex flex-col items-center gap-1 py-2 w-full">
       {agents.map((agent) => {
         const isRunning = (liveCountByAgent.get(agent.id) ?? 0) > 0;
         const dotStatus = isRunning ? "running" : agent.status;
@@ -201,15 +201,35 @@ export function AgentsSidebar() {
   // On mobile, don't render the right sidebar at all
   if (isMobile) return null;
 
-  // Collapsed state: thin strip of status dots
+  // Collapsed state: icon strip with matching header for layout stability
   if (!agentsSidebarOpen) {
     return (
       <aside className="border-l border-border bg-background flex flex-col shrink-0 w-12">
-        <CollapsedStrip
-          agents={visibleAgents}
-          liveCountByAgent={liveCountByAgent}
-          onExpand={toggleAgentsSidebar}
-        />
+        <div className="flex items-center justify-center h-12 shrink-0 border-b border-border">
+          <Tooltip delayDuration={400}>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="text-muted-foreground shrink-0"
+                onClick={toggleAgentsSidebar}
+                aria-label="Expand agents panel"
+              >
+                <PanelRightOpen className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="left" sideOffset={4}>
+              <p>Expand agents</p>
+            </TooltipContent>
+          </Tooltip>
+        </div>
+        <ScrollArea className="flex-1">
+          <CollapsedStrip
+            agents={visibleAgents}
+            liveCountByAgent={liveCountByAgent}
+            onExpand={toggleAgentsSidebar}
+          />
+        </ScrollArea>
       </aside>
     );
   }
