@@ -990,7 +990,7 @@ export function issueRoutes(db: Db, storage: StorageService) {
     const comment = await svc.addComment(id, req.body.body, {
       agentId: actor.agentId ?? undefined,
       userId: actor.actorType === "user" ? actor.actorId : undefined,
-    });
+    }, req.body.metadata ?? null);
 
     await logActivity(db, {
       companyId: currentIssue.companyId,
