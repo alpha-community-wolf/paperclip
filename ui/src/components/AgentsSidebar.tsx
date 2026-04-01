@@ -25,7 +25,6 @@ import {
   formatActivity,
   toolColor,
 } from "../context/AgentActivityContext";
-import { agentStatusDot, agentStatusDotDefault } from "@/lib/status-colors";
 
 /** BFS sort: roots first (no reportsTo), then their direct reports, etc. */
 function sortByHierarchy(agents: Agent[]): Agent[] {
@@ -48,7 +47,7 @@ function sortByHierarchy(agents: Agent[]): Agent[] {
   return sorted;
 }
 
-/** Collapsed strip showing only status dots */
+/** Collapsed strip showing agent icon + status dot */
 function CollapsedStrip({
   agents,
   liveCountByAgent,
@@ -59,28 +58,27 @@ function CollapsedStrip({
   onExpand: () => void;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onExpand}
-      className="flex flex-col items-center gap-1.5 py-3 px-1 w-full"
-      aria-label="Expand agents panel"
-    >
+    <div className="flex flex-col items-center gap-1 py-3 w-full">
       {agents.map((agent) => {
         const isRunning = (liveCountByAgent.get(agent.id) ?? 0) > 0;
         const dotStatus = isRunning ? "running" : agent.status;
-        const colorClass = agentStatusDot[dotStatus] ?? agentStatusDotDefault;
         return (
           <Tooltip key={agent.id} delayDuration={200}>
             <TooltipTrigger asChild>
-              <span className="relative flex h-2 w-2">
-                <span
-                  className={cn(
-                    "absolute inline-flex h-full w-full rounded-full",
-                    colorClass,
-                    dotStatus === "error" && "animate-pulse",
-                  )}
+              <button
+                type="button"
+                onClick={onExpand}
+                className="relative flex items-center justify-center w-8 h-7 rounded-md hover:bg-accent/50 transition-colors"
+                aria-label={`${agent.name} — ${dotStatus}`}
+              >
+                <AgentIcon
+                  icon={agent.icon}
+                  className="h-4 w-4 text-muted-foreground"
                 />
-              </span>
+                <span className="absolute bottom-0.5 right-0.5">
+                  <StatusDot status={dotStatus} size="sm" />
+                </span>
+              </button>
             </TooltipTrigger>
             <TooltipContent side="left" sideOffset={8}>
               <p className="text-xs">
@@ -90,7 +88,7 @@ function CollapsedStrip({
           </Tooltip>
         );
       })}
-    </button>
+    </div>
   );
 }
 
@@ -206,7 +204,7 @@ export function AgentsSidebar() {
   // Collapsed state: thin strip of status dots
   if (!agentsSidebarOpen) {
     return (
-      <aside className="border-l border-border bg-background flex flex-col shrink-0 w-8">
+      <aside className="border-l border-border bg-background flex flex-col shrink-0 w-12">
         <CollapsedStrip
           agents={visibleAgents}
           liveCountByAgent={liveCountByAgent}
