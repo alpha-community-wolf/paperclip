@@ -3,6 +3,8 @@ import { cn } from "../lib/utils";
 import { issueStatusIcon, issueStatusIconDefault } from "../lib/status-colors";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
+import { Lock, Link2 } from "lucide-react";
+import type { IssueLinkSummary } from "@paperclipai/shared";
 
 const allStatuses = ["backlog", "todo", "in_progress", "in_review", "done", "cancelled", "blocked"];
 
@@ -15,12 +17,18 @@ interface StatusIconProps {
   onChange?: (status: string) => void;
   className?: string;
   showLabel?: boolean;
+  linkSummary?: IssueLinkSummary | null;
 }
 
-export function StatusIcon({ status, onChange, className, showLabel }: StatusIconProps) {
+export function StatusIcon({ status, onChange, className, showLabel, linkSummary }: StatusIconProps) {
   const [open, setOpen] = useState(false);
   const colorClass = issueStatusIcon[status] ?? issueStatusIconDefault;
   const isDone = status === "done";
+
+  // Determine chain overlay: lock if blocked by upstream, chain if has downstream
+  const hasBlockedUpstream = linkSummary && linkSummary.incomingCount > 0 && !linkSummary.allUpstreamDone
+    && (status === "backlog" || status === "blocked");
+  const hasDownstream = linkSummary && linkSummary.outgoingCount > 0 && !hasBlockedUpstream;
 
   const circle = (
     <span
@@ -33,6 +41,16 @@ export function StatusIcon({ status, onChange, className, showLabel }: StatusIco
     >
       {isDone && (
         <span className="absolute inset-0 m-auto h-2 w-2 rounded-full bg-current" />
+      )}
+      {hasBlockedUpstream && (
+        <span className="absolute -bottom-1 -right-1 flex h-2.5 w-2.5 items-center justify-center rounded-full bg-background">
+          <Lock className="h-2 w-2 text-red-500" />
+        </span>
+      )}
+      {hasDownstream && (
+        <span className="absolute -bottom-1 -right-1 flex h-2.5 w-2.5 items-center justify-center rounded-full bg-background">
+          <Link2 className="h-2 w-2 text-blue-500" />
+        </span>
       )}
     </span>
   );
