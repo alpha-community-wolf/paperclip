@@ -9,6 +9,13 @@ import { SpecializedToolResult } from "./ToolResultRenderers";
 import { ToolCallAccordion } from "./ToolCallAccordion";
 import type { ToolCallPair } from "./ToolCallAccordion";
 import { CostBadge } from "./CostSummaryBar";
+import {
+  EditCallRenderer,
+  WriteCallRenderer,
+  ReadResultRenderer,
+  getReadFilePath,
+  getCodeToolDescription,
+} from "./CodeToolRenderers";
 
 const GRID = "grid grid-cols-[auto_auto_1fr] gap-x-2 sm:gap-x-3 items-baseline";
 const TS_CELL = "text-neutral-400 dark:text-neutral-600 select-none w-12 sm:w-16 text-[10px] sm:text-xs tabular-nums";
@@ -275,6 +282,18 @@ function AccordionCallContent({ entry }: { entry: ToolCallEntry }) {
     );
   }
 
+  // Edit tool: unified diff view
+  if (entry.name === "Edit") {
+    const renderer = <EditCallRenderer input={entry.input} />;
+    if (renderer) return renderer;
+  }
+
+  // Write tool: file content with syntax highlighting
+  if (entry.name === "Write") {
+    const renderer = <WriteCallRenderer input={entry.input} />;
+    if (renderer) return renderer;
+  }
+
   return (
     <CollapsiblePre className="bg-neutral-200 dark:bg-neutral-900 rounded p-2 text-[11px] overflow-x-auto whitespace-pre-wrap text-neutral-800 dark:text-neutral-200">
       <JsonHighlight value={JSON.stringify(entry.input, null, 2)} />
@@ -286,9 +305,11 @@ function AccordionCallContent({ entry }: { entry: ToolCallEntry }) {
 function AccordionResultContent({
   entry,
   toolName,
+  toolInput,
 }: {
   entry: ToolResultEntry;
   toolName: string | undefined;
+  toolInput?: unknown;
 }) {
   const isBash = toolName === "Bash";
 
@@ -301,6 +322,14 @@ function AccordionResultContent({
         </pre>
       </div>
     );
+  }
+
+  // Read tool: syntax-highlighted code with filename header
+  if (toolName === "Read" && !entry.isError) {
+    const filePath = getReadFilePath(toolInput);
+    if (filePath) {
+      return <ReadResultRenderer content={entry.content} filePath={filePath} />;
+    }
   }
 
   // Grep/Glob specialized rendering
@@ -436,12 +465,14 @@ export function TranscriptRenderer({
                 <div className={cn(CONTENT_CELL)}>
                   <ToolCallAccordion
                     pair={pair}
+                    description={getCodeToolDescription(entry.name, entry.input)}
                     renderCallContent={() => <AccordionCallContent entry={entry} />}
                     renderResultContent={() =>
                       result ? (
                         <AccordionResultContent
                           entry={result}
                           toolName={entry.name}
+                          toolInput={entry.input}
                         />
                       ) : null
                     }
