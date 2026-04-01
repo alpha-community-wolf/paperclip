@@ -30,6 +30,7 @@ export type {
 } from "./workspace-runtime.js";
 export type {
   Issue,
+  IssueLinkSummary,
   IssueAssigneeAdapterOverrides,
   IssueComment,
   IssueAncestor,
