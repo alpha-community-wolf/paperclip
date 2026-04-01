@@ -1,7 +1,10 @@
 import { useState, useMemo } from "react";
+import ReactMarkdown from "react-markdown";
+import rehypeHighlight from "rehype-highlight";
 import { cn } from "../lib/utils";
 
 const COLLAPSE_THRESHOLD = 10; // collapse if more than 10 results
+const READ_COLLAPSE_LINES = 40; // collapse Read results after this many lines
 
 // ---------------------------------------------------------------------------
 // Glob result renderer — compact file list
@@ -221,6 +224,132 @@ export function GrepResultRenderer({ content }: { content: string }) {
 }
 
 // ---------------------------------------------------------------------------
+// Read result renderer — syntax-highlighted code with filename tab + line numbers
+// ---------------------------------------------------------------------------
+
+const EXT_TO_LANG: Record<string, string> = {
+  ts: "typescript", tsx: "typescript", js: "javascript", jsx: "javascript",
+  mjs: "javascript", cjs: "javascript", mts: "typescript", cts: "typescript",
+  py: "python", rb: "ruby", go: "go", rs: "rust", java: "java",
+  kt: "kotlin", swift: "swift", c: "c", cpp: "cpp", h: "c", hpp: "cpp",
+  cs: "csharp", sh: "bash", bash: "bash", zsh: "bash", fish: "bash",
+  json: "json", yaml: "yaml", yml: "yaml", toml: "ini", xml: "xml",
+  html: "html", htm: "html", css: "css", scss: "scss", less: "less",
+  sql: "sql", md: "markdown", mdx: "markdown", graphql: "graphql",
+  dockerfile: "dockerfile", makefile: "makefile",
+  lua: "lua", r: "r", php: "php", pl: "perl", ex: "elixir", erl: "erlang",
+  hs: "haskell", ml: "ocaml", vim: "vim", tf: "hcl",
+};
+
+interface ReadLine {
+  lineNumber: number;
+  content: string;
+}
+
+function parseReadResult(content: string): ReadLine[] | null {
+  const rawLines = content.split("\n");
+  const parsed: ReadLine[] = [];
+
+  for (const line of rawLines) {
+    const m = line.match(/^\s*(\d+)→(.*)$/);
+    if (m) {
+      parsed.push({ lineNumber: parseInt(m[1], 10), content: m[2] });
+    }
+  }
+
+  if (parsed.length < 2) return null;
+  if (parsed.length < rawLines.filter(Boolean).length * 0.6) return null;
+  return parsed;
+}
+
+function detectLanguage(filePath: string): string | null {
+  const basename = filePath.split("/").pop() ?? "";
+  const lowerBase = basename.toLowerCase();
+  if (lowerBase === "dockerfile") return "dockerfile";
+  if (lowerBase === "makefile") return "makefile";
+
+  const ext = basename.includes(".") ? basename.split(".").pop()?.toLowerCase() : null;
+  return ext ? EXT_TO_LANG[ext] ?? null : null;
+}
+
+export function ReadResultRenderer({
+  content,
+  filePath,
+}: {
+  content: string;
+  filePath?: string;
+}) {
+  const parsed = useMemo(() => parseReadResult(content), [content]);
+  const [expanded, setExpanded] = useState(false);
+
+  if (!parsed) return null;
+
+  const lang = filePath ? detectLanguage(filePath) : null;
+  const fileName = filePath ? filePath.split("/").pop() : null;
+  const shouldCollapse = parsed.length > READ_COLLAPSE_LINES;
+  const visibleLines = shouldCollapse && !expanded ? parsed.slice(0, READ_COLLAPSE_LINES) : parsed;
+  const codeContent = visibleLines.map((l) => l.content).join("\n");
+  const fenced = "```" + (lang || "") + "\n" + codeContent + "\n```";
+
+  const maxLineNum = visibleLines[visibleLines.length - 1]?.lineNumber ?? 1;
+  const gutterWidth = String(maxLineNum).length;
+
+  return (
+    <div className="rounded-md border border-neutral-200/60 dark:border-neutral-700/40 overflow-hidden">
+      {fileName && (
+        <div className="flex items-center gap-2 px-3 py-1 bg-neutral-100 dark:bg-neutral-800/60 border-b border-neutral-200/60 dark:border-neutral-700/40">
+          <span className="text-[10px] shrink-0">{fileIcon(filePath ?? "")}</span>
+          <span className="text-[11px] font-mono font-medium text-neutral-600 dark:text-neutral-300 truncate">
+            {fileName}
+          </span>
+          <span className="text-[10px] text-neutral-400 dark:text-neutral-500">
+            {parsed.length} line{parsed.length !== 1 ? "s" : ""}
+          </span>
+        </div>
+      )}
+
+      <div className="flex bg-neutral-50 dark:bg-neutral-900/80">
+        <div
+          className="shrink-0 py-2 pr-2 pl-2 text-right select-none border-r border-neutral-200/40 dark:border-neutral-700/30 bg-neutral-100/50 dark:bg-neutral-800/30"
+          style={{ minWidth: `${gutterWidth + 2}ch` }}
+        >
+          {visibleLines.map((l) => (
+            <div
+              key={l.lineNumber}
+              className="text-[11px] leading-[1.45] font-mono text-neutral-400 dark:text-neutral-600 tabular-nums"
+            >
+              {l.lineNumber}
+            </div>
+          ))}
+        </div>
+
+        <div className={cn(
+          "flex-1 min-w-0 overflow-x-auto py-2 px-3",
+          "[&_pre]:!m-0 [&_pre]:!p-0 [&_pre]:!bg-transparent [&_pre]:!border-0",
+          "[&_code]:!text-[11px] [&_code]:!leading-[1.45] [&_code]:!bg-transparent",
+        )}>
+          <ReactMarkdown rehypePlugins={[rehypeHighlight]}>
+            {fenced}
+          </ReactMarkdown>
+        </div>
+      </div>
+
+      {shouldCollapse && (
+        <div className="px-3 py-1.5 border-t border-neutral-200/40 dark:border-neutral-700/30 bg-neutral-50 dark:bg-neutral-900/50">
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="text-[10px] text-primary hover:underline cursor-pointer"
+          >
+            {expanded ? "Show less" : `Show all ${parsed.length} lines (${parsed.length - READ_COLLAPSE_LINES} more)`}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Dispatcher — tries specialized renderers, returns null if no match
 // ---------------------------------------------------------------------------
 
@@ -228,11 +357,21 @@ export function SpecializedToolResult({
   toolName,
   content,
   className,
+  filePath,
 }: {
   toolName: string | undefined;
   content: string;
   className?: string;
+  filePath?: string;
 }) {
+  // Read tool: syntax-highlighted code viewer
+  if (toolName === "Read") {
+    const renderer = <ReadResultRenderer content={content} filePath={filePath} />;
+    if (renderer) {
+      return <div className={className}>{renderer}</div>;
+    }
+  }
+
   // Dispatch by tool name when available
   if (toolName === "Glob") {
     const renderer = <GlobResultRenderer content={content} />;

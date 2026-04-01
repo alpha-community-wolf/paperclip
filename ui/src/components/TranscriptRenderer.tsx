@@ -310,6 +310,27 @@ function AccordionCallContent({ entry }: { entry: ToolCallEntry }) {
     if (renderer) return renderer;
   }
 
+  // Read tool: show file path
+  if (entry.name === "Read") {
+    const readInput = entry.input as { file_path?: string; offset?: number; limit?: number };
+    if (readInput?.file_path) {
+      return (
+        <div className="bg-neutral-100 dark:bg-neutral-800/60 rounded-md border border-neutral-200/60 dark:border-neutral-700/30 overflow-hidden px-3 py-1.5">
+          <code className="text-[11px] font-mono text-neutral-700 dark:text-neutral-300 break-all">
+            {readInput.file_path}
+          </code>
+          {(readInput.offset || readInput.limit) && (
+            <span className="text-[10px] text-neutral-400 dark:text-neutral-500 ml-2">
+              {readInput.offset ? `offset: ${readInput.offset}` : ""}
+              {readInput.offset && readInput.limit ? ", " : ""}
+              {readInput.limit ? `limit: ${readInput.limit}` : ""}
+            </span>
+          )}
+        </div>
+      );
+    }
+  }
+
   return (
     <CollapsiblePre className="bg-neutral-200 dark:bg-neutral-900 rounded p-2 text-[11px] overflow-x-auto whitespace-pre-wrap text-neutral-800 dark:text-neutral-200">
       <JsonHighlight value={JSON.stringify(entry.input, null, 2)} />
@@ -407,12 +428,22 @@ export function TranscriptRenderer({
     [onAddInlineComment],
   );
 
-  // Build toolUseId → toolName map (for tool_results without accordion pairing)
+  // Build toolUseId → toolName + input map (for tool_results without accordion pairing)
   const toolNameMap = useMemo(() => {
     const map = new Map<string, string>();
     for (const entry of entries) {
       if (entry.kind === "tool_call" && entry.toolUseId) {
         map.set(entry.toolUseId, entry.name);
+      }
+    }
+    return map;
+  }, [entries]);
+
+  const toolInputMap = useMemo(() => {
+    const map = new Map<string, Record<string, unknown>>();
+    for (const entry of entries) {
+      if (entry.kind === "tool_call" && entry.toolUseId) {
+        map.set(entry.toolUseId, entry.input as Record<string, unknown>);
       }
     }
     return map;
@@ -607,12 +638,21 @@ export function TranscriptRenderer({
         );
       }
 
+      // Grep/Glob/Read specialized rendering
       const toolName = toolNameMap.get(entry.toolUseId);
+      const orphanCallInput = toolInputMap.get(entry.toolUseId);
+      const orphanFilePath = toolName === "Read" && orphanCallInput?.file_path
+        ? String(orphanCallInput.file_path)
+        : undefined;
       const specializedResult = !entry.isError ? (
         <SpecializedToolResult
           toolName={toolName}
           content={entry.content}
-          className={cn(EXPAND_CELL, "bg-neutral-50 dark:bg-neutral-900 rounded p-2 text-[11px]")}
+          className={toolName === "Read"
+            ? cn(EXPAND_CELL)
+            : cn(EXPAND_CELL, "bg-neutral-50 dark:bg-neutral-900 rounded p-2 text-[11px]")
+          }
+          filePath={orphanFilePath}
         />
       ) : null;
 
@@ -716,7 +756,7 @@ export function TranscriptRenderer({
         <span className={cn(CONTENT_CELL, isSystem ? "text-blue-600 dark:text-blue-300" : "text-neutral-500")}>{entry.text}</span>
       </div>
     );
-  }, [compact, indexToGroup, resultMap, consumedResultIndices, toolNameMap]);
+  }, [compact, indexToGroup, resultMap, consumedResultIndices, toolNameMap, toolInputMap]);
 
   if (entries.length === 0) {
     return <div className="text-neutral-500 text-xs">No transcript entries yet.</div>;
