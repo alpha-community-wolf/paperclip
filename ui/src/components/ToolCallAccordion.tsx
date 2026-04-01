@@ -27,10 +27,12 @@ export function ToolCallAccordion({
   pair,
   renderCallContent,
   renderResultContent,
+  description,
 }: {
   pair: ToolCallPair;
   renderCallContent: () => React.ReactNode;
   renderResultContent: () => React.ReactNode | null;
+  description?: string | null;
 }) {
   const [expanded, setExpanded] = useState(false);
   const { call, result } = pair;
@@ -80,7 +82,12 @@ export function ToolCallAccordion({
           </span>
         )}
 
-        {/* Non-Bash: show just the tool name is already shown */}
+        {/* Description for non-Bash tools (e.g. file path for Edit/Write/Read) */}
+        {!isBash && description && (
+          <span className="text-neutral-500 dark:text-neutral-400 truncate min-w-0 font-mono">
+            {description}
+          </span>
+        )}
 
         <span className="flex-1" />
 
