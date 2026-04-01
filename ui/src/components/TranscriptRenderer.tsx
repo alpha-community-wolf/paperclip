@@ -19,6 +19,12 @@ import {
   getReadFilePath,
   getCodeToolDescription,
 } from "./CodeToolRenderers";
+import {
+  parseCurlCommand,
+  ApiCallCardInput,
+  ApiCallCardResult,
+  ApiCallCompactBadge,
+} from "./ApiCallRenderer";
 import { useTimelineSteps, TimelineWrapper } from "./TranscriptTimeline";
 import { CommentGutterButton, InlineCommentThread } from "./InlineTranscriptComment";
 
@@ -286,6 +292,12 @@ function AccordionCallContent({ entry }: { entry: ToolCallEntry }) {
   const bashInput = isBash ? (entry.input as { command?: string; description?: string }) : null;
 
   if (isBash && bashInput) {
+    // Detect curl/API calls and render as API request card
+    const apiCall = bashInput.command ? parseCurlCommand(bashInput.command) : null;
+    if (apiCall) {
+      return <ApiCallCardInput parsed={apiCall} />;
+    }
+
     return (
       <div className="bg-neutral-900 dark:bg-neutral-950 rounded-md border border-neutral-700/50 dark:border-neutral-700/30 overflow-hidden">
         <div className="flex items-center gap-2 px-3 py-1.5">
@@ -329,8 +341,16 @@ function AccordionResultContent({
 }) {
   const isBash = toolName === "Bash";
 
-  // Bash output: terminal style
+  // Bash output: check if the paired call was a curl/API call
   if (isBash) {
+    const bashInput = toolInput as { command?: string } | undefined;
+    const apiCall = bashInput?.command ? parseCurlCommand(bashInput.command) : null;
+
+    if (apiCall) {
+      return <ApiCallCardResult content={entry.content} isError={entry.isError} />;
+    }
+
+    // Regular bash output: terminal style
     return (
       <div className="bg-neutral-900 dark:bg-neutral-950 rounded-md border border-neutral-700/50 dark:border-neutral-700/30 overflow-hidden">
         <pre className="px-3 py-2 text-[11px] font-mono whitespace-pre-wrap break-words overflow-x-auto text-neutral-300 dark:text-neutral-400">
@@ -479,14 +499,22 @@ export function TranscriptRenderer({
       if (compact) {
         const isBash = entry.name === "Bash";
         const bashInput = isBash ? (entry.input as { command?: string; description?: string }) : null;
+        const apiCall = bashInput?.command ? parseCurlCommand(bashInput.command) : null;
+
         return (
           <div key={`${entry.ts}-tool-${idx}`} className={cn(GRID, "py-0.5")}>
             <span className={TS_CELL}>{time}</span>
-            <span className={cn(LBL_CELL, isBash ? "text-green-500 dark:text-green-400" : "text-yellow-700 dark:text-yellow-300")}>
-              {isBash ? "bash" : "tool"}
+            <span className={cn(LBL_CELL, apiCall ? "text-blue-500 dark:text-blue-400" : isBash ? "text-green-500 dark:text-green-400" : "text-yellow-700 dark:text-yellow-300")}>
+              {apiCall ? "api" : isBash ? "bash" : "tool"}
             </span>
-            <span className={cn("min-w-0 truncate", isBash ? "text-green-300 dark:text-green-400 font-mono" : "text-yellow-900 dark:text-yellow-100")}>
-              {isBash && bashInput?.command ? `$ ${bashInput.command}` : entry.name}
+            <span className={cn("min-w-0 truncate")}>
+              {apiCall ? (
+                <ApiCallCompactBadge parsed={apiCall} />
+              ) : isBash && bashInput?.command ? (
+                <span className="text-green-300 dark:text-green-400 font-mono">{`$ ${bashInput.command}`}</span>
+              ) : (
+                <span className="text-yellow-900 dark:text-yellow-100">{entry.name}</span>
+              )}
             </span>
           </div>
         );
@@ -496,11 +524,15 @@ export function TranscriptRenderer({
         const result = resultMap.get(entry.toolUseId) ?? null;
         const pair: ToolCallPair = { call: entry, result, callIndex: idx };
 
+        // Detect API calls for enhanced accordion header
+        const bashInput = entry.name === "Bash" ? (entry.input as { command?: string }) : null;
+        const apiCall = bashInput?.command ? parseCurlCommand(bashInput.command) : null;
+
         return (
           <div key={`${entry.ts}-toolpair-${idx}`} className={cn(GRID, "py-0.5 group/step")}>
             <span className={TS_CELL}>{time}</span>
-            <span className={cn(LBL_CELL, "text-yellow-700 dark:text-yellow-300 text-[10px] flex items-center")}>
-              tool
+            <span className={cn(LBL_CELL, apiCall ? "text-blue-500 dark:text-blue-400 text-[10px] flex items-center" : "text-yellow-700 dark:text-yellow-300 text-[10px] flex items-center")}>
+              {apiCall ? "api" : "tool"}
               {stepFeedback && onStepFeedback && (
                 <StepFeedbackButtons stepIndex={idx} feedback={stepFeedback} onVote={onStepFeedback} />
               )}
@@ -509,6 +541,7 @@ export function TranscriptRenderer({
               <ToolCallAccordion
                 pair={pair}
                 description={getCodeToolDescription(entry.name, entry.input)}
+                apiCall={apiCall}
                 renderCallContent={() => <AccordionCallContent entry={entry} />}
                 renderResultContent={() =>
                   result ? (
