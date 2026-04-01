@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { heartbeatsApi } from "../api/heartbeats";
 import { getUIAdapter, buildTranscript } from "../adapters";
 import type { TranscriptEntry } from "../adapters";
 import { TranscriptRenderer } from "./TranscriptRenderer";
 import { CostSummaryBar, computeCostSummary, buildCostAttribution } from "./CostSummaryBar";
-import type { HeartbeatRun } from "@paperclipai/shared";
+import { FeedbackSummaryBar } from "./StepFeedback";
+import type { HeartbeatRun, StepFeedbackMap, StepFeedbackVote } from "@paperclipai/shared";
 import { cn } from "../lib/utils";
 
 type LogChunk = { ts: string; stream: "stdout" | "stderr" | "system"; chunk: string };
@@ -197,6 +198,43 @@ export function RunLogViewer({ run, adapterType, compact = true, maxHeight = "32
   const costSummary = useMemo(() => computeCostSummary(transcript), [transcript]);
   const costAttribution = useMemo(() => buildCostAttribution(transcript), [transcript]);
 
+  // Step feedback state — initialized from run metadata, optimistically updated
+  const [stepFeedback, setStepFeedback] = useState<StepFeedbackMap>(() => {
+    const meta = run.metadata as Record<string, unknown> | null;
+    return (meta?.stepFeedback as StepFeedbackMap) ?? {};
+  });
+
+  // Re-sync when run prop changes (e.g. refetch)
+  useEffect(() => {
+    const meta = run.metadata as Record<string, unknown> | null;
+    const serverFeedback = (meta?.stepFeedback as StepFeedbackMap) ?? {};
+    setStepFeedback(serverFeedback);
+  }, [run.metadata]);
+
+  const handleStepFeedback = useCallback(
+    (stepIndex: number, vote: StepFeedbackVote | null) => {
+      // Optimistic update
+      setStepFeedback((prev) => {
+        const next = { ...prev };
+        if (vote === null) {
+          delete next[String(stepIndex)];
+        } else {
+          next[String(stepIndex)] = vote;
+        }
+        return next;
+      });
+      // Fire-and-forget API call
+      heartbeatsApi.updateStepFeedback(run.id, stepIndex, vote).catch(() => {
+        // Revert on failure
+        setStepFeedback((prev) => {
+          const meta = run.metadata as Record<string, unknown> | null;
+          return (meta?.stepFeedback as StepFeedbackMap) ?? prev;
+        });
+      });
+    },
+    [run.id, run.metadata],
+  );
+
   // Filter state — all types visible by default
   const [filters, setFilters] = useState<Record<FilterKey, boolean>>({
     thinking: true, tool_calls: true, stderr: true, system: true, stdout: true,
@@ -260,6 +298,7 @@ export function RunLogViewer({ run, adapterType, compact = true, maxHeight = "32
         )}
       </div>
       {costSummary && <CostSummaryBar summary={costSummary} />}
+      {!compact && <FeedbackSummaryBar feedback={stepFeedback} totalSteps={transcript.length} />}
       {!compact && (
         <FilterToolbar counts={counts} active={filters} onToggle={toggleFilter} />
       )}
@@ -272,7 +311,13 @@ export function RunLogViewer({ run, adapterType, compact = true, maxHeight = "32
             {anyFilterOff ? "All entries hidden by filters." : "No transcript entries yet."}
           </div>
         ) : (
-          <TranscriptRenderer entries={filteredTranscript} compact={compact} costAttribution={costAttribution} />
+          <TranscriptRenderer
+            entries={filteredTranscript}
+            compact={compact}
+            costAttribution={costAttribution}
+            stepFeedback={compact ? undefined : stepFeedback}
+            onStepFeedback={compact ? undefined : handleStepFeedback}
+          />
         )}
         <div ref={bottomRef} />
       </div>
