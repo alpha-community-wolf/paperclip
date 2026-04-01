@@ -19,6 +19,7 @@ import {
 interface IssueBaseOptions extends BaseClientOptions {
   status?: string;
   assigneeAgentId?: string;
+  assigneeUserId?: string;
   projectId?: string;
   match?: string;
 }
@@ -29,6 +30,7 @@ interface IssueCreateOptions extends BaseClientOptions {
   status?: string;
   priority?: string;
   assigneeAgentId?: string;
+  assigneeUserId?: string;
   projectId?: string;
   goalId?: string;
   parentId?: string;
@@ -42,6 +44,7 @@ interface IssueUpdateOptions extends BaseClientOptions {
   status?: string;
   priority?: string;
   assigneeAgentId?: string;
+  assigneeUserId?: string;
   projectId?: string;
   goalId?: string;
   parentId?: string;
@@ -71,6 +74,7 @@ export function registerIssueCommands(program: Command): void {
       .option("-C, --company-id <id>", "Company ID")
       .option("--status <csv>", "Comma-separated statuses")
       .option("--assignee-agent-id <id>", "Filter by assignee agent ID")
+      .option("--assignee-user-id <id>", "Filter by assignee user ID")
       .option("--project-id <id>", "Filter by project ID")
       .option("--match <text>", "Local text match on identifier/title/description")
       .action(async (opts: IssueBaseOptions) => {
@@ -79,6 +83,7 @@ export function registerIssueCommands(program: Command): void {
           const params = new URLSearchParams();
           if (opts.status) params.set("status", opts.status);
           if (opts.assigneeAgentId) params.set("assigneeAgentId", opts.assigneeAgentId);
+          if (opts.assigneeUserId) params.set("assigneeUserId", opts.assigneeUserId);
           if (opts.projectId) params.set("projectId", opts.projectId);
 
           const query = params.toString();
@@ -104,6 +109,7 @@ export function registerIssueCommands(program: Command): void {
                 status: item.status,
                 priority: item.priority,
                 assigneeAgentId: item.assigneeAgentId,
+                assigneeUserId: item.assigneeUserId,
                 title: item.title,
                 projectId: item.projectId,
               }),
@@ -142,6 +148,7 @@ export function registerIssueCommands(program: Command): void {
       .option("--status <status>", "Issue status")
       .option("--priority <priority>", "Issue priority")
       .option("--assignee-agent-id <id>", "Assignee agent ID")
+      .option("--assignee-user-id <id>", "Assignee user ID")
       .option("--project-id <id>", "Project ID")
       .option("--goal-id <id>", "Goal ID")
       .option("--parent-id <id>", "Parent issue ID")
@@ -156,6 +163,7 @@ export function registerIssueCommands(program: Command): void {
             status: opts.status,
             priority: opts.priority,
             assigneeAgentId: opts.assigneeAgentId,
+            assigneeUserId: opts.assigneeUserId,
             projectId: opts.projectId,
             goalId: opts.goalId,
             parentId: opts.parentId,
@@ -182,6 +190,7 @@ export function registerIssueCommands(program: Command): void {
       .option("--status <status>", "Issue status")
       .option("--priority <priority>", "Issue priority")
       .option("--assignee-agent-id <id>", "Assignee agent ID")
+      .option("--assignee-user-id <id>", "Assignee user ID")
       .option("--project-id <id>", "Project ID")
       .option("--goal-id <id>", "Goal ID")
       .option("--parent-id <id>", "Parent issue ID")
@@ -198,6 +207,7 @@ export function registerIssueCommands(program: Command): void {
             status: opts.status,
             priority: opts.priority,
             assigneeAgentId: opts.assigneeAgentId,
+            assigneeUserId: opts.assigneeUserId,
             projectId: opts.projectId,
             goalId: opts.goalId,
             parentId: opts.parentId,
