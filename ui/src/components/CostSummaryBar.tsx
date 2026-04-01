@@ -1,4 +1,3 @@
-import { useMemo } from "react";
 import { formatTokens } from "../lib/utils";
 import type { TranscriptEntry } from "../adapters";
 
@@ -10,6 +9,10 @@ export interface CostSummary {
   totalCachedTokens: number;
   totalCostUsd: number;
   turnCount: number;
+  /** Model name from the init entry, if available */
+  model: string | null;
+  /** Duration in milliseconds computed from first to last transcript timestamp */
+  durationMs: number | null;
   /** Map from result entry index → cumulative cost at that point */
   resultEntries: ResultEntry[];
 }
@@ -20,8 +23,21 @@ export function computeCostSummary(entries: TranscriptEntry[]): CostSummary | nu
   let totalOutputTokens = 0;
   let totalCachedTokens = 0;
   let totalCostUsd = 0;
+  let model: string | null = null;
+  let firstTs: string | null = null;
+  let lastTs: string | null = null;
 
   for (const entry of entries) {
+    // Track first and last timestamps for duration
+    if (entry.ts) {
+      if (!firstTs) firstTs = entry.ts;
+      lastTs = entry.ts;
+    }
+
+    if (entry.kind === "init" && !model) {
+      model = entry.model;
+    }
+
     if (entry.kind === "result") {
       resultEntries.push(entry);
       totalInputTokens += entry.inputTokens;
@@ -33,12 +49,20 @@ export function computeCostSummary(entries: TranscriptEntry[]): CostSummary | nu
 
   if (resultEntries.length === 0) return null;
 
+  let durationMs: number | null = null;
+  if (firstTs && lastTs) {
+    const ms = new Date(lastTs).getTime() - new Date(firstTs).getTime();
+    if (ms > 0) durationMs = ms;
+  }
+
   return {
     totalInputTokens,
     totalOutputTokens,
     totalCachedTokens,
     totalCostUsd,
     turnCount: resultEntries.length,
+    model,
+    durationMs,
     resultEntries,
   };
 }
@@ -95,11 +119,34 @@ function formatCost(usd: number): string {
   return `$${usd.toFixed(2)}`;
 }
 
-export function CostSummaryBar({ summary }: { summary: CostSummary }) {
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+  const mins = Math.floor(ms / 60_000);
+  const secs = Math.round((ms % 60_000) / 1000);
+  return `${mins}m ${secs}s`;
+}
+
+interface CostSummaryBarProps {
+  summary: CostSummary;
+  /** Fallback duration from HeartbeatRun.startedAt / finishedAt (ms) */
+  runDurationMs?: number | null;
+}
+
+export function CostSummaryBar({ summary, runDurationMs }: CostSummaryBarProps) {
   const avgCostPerTurn = summary.turnCount > 0 ? summary.totalCostUsd / summary.turnCount : 0;
+  const duration = summary.durationMs ?? runDurationMs ?? null;
 
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2 bg-neutral-50 dark:bg-neutral-900/60 rounded-md border border-neutral-200/60 dark:border-neutral-700/30 text-[11px] font-mono">
+      {/* Model */}
+      {summary.model && (
+        <span className="flex items-center gap-1.5">
+          <span className="text-neutral-400 dark:text-neutral-500">model</span>
+          <span className="text-violet-700 dark:text-violet-400">{summary.model}</span>
+        </span>
+      )}
+
       {/* Total cost */}
       <span className="flex items-center gap-1.5">
         <span className="text-neutral-400 dark:text-neutral-500">cost</span>
@@ -123,6 +170,14 @@ export function CostSummaryBar({ summary }: { summary: CostSummary }) {
         <span className="flex items-center gap-1.5">
           <span className="text-neutral-400 dark:text-neutral-500">cached</span>
           <span className="text-neutral-700 dark:text-neutral-300">{formatTokens(summary.totalCachedTokens)}</span>
+        </span>
+      )}
+
+      {/* Duration */}
+      {duration != null && (
+        <span className="flex items-center gap-1.5">
+          <span className="text-neutral-400 dark:text-neutral-500">duration</span>
+          <span className="text-neutral-700 dark:text-neutral-300">{formatDuration(duration)}</span>
         </span>
       )}
 
