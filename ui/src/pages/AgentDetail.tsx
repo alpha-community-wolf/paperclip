@@ -38,7 +38,7 @@ import { WorkspaceFileProvider } from "../context/WorkspaceFileContext";
 import { formatCents, formatDate, formatDateTime, relativeTime, formatTokens, timeUntil } from "../lib/utils";
 import { cn } from "../lib/utils";
 import { Button } from "@/components/ui/button";
-import { Tabs } from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Popover,
   PopoverContent,
@@ -72,6 +72,7 @@ import {
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
 import { AgentIcon, AgentIconPicker } from "../components/AgentIconPicker";
+import { RunDiffViewer } from "../components/RunDiffViewer";
 import { isUuidLike, PERMISSION_KEYS, type PermissionKey, type Agent, type HeartbeatRun, type HeartbeatRunEvent, type AgentRuntimeState, type LiveEvent, type TaskCronSchedule } from "@paperclipai/shared";
 import { agentRouteRef } from "../lib/utils";
 
@@ -2103,9 +2104,20 @@ function RunDetail({ run: initialRun, agentRouteId, adapterType, prevRunId, next
         </div>
       )}
 
-      {/* Log viewer */}
-      <LogViewer run={run} adapterType={adapterType} />
-      <ScrollToBottom />
+      {/* Transcript / Changes tabs */}
+      <Tabs defaultValue="transcript" className="w-full">
+        <TabsList variant="line">
+          <TabsTrigger value="transcript">Transcript</TabsTrigger>
+          <TabsTrigger value="changes">Changes</TabsTrigger>
+        </TabsList>
+        <TabsContent value="transcript">
+          <LogViewer run={run} adapterType={adapterType} />
+          <ScrollToBottom />
+        </TabsContent>
+        <TabsContent value="changes">
+          <RunDiffViewer runId={run.id} />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

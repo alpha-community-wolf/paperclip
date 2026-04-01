@@ -297,7 +297,17 @@ export function RunLogViewer({ run, adapterType, compact = true, maxHeight = "32
           </span>
         )}
       </div>
-      {costSummary && <CostSummaryBar summary={costSummary} />}
+      {costSummary && (
+        <CostSummaryBar
+          summary={costSummary}
+          runDurationMs={
+            run.startedAt && run.finishedAt
+              ? new Date(run.finishedAt as unknown as string).getTime() -
+                new Date(run.startedAt as unknown as string).getTime()
+              : null
+          }
+        />
+      )}
       {!compact && <FeedbackSummaryBar feedback={stepFeedback} totalSteps={transcript.length} />}
       {!compact && (
         <FilterToolbar counts={counts} active={filters} onToggle={toggleFilter} />

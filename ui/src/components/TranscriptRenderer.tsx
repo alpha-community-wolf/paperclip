@@ -791,10 +791,6 @@ export function TranscriptRenderer({
     );
   }, [compact, indexToGroup, resultMap, consumedResultIndices, toolNameMap, toolInputMap]);
 
-  if (entries.length === 0) {
-    return <div className="text-neutral-500 text-xs">No transcript entries yet.</div>;
-  }
-
   /** Wraps a rendered entry with comment gutter + inline thread */
   function EntryWithComments({ idx, children }: { idx: number; children: React.ReactNode }) {
     if (!commentsEnabled) return <>{children}</>;
@@ -844,6 +840,10 @@ export function TranscriptRenderer({
       </EntryWithComments>
     );
   }, [renderEntry, commentsEnabled, inlineComments, activeCommentIdx]);
+
+  if (entries.length === 0) {
+    return <div className="text-neutral-500 text-xs">No transcript entries yet.</div>;
+  }
 
   // Compact mode: skip timeline rail
   if (compact) {

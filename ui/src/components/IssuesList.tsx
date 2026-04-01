@@ -13,6 +13,7 @@ import { formatDate, formatDateTime, cn, timeUntil } from "../lib/utils";
 import { timeAgo } from "../lib/timeAgo";
 import { StatusIcon } from "./StatusIcon";
 import { PriorityIcon } from "./PriorityIcon";
+import { DependencyPills } from "./DependencyPills";
 import { EmptyState } from "./EmptyState";
 import { Identity } from "./Identity";
 import { PageSkeleton } from "./PageSkeleton";
@@ -56,6 +57,9 @@ import {
   CheckSquare,
   Square,
   MinusSquare,
+  ArrowUp,
+  ArrowDown,
+  Link2,
 } from "lucide-react";
 import { KanbanBoard } from "./KanbanBoard";
 import { useIssueTriageKeyboard } from "../hooks/useIssueTriageKeyboard";
@@ -576,6 +580,7 @@ export function IssuesList({
           status={issue.status}
           onChange={(s) => onUpdateIssue(issue.id, { status: s })}
           showLabel
+          linkSummary={issue.linkSummary}
         />
       </span>
 
@@ -601,6 +606,7 @@ export function IssuesList({
               status={issue.status}
               onChange={(s) => onUpdateIssue(issue.id, { status: s })}
               showLabel
+              linkSummary={issue.linkSummary}
             />
           </span>
           <span className="text-xs text-muted-foreground font-mono shrink-0">
@@ -652,6 +658,11 @@ export function IssuesList({
               </span>
             );
           })()}
+          {issue.linkSummary && (
+            <span className="sm:hidden" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
+              <DependencyPills issueId={issue.id} linkSummary={issue.linkSummary} />
+            </span>
+          )}
           <span className="text-xs text-muted-foreground sm:hidden">&middot;</span>
           <span className="text-xs text-muted-foreground sm:hidden">
             {timeAgo(issue.updatedAt)}
@@ -781,6 +792,11 @@ export function IssuesList({
             {(issue.labels ?? []).length > 3 && (
               <span className="text-[10px] text-muted-foreground">+{(issue.labels ?? []).length - 3}</span>
             )}
+          </span>
+        )}
+        {issue.linkSummary && (
+          <span className="hidden sm:inline-flex" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
+            <DependencyPills issueId={issue.id} linkSummary={issue.linkSummary} />
           </span>
         )}
         <span className="hidden sm:inline-flex" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>

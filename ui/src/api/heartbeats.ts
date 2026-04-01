@@ -72,4 +72,8 @@ export const heartbeatsApi = {
     api.get<FailedRunForIssue[]>(`/companies/${companyId}/failed-runs`),
   updateStepFeedback: (runId: string, stepIndex: number, vote: StepFeedbackVote | null) =>
     api.patch<HeartbeatRun>(`/heartbeat-runs/${runId}/feedback`, { stepIndex, vote }),
+  diff: (runId: string) =>
+    api.get<{ preCommit: string | null; postCommit: string | null; diff: string | null; error?: string }>(
+      `/heartbeat-runs/${runId}/diff`,
+    ),
 };

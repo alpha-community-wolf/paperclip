@@ -10,6 +10,7 @@ import {
   issueAttachments,
   issueLabels,
   issueComments,
+  issueLinks,
   issueReadStates,
   issues,
   labels,
@@ -321,6 +322,54 @@ function withActiveRuns<T extends { executionRunId: string | null }>(
   }));
 }
 
+async function withIssueLinkSummaries<T extends { id: string }>(
+  dbOrTx: Db,
+  rows: T[],
+): Promise<(T & { linkSummary: { incomingCount: number; outgoingCount: number; allUpstreamDone: boolean } | null })[]> {
+  if (rows.length === 0) return rows.map((r) => ({ ...r, linkSummary: null }));
+  const ids = rows.map((r) => r.id);
+
+  // Count outgoing links per issue (issue is source)
+  const outgoing = await dbOrTx
+    .select({
+      issueId: issueLinks.sourceId,
+      count: sql<number>`count(*)::int`,
+    })
+    .from(issueLinks)
+    .where(inArray(issueLinks.sourceId, ids))
+    .groupBy(issueLinks.sourceId);
+
+  // Count incoming links per issue (issue is target) + check if all upstream done
+  const incoming = await dbOrTx
+    .select({
+      issueId: issueLinks.targetId,
+      count: sql<number>`count(*)::int`,
+      pendingUpstream: sql<number>`count(*) FILTER (WHERE ${issues.status} <> 'done')::int`,
+    })
+    .from(issueLinks)
+    .innerJoin(issues, eq(issues.id, issueLinks.sourceId))
+    .where(inArray(issueLinks.targetId, ids))
+    .groupBy(issueLinks.targetId);
+
+  const outMap = new Map(outgoing.map((r) => [r.issueId, r.count]));
+  const inMap = new Map(incoming.map((r) => [r.issueId, { count: r.count, pendingUpstream: r.pendingUpstream }]));
+
+  return rows.map((row) => {
+    const outCount = outMap.get(row.id) ?? 0;
+    const inData = inMap.get(row.id);
+    const inCount = inData?.count ?? 0;
+    if (outCount === 0 && inCount === 0) return { ...row, linkSummary: null };
+    return {
+      ...row,
+      linkSummary: {
+        incomingCount: inCount,
+        outgoingCount: outCount,
+        allUpstreamDone: inCount > 0 ? (inData!.pendingUpstream === 0) : true,
+      },
+    };
+  });
+}
+
 export function issueService(db: Db) {
   const reviewBundlesSvc = reviewBundleService(db);
 
@@ -527,11 +576,15 @@ export function issueService(db: Db) {
       const withProjects = await withIssueProjects(db, withLabels);
       const runMap = await activeRunMapForIssues(db, withProjects);
       const withRuns = withActiveRuns(withProjects, runMap);
-      if (!contextUserId || withRuns.length === 0) {
-        return withRuns;
+
+      // Enrich with link summaries (incoming/outgoing counts + allUpstreamDone)
+      const enrichedWithLinks = await withIssueLinkSummaries(db, withRuns);
+
+      if (!contextUserId || enrichedWithLinks.length === 0) {
+        return enrichedWithLinks;
       }
 
-      const issueIds = withRuns.map((row) => row.id);
+      const issueIds = enrichedWithLinks.map((row) => row.id);
       const statsRows = await db
         .select({
           issueId: issueComments.issueId,
@@ -571,7 +624,7 @@ export function issueService(db: Db) {
       const statsByIssueId = new Map(statsRows.map((row) => [row.issueId, row]));
       const readByIssueId = new Map(readRows.map((row) => [row.issueId, row.myLastReadAt]));
 
-      return withRuns.map((row) => ({
+      return enrichedWithLinks.map((row) => ({
         ...row,
         ...deriveIssueUserContext(row, contextUserId, {
           myLastCommentAt: statsByIssueId.get(row.id)?.myLastCommentAt ?? null,

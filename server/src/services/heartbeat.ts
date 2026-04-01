@@ -1,3 +1,4 @@
+import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { and, asc, desc, eq, gt, inArray, ne, sql } from "drizzle-orm";
@@ -47,6 +48,17 @@ import {
 } from "./execution-workspace-policy.js";
 import { readConfigFile } from "../config-file.js";
 import { resolvePaperclipConfigPath } from "../paths.js";
+
+/** Resolve the current HEAD commit hash in a directory, or null if not a git repo. */
+function captureGitHead(cwd: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    execFile("git", ["rev-parse", "HEAD"], { cwd, timeout: 5000 }, (err, stdout) => {
+      if (err) return resolve(null);
+      const hash = stdout.trim();
+      resolve(/^[0-9a-f]{40}$/i.test(hash) ? hash : null);
+    });
+  });
+}
 
 const MAX_LIVE_LOG_CHUNK_BYTES = 8 * 1024;
 const HEARTBEAT_MAX_CONCURRENT_RUNS_DEFAULT = 1;
@@ -2039,6 +2051,18 @@ export function heartbeatService(db: Db) {
           }
         : context;
       const selfContext = await buildAgentSelfContext(db, agent, context);
+
+      // Capture pre-run git HEAD for diff tracking
+      const preRunCommit = executionWorkspace.cwd
+        ? await captureGitHead(executionWorkspace.cwd)
+        : null;
+      if (preRunCommit) {
+        await db
+          .update(heartbeatRuns)
+          .set({ preRunCommit, updatedAt: new Date() })
+          .where(eq(heartbeatRuns.id, run.id));
+      }
+
       const adapterResult = await adapter.execute({
         runId: run.id,
         agent,
@@ -2142,8 +2166,14 @@ export function heartbeatService(db: Db) {
             } as Record<string, unknown>)
           : null;
 
+      // Capture post-run git HEAD for diff tracking
+      const postRunCommit = executionWorkspace.cwd
+        ? await captureGitHead(executionWorkspace.cwd)
+        : null;
+
       await setRunStatus(run.id, status, {
         finishedAt: new Date(),
+        ...(postRunCommit ? { postRunCommit } : {}),
         error:
           outcome === "succeeded"
             ? null
@@ -3162,6 +3192,34 @@ export function heartbeatService(db: Db) {
         logRef: run.logRef,
         ...result,
       };
+    },
+
+    getRunDiff: async (runId: string): Promise<{ preCommit: string | null; postCommit: string | null; diff: string | null; error?: string }> => {
+      const run = await getRun(runId);
+      if (!run) throw notFound("Heartbeat run not found");
+      const pre = run.preRunCommit;
+      const post = run.postRunCommit;
+      if (!pre || !post) {
+        return { preCommit: pre, postCommit: post, diff: null, error: "Git commit hashes not available for this run" };
+      }
+      if (pre === post) {
+        return { preCommit: pre, postCommit: post, diff: "" };
+      }
+      const workspace = parseObject(run.contextSnapshot);
+      const paperclipWorkspace = parseObject(workspace.paperclipWorkspace);
+      const cwd = typeof paperclipWorkspace.cwd === "string" ? paperclipWorkspace.cwd : null;
+      if (!cwd) {
+        return { preCommit: pre, postCommit: post, diff: null, error: "Workspace directory not available" };
+      }
+      return new Promise((resolve) => {
+        execFile("git", ["diff", `${pre}..${post}`], { cwd, timeout: 15000, maxBuffer: 2 * 1024 * 1024 }, (err, stdout) => {
+          if (err) {
+            resolve({ preCommit: pre, postCommit: post, diff: null, error: `git diff failed: ${err.message}` });
+          } else {
+            resolve({ preCommit: pre, postCommit: post, diff: stdout });
+          }
+        });
+      });
     },
 
     invoke: async (

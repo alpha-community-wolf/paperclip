@@ -33,6 +33,8 @@ export const heartbeatRuns = pgTable(
     externalRunId: text("external_run_id"),
     contextSnapshot: jsonb("context_snapshot").$type<Record<string, unknown>>(),
     metadata: jsonb("metadata").$type<Record<string, unknown>>(),
+    preRunCommit: text("pre_run_commit"),
+    postRunCommit: text("post_run_commit"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

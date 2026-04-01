@@ -88,11 +88,18 @@ export interface Issue {
   project?: Project | null;
   goal?: Goal | null;
   mentionedProjects?: Project[];
+  linkSummary?: IssueLinkSummary | null;
   myLastTouchAt?: Date | null;
   lastExternalCommentAt?: Date | null;
   isUnreadForMe?: boolean;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface IssueLinkSummary {
+  incomingCount: number;
+  outgoingCount: number;
+  allUpstreamDone: boolean;
 }
 
 export interface IssueComment {
