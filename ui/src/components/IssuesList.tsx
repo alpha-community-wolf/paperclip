@@ -575,6 +575,7 @@ export function IssuesList({
         <StatusIcon
           status={issue.status}
           onChange={(s) => onUpdateIssue(issue.id, { status: s })}
+          showLabel
         />
       </span>
 
@@ -599,6 +600,7 @@ export function IssuesList({
             <StatusIcon
               status={issue.status}
               onChange={(s) => onUpdateIssue(issue.id, { status: s })}
+              showLabel
             />
           </span>
           <span className="text-xs text-muted-foreground font-mono shrink-0">

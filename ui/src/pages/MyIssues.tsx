@@ -62,7 +62,7 @@ export function MyIssues() {
               leading={
                 <>
                   <PriorityIcon priority={issue.priority} />
-                  <StatusIcon status={issue.status} />
+                  <StatusIcon status={issue.status} showLabel />
                 </>
               }
               trailing={
