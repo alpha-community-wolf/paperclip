@@ -579,6 +579,7 @@ export function IssuesList({
         <StatusIcon
           status={issue.status}
           onChange={(s) => onUpdateIssue(issue.id, { status: s })}
+          showLabel
           linkSummary={issue.linkSummary}
         />
       </span>
@@ -604,6 +605,7 @@ export function IssuesList({
             <StatusIcon
               status={issue.status}
               onChange={(s) => onUpdateIssue(issue.id, { status: s })}
+              showLabel
               linkSummary={issue.linkSummary}
             />
           </span>
