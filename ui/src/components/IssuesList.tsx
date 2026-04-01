@@ -9,7 +9,7 @@ import { projectsApi } from "../api/projects";
 import { taskCronsApi } from "../api/taskCrons";
 import { queryKeys } from "../lib/queryKeys";
 import { groupBy } from "../lib/groupBy";
-import { formatDate, formatDateTime, cn, timeUntil } from "../lib/utils";
+import { formatDate, formatDateTime, cn, timeUntil, activityLevel, activityConfig } from "../lib/utils";
 import { timeAgo } from "../lib/timeAgo";
 import { StatusIcon } from "./StatusIcon";
 import { PriorityIcon } from "./PriorityIcon";
@@ -67,6 +67,19 @@ import type { Issue } from "@paperclipai/shared";
 import type { TaskCronSchedule } from "@paperclipai/shared";
 
 /* ── Helpers ── */
+
+function ActivityDot({ date }: { date: Date | string }) {
+  const level = activityLevel(date);
+  const config = activityConfig[level];
+  return (
+    <span className={cn("inline-block h-2 w-2 rounded-full shrink-0", config.className, {
+      "bg-orange-500": level === "hot",
+      "bg-yellow-500 dark:bg-yellow-400": level === "warm",
+      "bg-blue-400": level === "cold",
+      "bg-muted-foreground/40": level === "stale",
+    })} title={`${config.label} — updated ${timeAgo(date)}`} />
+  );
+}
 
 const statusOrder = ["in_progress", "todo", "backlog", "in_review", "blocked", "done", "cancelled"];
 const pastStatuses = new Set(["done", "cancelled"]);
@@ -664,7 +677,8 @@ export function IssuesList({
             </span>
           )}
           <span className="text-xs text-muted-foreground sm:hidden">&middot;</span>
-          <span className="text-xs text-muted-foreground sm:hidden">
+          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground sm:hidden">
+            <ActivityDot date={issue.updatedAt} />
             {timeAgo(issue.updatedAt)}
           </span>
         </span>
@@ -963,7 +977,8 @@ export function IssuesList({
           </PopoverContent>
         </Popover>
         </span>
-        <span className="text-xs text-muted-foreground tabular-nums whitespace-nowrap">
+        <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground tabular-nums whitespace-nowrap">
+          <ActivityDot date={issue.updatedAt} />
           {formatDateTime(issue.updatedAt)}
         </span>
       </span>

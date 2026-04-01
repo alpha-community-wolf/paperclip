@@ -114,3 +114,25 @@ export function projectRouteRef(project: { id: string; urlKey?: string | null; n
 export function projectUrl(project: { id: string; urlKey?: string | null; name?: string | null }): string {
   return `/projects/${projectRouteRef(project)}`;
 }
+
+export type ActivityLevel = "hot" | "warm" | "cold" | "stale";
+
+const FOUR_HOURS = 4 * 60 * 60 * 1000;
+const ONE_DAY = 24 * 60 * 60 * 1000;
+const TWO_DAYS = 2 * ONE_DAY;
+
+/** Classify issue activity recency into hot/warm/cold/stale. */
+export function activityLevel(date: Date | string): ActivityLevel {
+  const age = Date.now() - new Date(date).getTime();
+  if (age < FOUR_HOURS) return "hot";
+  if (age < ONE_DAY) return "warm";
+  if (age < TWO_DAYS) return "cold";
+  return "stale";
+}
+
+export const activityConfig: Record<ActivityLevel, { label: string; className: string }> = {
+  hot: { label: "Active", className: "text-orange-500" },
+  warm: { label: "Recent", className: "text-yellow-500 dark:text-yellow-400" },
+  cold: { label: "Cooling", className: "text-blue-400" },
+  stale: { label: "Stale", className: "text-muted-foreground/50" },
+};
