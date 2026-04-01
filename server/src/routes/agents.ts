@@ -1731,6 +1731,29 @@ export function agentRoutes(db: Db) {
     res.json(run);
   });
 
+  router.patch("/heartbeat-runs/:runId/feedback", async (req, res) => {
+    const runId = req.params.runId as string;
+    const run = await heartbeat.getRun(runId);
+    if (!run) {
+      res.status(404).json({ error: "Heartbeat run not found" });
+      return;
+    }
+    assertCompanyAccess(req, run.companyId);
+
+    const { stepIndex, vote } = req.body as { stepIndex?: number; vote?: string };
+    if (typeof stepIndex !== "number" || stepIndex < 0) {
+      res.status(400).json({ error: "stepIndex must be a non-negative integer" });
+      return;
+    }
+    if (vote !== "up" && vote !== "down" && vote !== null) {
+      res.status(400).json({ error: "vote must be 'up', 'down', or null" });
+      return;
+    }
+
+    const updated = await heartbeat.updateStepFeedback(runId, stepIndex, vote as "up" | "down" | null);
+    res.json(updated);
+  });
+
   router.get("/heartbeat-runs/:runId/events", async (req, res) => {
     const runId = req.params.runId as string;
     const run = await heartbeat.getRun(runId);

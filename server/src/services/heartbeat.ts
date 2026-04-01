@@ -3304,5 +3304,34 @@ export function heartbeatService(db: Db) {
         .limit(1);
       return run ?? null;
     },
+
+    updateStepFeedback: async (
+      runId: string,
+      stepIndex: number,
+      vote: "up" | "down" | null,
+    ) => {
+      const run = await getRun(runId);
+      if (!run) return null;
+
+      const meta = (run.metadata ?? {}) as Record<string, unknown>;
+      const feedback = (meta.stepFeedback ?? {}) as Record<string, string>;
+
+      if (vote === null) {
+        delete feedback[String(stepIndex)];
+      } else {
+        feedback[String(stepIndex)] = vote;
+      }
+
+      const updatedMeta = { ...meta, stepFeedback: feedback };
+
+      const updated = await db
+        .update(heartbeatRuns)
+        .set({ metadata: updatedMeta, updatedAt: new Date() })
+        .where(eq(heartbeatRuns.id, runId))
+        .returning()
+        .then((rows) => rows[0] ?? null);
+
+      return updated;
+    },
   };
 }

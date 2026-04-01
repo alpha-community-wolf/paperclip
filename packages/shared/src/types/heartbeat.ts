@@ -32,9 +32,16 @@ export interface HeartbeatRun {
   errorCode: string | null;
   externalRunId: string | null;
   contextSnapshot: Record<string, unknown> | null;
+  metadata: Record<string, unknown> | null;
   createdAt: Date;
   updatedAt: Date;
 }
+
+/** Per-step feedback vote */
+export type StepFeedbackVote = "up" | "down";
+
+/** Shape of metadata.stepFeedback — keyed by transcript entry index */
+export type StepFeedbackMap = Record<string, StepFeedbackVote>;
 
 export interface HeartbeatRunEvent {
   id: number;

@@ -9,6 +9,8 @@ import { SpecializedToolResult } from "./ToolResultRenderers";
 import { ToolCallAccordion } from "./ToolCallAccordion";
 import type { ToolCallPair } from "./ToolCallAccordion";
 import { CostBadge } from "./CostSummaryBar";
+import { StepFeedbackButtons } from "./StepFeedback";
+import type { StepFeedbackMap, StepFeedbackVote } from "@paperclipai/shared";
 import {
   EditCallRenderer,
   WriteCallRenderer,
@@ -162,7 +164,15 @@ function useThinkingGroups(entries: TranscriptEntry[]) {
 }
 
 /** Collapsible block for a group of thinking entries */
-function ThinkingGroup({ group }: { group: ThinkingGroupData }) {
+function ThinkingGroup({
+  group,
+  stepFeedback,
+  onStepFeedback,
+}: {
+  group: ThinkingGroupData;
+  stepFeedback?: StepFeedbackMap;
+  onStepFeedback?: (stepIndex: number, vote: StepFeedbackVote | null) => void;
+}) {
   const [expanded, setExpanded] = useState(false);
   const toggle = useCallback(() => setExpanded((v) => !v), []);
   const entryCount = group.entries.length;
@@ -170,7 +180,7 @@ function ThinkingGroup({ group }: { group: ThinkingGroupData }) {
   const lastTime = entryCount > 1 ? fmtTime(group.entries[entryCount - 1].ts) : null;
 
   return (
-    <div className="py-0.5">
+    <div className="py-0.5 group/step">
       <button
         type="button"
         onClick={toggle}
@@ -180,8 +190,11 @@ function ThinkingGroup({ group }: { group: ThinkingGroupData }) {
         )}
       >
         <span className={TS_CELL}>{firstTime}</span>
-        <span className={cn(LBL_CELL, "text-violet-500/70 dark:text-violet-400/70")}>
+        <span className={cn(LBL_CELL, "text-violet-500/70 dark:text-violet-400/70 flex items-center")}>
           thinking
+          {stepFeedback && onStepFeedback && (
+            <StepFeedbackButtons stepIndex={group.startIndex} feedback={stepFeedback} onVote={onStepFeedback} />
+          )}
         </span>
         <span className="min-w-0 flex items-center gap-2 text-[11px] text-neutral-400 dark:text-neutral-500">
           <svg
@@ -359,10 +372,14 @@ export function TranscriptRenderer({
   entries,
   compact = false,
   costAttribution,
+  stepFeedback,
+  onStepFeedback,
 }: {
   entries: TranscriptEntry[];
   compact?: boolean;
   costAttribution?: Map<number, { costUsd: number; inputTokens: number; outputTokens: number; cachedTokens: number }>;
+  stepFeedback?: StepFeedbackMap;
+  onStepFeedback?: (stepIndex: number, vote: StepFeedbackVote | null) => void;
 }) {
   const { callMap, resultMap, consumedResultIndices } = useToolPairing(entries);
   const { indexToGroup } = useThinkingGroups(entries);
@@ -389,9 +406,14 @@ export function TranscriptRenderer({
 
         if (entry.kind === "assistant") {
           return (
-            <div key={`${entry.ts}-assistant-${idx}`} className={cn(GRID, "py-0.5")}>
+            <div key={`${entry.ts}-assistant-${idx}`} className={cn(GRID, "py-0.5 group/step")}>
               <span className={TS_CELL}>{time}</span>
-              <span className={cn(LBL_CELL, "text-green-700 dark:text-green-300")}>assistant</span>
+              <span className={cn(LBL_CELL, "text-green-700 dark:text-green-300 flex items-center")}>
+                assistant
+                {stepFeedback && onStepFeedback && (
+                  <StepFeedbackButtons stepIndex={idx} feedback={stepFeedback} onVote={onStepFeedback} />
+                )}
+              </span>
               <div className={cn(CONTENT_CELL, "text-green-900 dark:text-green-100 prose prose-sm dark:prose-invert prose-green max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0")}>
                 <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>{entry.text}</ReactMarkdown>
               </div>
@@ -408,6 +430,8 @@ export function TranscriptRenderer({
               <ThinkingGroup
                 key={`thinking-group-${group.startIndex}`}
                 group={group}
+                stepFeedback={stepFeedback}
+                onStepFeedback={onStepFeedback}
               />
             );
           }
@@ -459,9 +483,14 @@ export function TranscriptRenderer({
             const pair: ToolCallPair = { call: entry, result, callIndex: idx };
 
             return (
-              <div key={`${entry.ts}-toolpair-${idx}`} className={cn(GRID, "py-0.5")}>
+              <div key={`${entry.ts}-toolpair-${idx}`} className={cn(GRID, "py-0.5 group/step")}>
                 <span className={TS_CELL}>{time}</span>
-                <span className={cn(LBL_CELL, "text-yellow-700 dark:text-yellow-300 text-[10px]")}>tool</span>
+                <span className={cn(LBL_CELL, "text-yellow-700 dark:text-yellow-300 text-[10px] flex items-center")}>
+                  tool
+                  {stepFeedback && onStepFeedback && (
+                    <StepFeedbackButtons stepIndex={idx} feedback={stepFeedback} onVote={onStepFeedback} />
+                  )}
+                </span>
                 <div className={cn(CONTENT_CELL)}>
                   <ToolCallAccordion
                     pair={pair}

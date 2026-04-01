@@ -1,4 +1,4 @@
-import type { HeartbeatRun, HeartbeatRunEvent } from "@paperclipai/shared";
+import type { HeartbeatRun, HeartbeatRunEvent, StepFeedbackVote } from "@paperclipai/shared";
 import { api } from "./client";
 
 export interface ActiveRunForIssue extends HeartbeatRun {
@@ -70,4 +70,6 @@ export const heartbeatsApi = {
     api.get<LiveRunForIssue[]>(`/companies/${companyId}/live-runs${minCount ? `?minCount=${minCount}` : ""}`),
   failedRunsForCompany: (companyId: string) =>
     api.get<FailedRunForIssue[]>(`/companies/${companyId}/failed-runs`),
+  updateStepFeedback: (runId: string, stepIndex: number, vote: StepFeedbackVote | null) =>
+    api.patch<HeartbeatRun>(`/heartbeat-runs/${runId}/feedback`, { stepIndex, vote }),
 };
