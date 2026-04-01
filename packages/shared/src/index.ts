@@ -120,6 +120,8 @@ export type {
   AgentRuntimeState,
   AgentTaskSession,
   AgentWakeupRequest,
+  StepFeedbackVote,
+  StepFeedbackMap,
   LiveEvent,
   DashboardSummary,
   ActivityEvent,

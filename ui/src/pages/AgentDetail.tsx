@@ -2113,6 +2113,7 @@ function RunDetail({ run: initialRun, agentRouteId, adapterType, prevRunId, next
 /* ---- Log Viewer ---- */
 
 function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: string }) {
+  const queryClient = useQueryClient();
   const [events, setEvents] = useState<HeartbeatRunEvent[]>([]);
   const [logLines, setLogLines] = useState<Array<{ ts: string; stream: "stdout" | "stderr" | "system"; chunk: string }>>([]);
   const [loading, setLoading] = useState(true);
@@ -2474,6 +2475,53 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
   const adapter = useMemo(() => getUIAdapter(adapterType), [adapterType]);
   const transcript = useMemo(() => buildTranscript(logLines, adapter.parseStdoutLine), [logLines, adapter]);
 
+  // Inline transcript comments
+  const runIssueId = useMemo(() => {
+    const context = asRecord(run.contextSnapshot);
+    return context ? asNonEmptyString(context.issueId) : null;
+  }, [run.contextSnapshot]);
+
+  const { data: issueComments } = useQuery({
+    queryKey: queryKeys.issues.comments(runIssueId!),
+    queryFn: () => issuesApi.listComments(runIssueId!),
+    enabled: !!runIssueId,
+  });
+
+  const inlineComments = useMemo(() => {
+    if (!issueComments) return undefined;
+    const map = new Map<number, import("@paperclipai/shared").IssueComment[]>();
+    for (const comment of issueComments) {
+      const meta = comment.metadata as Record<string, unknown> | null;
+      if (!meta || typeof meta.transcriptAnchor !== "object" || !meta.transcriptAnchor) continue;
+      const anchor = meta.transcriptAnchor as { runId?: string; entryIndex?: number };
+      if (anchor.runId !== run.id || typeof anchor.entryIndex !== "number") continue;
+      const existing = map.get(anchor.entryIndex) ?? [];
+      existing.push(comment);
+      map.set(anchor.entryIndex, existing);
+    }
+    for (const [, comments] of map) {
+      comments.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    }
+    return map.size > 0 ? map : undefined;
+  }, [issueComments, run.id]);
+
+  const addInlineComment = useCallback(
+    async (entryIndex: number, body: string) => {
+      if (!runIssueId) return;
+      const entry = transcript[entryIndex];
+      await issuesApi.addComment(runIssueId, body, undefined, undefined, {
+        transcriptAnchor: {
+          runId: run.id,
+          entryIndex,
+          entryTimestamp: entry?.ts ?? "",
+          entryKind: entry?.kind ?? "",
+        },
+      });
+      queryClient.invalidateQueries({ queryKey: queryKeys.issues.comments(runIssueId) });
+    },
+    [runIssueId, run.id, transcript, queryClient],
+  );
+
   if (loading && logLoading) {
     return <p className="text-xs text-muted-foreground">Loading run logs...</p>;
   }
@@ -2629,7 +2677,11 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
         {transcript.length === 0 && !run.logRef ? (
           <div className="text-neutral-500">No persisted transcript for this run.</div>
         ) : (
-          <TranscriptRenderer entries={transcript} />
+          <TranscriptRenderer
+            entries={transcript}
+            inlineComments={inlineComments}
+            onAddInlineComment={runIssueId ? addInlineComment : undefined}
+          />
         )}
         {logError && <div className="text-red-600 dark:text-red-300">{logError}</div>}
         <div ref={logEndRef} />

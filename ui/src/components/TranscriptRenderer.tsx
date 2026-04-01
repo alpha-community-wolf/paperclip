@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
+import type { IssueComment } from "@paperclipai/shared";
 import { cn, formatTokens } from "../lib/utils";
 import type { TranscriptEntry } from "../adapters";
 import { CollapsibleContent } from "./CollapsibleContent";
@@ -19,6 +20,7 @@ import {
   getCodeToolDescription,
 } from "./CodeToolRenderers";
 import { useTimelineSteps, TimelineWrapper } from "./TranscriptTimeline";
+import { CommentGutterButton, InlineCommentThread } from "./InlineTranscriptComment";
 
 const GRID = "grid grid-cols-[auto_auto_1fr] gap-x-2 sm:gap-x-3 items-baseline";
 const TS_CELL = "text-neutral-400 dark:text-neutral-600 select-none w-12 sm:w-16 text-[10px] sm:text-xs tabular-nums";
@@ -375,16 +377,35 @@ export function TranscriptRenderer({
   costAttribution,
   stepFeedback,
   onStepFeedback,
+  inlineComments,
+  onAddInlineComment,
 }: {
   entries: TranscriptEntry[];
   compact?: boolean;
   costAttribution?: Map<number, { costUsd: number; inputTokens: number; outputTokens: number; cachedTokens: number }>;
   stepFeedback?: StepFeedbackMap;
   onStepFeedback?: (stepIndex: number, vote: StepFeedbackVote | null) => void;
+  /** Map of entry index → comments anchored to that entry */
+  inlineComments?: Map<number, IssueComment[]>;
+  /** Callback to add an inline comment on a specific entry */
+  onAddInlineComment?: (entryIndex: number, body: string) => Promise<void>;
 }) {
   const { callMap, resultMap, consumedResultIndices } = useToolPairing(entries);
   const { indexToGroup } = useThinkingGroups(entries);
   const steps = useTimelineSteps(entries);
+  const [activeCommentIdx, setActiveCommentIdx] = useState<number | null>(null);
+  const commentsEnabled = Boolean(onAddInlineComment);
+
+  const toggleComment = useCallback((idx: number) => {
+    setActiveCommentIdx((prev) => (prev === idx ? null : idx));
+  }, []);
+
+  const handleAddComment = useCallback(
+    async (entryIndex: number, body: string) => {
+      if (onAddInlineComment) await onAddInlineComment(entryIndex, body);
+    },
+    [onAddInlineComment],
+  );
 
   // Build toolUseId → toolName map (for tool_results without accordion pairing)
   const toolNameMap = useMemo(() => {
@@ -701,11 +722,61 @@ export function TranscriptRenderer({
     return <div className="text-neutral-500 text-xs">No transcript entries yet.</div>;
   }
 
+  /** Wraps a rendered entry with comment gutter + inline thread */
+  function EntryWithComments({ idx, children }: { idx: number; children: React.ReactNode }) {
+    if (!commentsEnabled) return <>{children}</>;
+    const entryComments = inlineComments?.get(idx) ?? [];
+    const isActive = activeCommentIdx === idx;
+    return (
+      <div className="group/entry relative">
+        <div className="flex items-start gap-0">
+          <div className="flex-shrink-0 w-5 pt-0.5">
+            <CommentGutterButton
+              commentCount={entryComments.length}
+              onClick={() => toggleComment(idx)}
+              isActive={isActive}
+            />
+          </div>
+          <div className="flex-1 min-w-0">{children}</div>
+        </div>
+        {isActive && (
+          <InlineCommentThread
+            comments={entryComments}
+            onAdd={(body) => handleAddComment(idx, body)}
+            onClose={() => setActiveCommentIdx(null)}
+          />
+        )}
+        {!isActive && entryComments.length > 0 && (
+          <div className="ml-5 mb-0.5">
+            <button
+              type="button"
+              onClick={() => toggleComment(idx)}
+              className="text-[10px] text-blue-500 dark:text-blue-400 hover:underline cursor-pointer"
+            >
+              {entryComments.length} comment{entryComments.length !== 1 ? "s" : ""}
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  /** Wraps renderEntry output with inline comments */
+  const renderEntryWithComments = useCallback((entry: TranscriptEntry, idx: number): React.ReactNode => {
+    const rendered = renderEntry(entry, idx);
+    if (!rendered) return null;
+    return (
+      <EntryWithComments key={`entry-${idx}`} idx={idx}>
+        {rendered}
+      </EntryWithComments>
+    );
+  }, [renderEntry, commentsEnabled, inlineComments, activeCommentIdx]);
+
   // Compact mode: skip timeline rail
   if (compact) {
     return (
       <>
-        {entries.map((entry, idx) => renderEntry(entry, idx))}
+        {entries.map((entry, idx) => renderEntryWithComments(entry, idx))}
       </>
     );
   }
@@ -715,7 +786,7 @@ export function TranscriptRenderer({
       steps={steps}
       renderEntries={(startIdx, endIdx) => (
         <>
-          {entries.slice(startIdx, endIdx).map((entry, i) => renderEntry(entry, startIdx + i))}
+          {entries.slice(startIdx, endIdx).map((entry, i) => renderEntryWithComments(entry, startIdx + i))}
         </>
       )}
     />
