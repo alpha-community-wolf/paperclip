@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { cn } from "../lib/utils";
 import type { TranscriptEntry } from "../adapters";
+import type { ParsedApiCall } from "./ApiCallRenderer";
 
 type ToolCallEntry = Extract<TranscriptEntry, { kind: "tool_call" }>;
 type ToolResultEntry = Extract<TranscriptEntry, { kind: "tool_result" }>;
@@ -23,22 +24,45 @@ function formatDuration(startTs: string, endTs: string): string {
   return `${mins}m ${secs}s`;
 }
 
+/** Method badge colors for API calls */
+const METHOD_COLORS: Record<string, string> = {
+  GET: "bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:border-blue-700/40",
+  POST: "bg-green-100 text-green-700 border-green-200 dark:bg-green-900/40 dark:text-green-300 dark:border-green-700/40",
+  PUT: "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/40 dark:text-amber-300 dark:border-amber-700/40",
+  PATCH: "bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-900/40 dark:text-orange-300 dark:border-orange-700/40",
+  DELETE: "bg-red-100 text-red-700 border-red-200 dark:bg-red-900/40 dark:text-red-300 dark:border-red-700/40",
+};
+
+function getMethodColor(method: string): string {
+  return METHOD_COLORS[method] ?? "bg-neutral-100 text-neutral-700 border-neutral-200 dark:bg-neutral-800 dark:text-neutral-300 dark:border-neutral-700";
+}
+
+function shortenUrl(url: string): string {
+  let display = url.replace(/^https?:\/\//, "");
+  display = display.replace(/\$\{?\w+\}?/, "…");
+  if (display.length > 60) display = display.slice(0, 57) + "…";
+  return display;
+}
+
 export function ToolCallAccordion({
   pair,
   renderCallContent,
   renderResultContent,
   description,
+  apiCall,
 }: {
   pair: ToolCallPair;
   renderCallContent: () => React.ReactNode;
   renderResultContent: () => React.ReactNode | null;
   description?: string | null;
+  apiCall?: ParsedApiCall | null;
 }) {
   const [expanded, setExpanded] = useState(false);
   const { call, result } = pair;
 
   const isBash = call.name === "Bash";
-  const toolLabel = isBash ? "bash" : call.name;
+  const isApi = !!apiCall;
+  const toolLabel = isApi ? "api" : isBash ? "bash" : call.name;
   const duration = result ? formatDuration(call.ts, result.ts) : null;
   const isError = result?.isError ?? false;
   const isPending = !result;
@@ -67,26 +91,40 @@ export function ToolCallAccordion({
           {expanded ? "▼" : "▶"}
         </span>
 
-        {/* Tool name */}
-        <span className={cn(
-          "font-medium font-mono shrink-0",
-          isBash ? "text-green-600 dark:text-green-400" : "text-yellow-700 dark:text-yellow-300",
-        )}>
-          {toolLabel}
-        </span>
+        {/* API call: method badge + URL */}
+        {isApi ? (
+          <>
+            <span className={cn("inline-flex items-center px-1 py-0 rounded text-[9px] font-mono font-bold border shrink-0", getMethodColor(apiCall.method))}>
+              {apiCall.method}
+            </span>
+            <code className="text-neutral-600 dark:text-neutral-400 truncate min-w-0 text-[11px] font-mono">
+              {shortenUrl(apiCall.url)}
+            </code>
+          </>
+        ) : (
+          <>
+            {/* Tool name */}
+            <span className={cn(
+              "font-medium font-mono shrink-0",
+              isBash ? "text-green-600 dark:text-green-400" : "text-yellow-700 dark:text-yellow-300",
+            )}>
+              {toolLabel}
+            </span>
 
-        {/* Brief description for Bash */}
-        {isBash && (call.input as { description?: string })?.description && (
-          <span className="text-neutral-500 dark:text-neutral-400 truncate min-w-0">
-            {(call.input as { description?: string }).description}
-          </span>
-        )}
+            {/* Brief description for Bash */}
+            {isBash && (call.input as { description?: string })?.description && (
+              <span className="text-neutral-500 dark:text-neutral-400 truncate min-w-0">
+                {(call.input as { description?: string }).description}
+              </span>
+            )}
 
-        {/* Description for non-Bash tools (e.g. file path for Edit/Write/Read) */}
-        {!isBash && description && (
-          <span className="text-neutral-500 dark:text-neutral-400 truncate min-w-0 font-mono">
-            {description}
-          </span>
+            {/* Description for non-Bash tools (e.g. file path for Edit/Write/Read) */}
+            {!isBash && description && (
+              <span className="text-neutral-500 dark:text-neutral-400 truncate min-w-0 font-mono">
+                {description}
+              </span>
+            )}
+          </>
         )}
 
         <span className="flex-1" />
@@ -117,19 +155,19 @@ export function ToolCallAccordion({
       {/* Expanded content */}
       {expanded && (
         <div className="border-t border-neutral-200/60 dark:border-neutral-700/40">
-          {/* Tool call input */}
+          {/* Tool call input / API request */}
           <div className="px-3 py-2">
             <div className="text-[10px] font-medium text-neutral-400 dark:text-neutral-500 uppercase tracking-wider mb-1">
-              Input
+              {isApi ? "Request" : "Input"}
             </div>
             {renderCallContent()}
           </div>
 
-          {/* Tool result output */}
+          {/* Tool result output / API response */}
           {result && (
             <div className="px-3 py-2 border-t border-neutral-200/40 dark:border-neutral-700/30">
               <div className="text-[10px] font-medium text-neutral-400 dark:text-neutral-500 uppercase tracking-wider mb-1">
-                Output
+                {isApi ? "Response" : "Output"}
               </div>
               {renderResultContent()}
             </div>
