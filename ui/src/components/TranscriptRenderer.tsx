@@ -6,6 +6,8 @@ import { cn, formatTokens } from "../lib/utils";
 import type { TranscriptEntry } from "../adapters";
 import { CollapsibleContent } from "./CollapsibleContent";
 import { SpecializedToolResult } from "./ToolResultRenderers";
+import { ToolCallAccordion } from "./ToolCallAccordion";
+import type { ToolCallPair } from "./ToolCallAccordion";
 
 const GRID = "grid grid-cols-[auto_auto_1fr] gap-x-2 sm:gap-x-3 items-baseline";
 const TS_CELL = "text-neutral-400 dark:text-neutral-600 select-none w-12 sm:w-16 text-[10px] sm:text-xs tabular-nums";
@@ -112,15 +114,109 @@ function CollapsiblePre({ children, className }: { children: React.ReactNode; cl
   );
 }
 
-/** Find the name of the most recent tool_call before a given index */
-function findPrecedingToolCallName(entries: TranscriptEntry[], idx: number): string | null {
-  for (let i = idx - 1; i >= 0; i--) {
-    const e = entries[i];
-    if (e.kind === "tool_call") return e.name;
-    // Stop searching if we hit another tool_result (different pair)
-    if (e.kind === "tool_result") return null;
+type ToolCallEntry = Extract<TranscriptEntry, { kind: "tool_call" }>;
+type ToolResultEntry = Extract<TranscriptEntry, { kind: "tool_result" }>;
+
+/**
+ * Build pairing data structures:
+ * - toolUseId → tool_call entry + index
+ * - toolUseId → tool_result entry
+ * - Set of result indices that are consumed by pairs
+ */
+function useToolPairing(entries: TranscriptEntry[]) {
+  return useMemo(() => {
+    const callMap = new Map<string, { entry: ToolCallEntry; index: number }>();
+    const resultMap = new Map<string, ToolResultEntry>();
+    const consumedResultIndices = new Set<number>();
+
+    // First pass: index tool_calls by toolUseId
+    for (let i = 0; i < entries.length; i++) {
+      const e = entries[i];
+      if (e.kind === "tool_call" && e.toolUseId) {
+        callMap.set(e.toolUseId, { entry: e, index: i });
+      }
+    }
+
+    // Second pass: index tool_results and mark consumed
+    for (let i = 0; i < entries.length; i++) {
+      const e = entries[i];
+      if (e.kind === "tool_result" && e.toolUseId && callMap.has(e.toolUseId)) {
+        resultMap.set(e.toolUseId, e);
+        consumedResultIndices.add(i);
+      }
+    }
+
+    return { callMap, resultMap, consumedResultIndices };
+  }, [entries]);
+}
+
+/** Render the input content for a tool_call inside an accordion */
+function AccordionCallContent({ entry }: { entry: ToolCallEntry }) {
+  const isBash = entry.name === "Bash";
+  const bashInput = isBash ? (entry.input as { command?: string; description?: string }) : null;
+
+  if (isBash && bashInput) {
+    return (
+      <div className="bg-neutral-900 dark:bg-neutral-950 rounded-md border border-neutral-700/50 dark:border-neutral-700/30 overflow-hidden">
+        <div className="flex items-center gap-2 px-3 py-1.5">
+          <span className="text-green-400 text-[11px] font-mono font-medium select-none">$</span>
+          <code className="text-green-300 dark:text-green-300 text-[11px] font-mono break-all">
+            {bashInput.command || ""}
+          </code>
+        </div>
+      </div>
+    );
   }
-  return null;
+
+  return (
+    <CollapsiblePre className="bg-neutral-200 dark:bg-neutral-900 rounded p-2 text-[11px] overflow-x-auto whitespace-pre-wrap text-neutral-800 dark:text-neutral-200">
+      <JsonHighlight value={JSON.stringify(entry.input, null, 2)} />
+    </CollapsiblePre>
+  );
+}
+
+/** Render the output content for a tool_result inside an accordion */
+function AccordionResultContent({
+  entry,
+  toolName,
+}: {
+  entry: ToolResultEntry;
+  toolName: string | undefined;
+}) {
+  const isBash = toolName === "Bash";
+
+  // Bash output: terminal style
+  if (isBash) {
+    return (
+      <div className="bg-neutral-900 dark:bg-neutral-950 rounded-md border border-neutral-700/50 dark:border-neutral-700/30 overflow-hidden">
+        <pre className="px-3 py-2 text-[11px] font-mono whitespace-pre-wrap break-words overflow-x-auto text-neutral-300 dark:text-neutral-400">
+          <CollapsibleContent>{entry.content}</CollapsibleContent>
+        </pre>
+      </div>
+    );
+  }
+
+  // Grep/Glob specialized rendering
+  if (!entry.isError) {
+    const specialized = (
+      <SpecializedToolResult
+        toolName={toolName}
+        content={entry.content}
+        className="bg-neutral-50 dark:bg-neutral-900 rounded p-2 text-[11px]"
+      />
+    );
+    if (specialized) return specialized;
+  }
+
+  // Default: JSON-highlighted or plain text
+  return (
+    <CollapsiblePre className={cn(
+      "bg-neutral-100 dark:bg-neutral-900 rounded p-2 text-[11px] overflow-x-auto whitespace-pre-wrap",
+      entry.isError ? "text-red-700 dark:text-red-300" : "text-neutral-700 dark:text-neutral-300",
+    )}>
+      {formatContent(entry.content)}
+    </CollapsiblePre>
+  );
 }
 
 export function TranscriptRenderer({
@@ -130,7 +226,9 @@ export function TranscriptRenderer({
   entries: TranscriptEntry[];
   compact?: boolean;
 }) {
-  // Build toolUseId → toolName map for correlating tool_call with tool_result
+  const { callMap, resultMap, consumedResultIndices } = useToolPairing(entries);
+
+  // Build toolUseId → toolName map (for tool_results without accordion pairing)
   const toolNameMap = useMemo(() => {
     const map = new Map<string, string>();
     for (const entry of entries) {
@@ -187,10 +285,10 @@ export function TranscriptRenderer({
         }
 
         if (entry.kind === "tool_call") {
-          const isBash = entry.name === "Bash";
-          const bashInput = isBash ? (entry.input as { command?: string; description?: string }) : null;
-
+          // Compact mode: unchanged
           if (compact) {
+            const isBash = entry.name === "Bash";
+            const bashInput = isBash ? (entry.input as { command?: string; description?: string }) : null;
             return (
               <div key={`${entry.ts}-tool-${idx}`} className={cn(GRID, "py-0.5")}>
                 <span className={TS_CELL}>{time}</span>
@@ -204,7 +302,37 @@ export function TranscriptRenderer({
             );
           }
 
-          // Bash tool calls get terminal-style rendering
+          // Accordion: pair tool_call with its tool_result
+          if (entry.toolUseId) {
+            const result = resultMap.get(entry.toolUseId) ?? null;
+            const pair: ToolCallPair = { call: entry, result, callIndex: idx };
+
+            return (
+              <div key={`${entry.ts}-toolpair-${idx}`} className={cn(GRID, "py-0.5")}>
+                <span className={TS_CELL}>{time}</span>
+                <span className={cn(LBL_CELL, "text-yellow-700 dark:text-yellow-300 text-[10px]")}>tool</span>
+                <div className={cn(CONTENT_CELL)}>
+                  <ToolCallAccordion
+                    pair={pair}
+                    renderCallContent={() => <AccordionCallContent entry={entry} />}
+                    renderResultContent={() =>
+                      result ? (
+                        <AccordionResultContent
+                          entry={result}
+                          toolName={entry.name}
+                        />
+                      ) : null
+                    }
+                  />
+                </div>
+              </div>
+            );
+          }
+
+          // Fallback: tool_call without toolUseId (legacy) — render inline
+          const isBash = entry.name === "Bash";
+          const bashInput = isBash ? (entry.input as { command?: string; description?: string }) : null;
+
           if (isBash && bashInput) {
             return (
               <div key={`${entry.ts}-tool-${idx}`} className={cn(GRID, "gap-y-1 py-0.5")}>
@@ -225,7 +353,6 @@ export function TranscriptRenderer({
             );
           }
 
-          // Default tool_call rendering
           return (
             <div key={`${entry.ts}-tool-${idx}`} className={cn(GRID, "gap-y-1 py-0.5")}>
               <span className={TS_CELL}>{time}</span>
@@ -239,7 +366,13 @@ export function TranscriptRenderer({
         }
 
         if (entry.kind === "tool_result") {
-          const precedingToolName = findPrecedingToolCallName(entries, idx);
+          // Skip results already consumed by an accordion pair
+          if (consumedResultIndices.has(idx)) {
+            return null;
+          }
+
+          // Unpaired tool_result (orphan) — render standalone
+          const precedingToolName = toolNameMap.get(entry.toolUseId) ?? null;
           const isBashResult = precedingToolName === "Bash";
 
           if (compact) {
@@ -256,7 +389,6 @@ export function TranscriptRenderer({
             );
           }
 
-          // Bash tool results get terminal-style output rendering
           if (isBashResult) {
             return (
               <div key={`${entry.ts}-toolres-${idx}`} className={cn(GRID, "gap-y-1 py-0.5")}>
@@ -265,11 +397,11 @@ export function TranscriptRenderer({
                 <span className="min-w-0 flex items-center gap-1.5">
                   {entry.isError ? (
                     <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-red-900/30 text-red-400 border border-red-700/30">
-                      ✕ error
+                      error
                     </span>
                   ) : (
                     <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-900/30 text-green-400 border border-green-700/30">
-                      ✓ exit 0
+                      exit 0
                     </span>
                   )}
                 </span>
