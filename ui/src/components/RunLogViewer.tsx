@@ -3,6 +3,7 @@ import { heartbeatsApi } from "../api/heartbeats";
 import { getUIAdapter, buildTranscript } from "../adapters";
 import type { TranscriptEntry } from "../adapters";
 import { TranscriptRenderer } from "./TranscriptRenderer";
+import { CostSummaryBar, computeCostSummary, buildCostAttribution } from "./CostSummaryBar";
 import type { HeartbeatRun } from "@paperclipai/shared";
 import { cn } from "../lib/utils";
 
@@ -193,6 +194,8 @@ export function RunLogViewer({ run, adapterType, compact = true, maxHeight = "32
 
   const adapter = useMemo(() => getUIAdapter(adapterType), [adapterType]);
   const transcript = useMemo(() => buildTranscript(logLines, adapter.parseStdoutLine), [logLines, adapter]);
+  const costSummary = useMemo(() => computeCostSummary(transcript), [transcript]);
+  const costAttribution = useMemo(() => buildCostAttribution(transcript), [transcript]);
 
   // Filter state — all types visible by default
   const [filters, setFilters] = useState<Record<FilterKey, boolean>>({
@@ -256,6 +259,7 @@ export function RunLogViewer({ run, adapterType, compact = true, maxHeight = "32
           </span>
         )}
       </div>
+      {costSummary && <CostSummaryBar summary={costSummary} />}
       {!compact && (
         <FilterToolbar counts={counts} active={filters} onToggle={toggleFilter} />
       )}
@@ -268,7 +272,7 @@ export function RunLogViewer({ run, adapterType, compact = true, maxHeight = "32
             {anyFilterOff ? "All entries hidden by filters." : "No transcript entries yet."}
           </div>
         ) : (
-          <TranscriptRenderer entries={filteredTranscript} compact={compact} />
+          <TranscriptRenderer entries={filteredTranscript} compact={compact} costAttribution={costAttribution} />
         )}
         <div ref={bottomRef} />
       </div>
