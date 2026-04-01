@@ -96,6 +96,7 @@ export type {
   ProjectExecutionWorkspacePolicy,
   IssueExecutionWorkspaceSettings,
   Issue,
+  IssueLinkSummary,
   IssueAssigneeAdapterOverrides,
   IssueComment,
   IssueAttachment,
