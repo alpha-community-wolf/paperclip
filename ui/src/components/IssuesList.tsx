@@ -563,7 +563,7 @@ export function IssuesList({
           "shrink-0 flex items-center justify-center w-5 h-5 mt-px",
           hasSelection ? "visible" : "invisible group-hover/row:visible",
         )}
-        onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleSelect(issue.id); }}
+        onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
       >
         <Checkbox
           checked={isChecked}
