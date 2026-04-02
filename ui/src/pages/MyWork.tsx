@@ -25,6 +25,7 @@ import {
   ShieldCheck,
   CircleDot,
   Clock,
+  Eye,
   Play,
   ChevronRight,
 } from "lucide-react";
@@ -213,24 +214,33 @@ export function MyWork() {
     return <PageSkeleton variant="list" />;
   }
 
+  // In Review: all issues in in_review status (these need human eyes)
+  const inReviewIssues = (allIssues ?? []).filter(
+    (i) => i.status === "in_review",
+  );
+
   // Filter assigned issues: assigned to current user (by userId), active statuses only
+  // Exclude in_review (shown separately above)
   const assignedIssues = (allIssues ?? []).filter(
     (i) =>
       i.assigneeUserId === currentUserId &&
-      !["done", "cancelled"].includes(i.status),
+      !["done", "cancelled", "in_review"].includes(i.status),
   );
 
-  // Recently touched: exclude those already in assigned, limit to 20 most recent
-  const assignedIds = new Set(assignedIssues.map((i) => i.id));
+  // Recently touched: exclude those already in other sections, limit to 20 most recent
+  const shownIds = new Set([
+    ...inReviewIssues.map((i) => i.id),
+    ...assignedIssues.map((i) => i.id),
+  ]);
   const recentlyTouched = (touchedIssues ?? [])
-    .filter((i) => !assignedIds.has(i.id) && !["cancelled"].includes(i.status))
+    .filter((i) => !shownIds.has(i.id) && !["cancelled"].includes(i.status))
     .slice(0, 20);
 
   const approvals = pendingApprovals ?? [];
   const failed = failedRuns ?? [];
 
   const totalItems =
-    failed.length + approvals.length + assignedIssues.length + recentlyTouched.length;
+    failed.length + approvals.length + inReviewIssues.length + assignedIssues.length + recentlyTouched.length;
 
   return (
     <div className="animate-page-enter max-w-4xl space-y-6">
@@ -245,21 +255,6 @@ export function MyWork() {
         )}
       </div>
 
-      {/* Failed Runs — collapsed by default when >5 items */}
-      {failed.length > 0 && (
-        <CollapsibleSection
-          icon={AlertTriangle}
-          label="Failed Runs"
-          count={failed.length}
-          tone="danger"
-          defaultOpen={failed.length <= 5}
-        >
-          {failed.map((run) => (
-            <FailedRunRow key={run.id} run={run} />
-          ))}
-        </CollapsibleSection>
-      )}
-
       {/* Pending Approvals */}
       {approvals.length > 0 && (
         <CollapsibleSection
@@ -270,6 +265,19 @@ export function MyWork() {
         >
           {approvals.map((approval) => (
             <ApprovalRow key={approval.id} approval={approval} />
+          ))}
+        </CollapsibleSection>
+      )}
+
+      {/* In Review — all issues needing human review */}
+      {inReviewIssues.length > 0 && (
+        <CollapsibleSection
+          icon={Eye}
+          label="In Review"
+          count={inReviewIssues.length}
+        >
+          {inReviewIssues.map((issue) => (
+            <IssueRow key={issue.id} issue={issue} />
           ))}
         </CollapsibleSection>
       )}
@@ -297,6 +305,21 @@ export function MyWork() {
           <IssueRow key={issue.id} issue={issue} />
         ))}
       </CollapsibleSection>
+
+      {/* Failed Runs — at the bottom, collapsed by default when >5 items */}
+      {failed.length > 0 && (
+        <CollapsibleSection
+          icon={AlertTriangle}
+          label="Failed Runs"
+          count={failed.length}
+          tone="danger"
+          defaultOpen={failed.length <= 5}
+        >
+          {failed.map((run) => (
+            <FailedRunRow key={run.id} run={run} />
+          ))}
+        </CollapsibleSection>
+      )}
 
       {totalItems === 0 && (
         <EmptyState
