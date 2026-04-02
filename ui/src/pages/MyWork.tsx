@@ -97,7 +97,15 @@ function FailedRunRow({ run }: { run: FailedRunForIssue }) {
     <EntityRow
       identifier={run.agentName}
       title={run.error ?? "Run failed"}
-      subtitle={run.issueId ? `Issue: ${run.issueId.slice(0, 8)}` : undefined}
+      subtitle={
+        [
+          !run.startedAt ? "Never started" : null,
+          run.invocationSource !== "on_demand" ? run.invocationSource : null,
+          run.issueId ? `Issue: ${run.issueId.slice(0, 8)}` : null,
+        ]
+          .filter(Boolean)
+          .join(" · ") || undefined
+      }
       to={`/runs/${run.id}`}
       leading={
         <div className="flex items-center gap-2">
@@ -110,6 +118,91 @@ function FailedRunRow({ run }: { run: FailedRunForIssue }) {
         </span>
       }
     />
+  );
+}
+
+/** Group process_lost failures that share the same finishedAt into batches. */
+type FailedRunOrGroup =
+  | { kind: "single"; run: FailedRunForIssue }
+  | { kind: "group"; finishedAt: string; runs: FailedRunForIssue[] };
+
+function groupFailedRuns(runs: FailedRunForIssue[]): FailedRunOrGroup[] {
+  const processLostByTimestamp = new Map<string, FailedRunForIssue[]>();
+  const other: FailedRunForIssue[] = [];
+
+  for (const run of runs) {
+    const isProcessLost = run.error?.includes("Process lost") ?? false;
+    if (isProcessLost && run.finishedAt) {
+      const key = run.finishedAt;
+      const group = processLostByTimestamp.get(key);
+      if (group) {
+        group.push(run);
+      } else {
+        processLostByTimestamp.set(key, [run]);
+      }
+    } else {
+      other.push(run);
+    }
+  }
+
+  const result: FailedRunOrGroup[] = [];
+
+  // Add grouped process_lost entries (only group if 2+ runs share a timestamp)
+  for (const [finishedAt, group] of processLostByTimestamp) {
+    if (group.length === 1) {
+      result.push({ kind: "single", run: group[0] });
+    } else {
+      result.push({ kind: "group", finishedAt, runs: group });
+    }
+  }
+
+  // Add non-process_lost entries
+  for (const run of other) {
+    result.push({ kind: "single", run });
+  }
+
+  // Sort by most recent first
+  result.sort((a, b) => {
+    const aTime = a.kind === "group" ? a.finishedAt : (a.run.finishedAt ?? a.run.createdAt);
+    const bTime = b.kind === "group" ? b.finishedAt : (b.run.finishedAt ?? b.run.createdAt);
+    return bTime.localeCompare(aTime);
+  });
+
+  return result;
+}
+
+function FailedRunGroupRow({ finishedAt, runs }: { finishedAt: string; runs: FailedRunForIssue[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const agents = [...new Set(runs.map((r) => r.agentName))];
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setExpanded(!expanded)}
+        className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-muted/50 transition-colors"
+      >
+        <AlertTriangle className="h-3.5 w-3.5 text-destructive shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-destructive truncate">
+            Server restart — {runs.length} runs affected
+          </p>
+          <p className="text-xs text-muted-foreground truncate">
+            Agents: {agents.join(", ")}
+          </p>
+        </div>
+        <span className="text-xs text-muted-foreground shrink-0">{formatDate(finishedAt)}</span>
+        <ChevronRight
+          className={`h-3.5 w-3.5 text-muted-foreground transition-transform duration-150 shrink-0 ${expanded ? "rotate-90" : ""}`}
+        />
+      </button>
+      {expanded && (
+        <div className="border-l-2 border-destructive/20 ml-5">
+          {runs.map((run) => (
+            <FailedRunRow key={run.id} run={run} />
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -238,9 +331,10 @@ export function MyWork() {
 
   const approvals = pendingApprovals ?? [];
   const failed = failedRuns ?? [];
+  const groupedFailed = groupFailedRuns(failed);
 
   const totalItems =
-    failed.length + approvals.length + inReviewIssues.length + assignedIssues.length + recentlyTouched.length;
+    groupedFailed.length + approvals.length + inReviewIssues.length + assignedIssues.length + recentlyTouched.length;
 
   return (
     <div className="animate-page-enter max-w-4xl space-y-6">
@@ -307,17 +401,25 @@ export function MyWork() {
       </CollapsibleSection>
 
       {/* Failed Runs — at the bottom, collapsed by default when >5 items */}
-      {failed.length > 0 && (
+      {groupedFailed.length > 0 && (
         <CollapsibleSection
           icon={AlertTriangle}
           label="Failed Runs"
           count={failed.length}
           tone="danger"
-          defaultOpen={failed.length <= 5}
+          defaultOpen={groupedFailed.length <= 5}
         >
-          {failed.map((run) => (
-            <FailedRunRow key={run.id} run={run} />
-          ))}
+          {groupedFailed.map((entry) =>
+            entry.kind === "single" ? (
+              <FailedRunRow key={entry.run.id} run={entry.run} />
+            ) : (
+              <FailedRunGroupRow
+                key={entry.finishedAt}
+                finishedAt={entry.finishedAt}
+                runs={entry.runs}
+              />
+            ),
+          )}
         </CollapsibleSection>
       )}
 
