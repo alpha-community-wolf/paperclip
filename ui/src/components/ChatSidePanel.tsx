@@ -3,10 +3,14 @@ import { Link } from "@/lib/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ChatMessage, ChatSession, CreateChatMessageResponse } from "@paperclipai/shared";
 import {
+  Archive,
+  Check,
   ChevronDown,
   Loader2,
   MessageSquarePlus,
+  Pencil,
   Send,
+  Trash2,
   X,
 } from "lucide-react";
 import { chatApi, type ChatLogEvent } from "../api/chat";
@@ -19,11 +23,13 @@ import { usePanel } from "../context/PanelContext";
 import { displaySessionTitle } from "../lib/chat-sessions";
 import { MarkdownBody } from "./MarkdownBody";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
@@ -116,6 +122,8 @@ export function ChatSidePanel() {
   const queryClient = useQueryClient();
 
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
   const [draft, setDraft] = useState("");
   const [sendError, setSendError] = useState<string | null>(null);
   const [streamState, setStreamState] = useState<StreamState | null>(null);
@@ -352,6 +360,31 @@ export function ChatSidePanel() {
     },
   });
 
+  const renameSession = useMutation({
+    mutationFn: ({ sessionId, nextTitle }: { sessionId: string; nextTitle: string }) =>
+      chatApi.updateSession(agentId!, sessionId, { title: nextTitle.trim() || null }),
+    onSuccess: ({ session }) => {
+      queryClient.setQueryData<ChatSession[]>(sessionsQueryKey, (current) =>
+        (current ?? []).map((s) => (s.id === session.id ? session : s)),
+      );
+      setRenamingSessionId(null);
+    },
+  });
+
+  const archiveSession = useMutation({
+    mutationFn: ({ sessionId, archived }: { sessionId: string; archived: boolean }) =>
+      chatApi.updateSession(agentId!, sessionId, { archived }),
+    onSuccess: ({ session }) => {
+      queryClient.setQueryData<ChatSession[]>(sessionsQueryKey, (current) =>
+        (current ?? []).map((s) => (s.id === session.id ? session : s)),
+      );
+      if (session.archivedAt && selectedSessionId === session.id) {
+        const remaining = sessions.filter((s) => s.id !== session.id && !s.archivedAt);
+        setSelectedSessionId(remaining[0]?.id ?? null);
+      }
+    },
+  });
+
   const preview = useMemo(() => derivePreview(streamState, adapterType ?? ""), [adapterType, streamState]);
   const deferredPreview = useDeferredValue(preview);
   const streaming = useMemo(() => isStreamInProgress(streamState), [streamState]);
@@ -382,39 +415,132 @@ export function ChatSidePanel() {
         <div className="flex-1 min-w-0 flex items-center gap-2">
           <span className="text-sm font-semibold truncate">{agentName ?? "Chat"}</span>
 
-          {/* Session selector */}
-          {sessions.length > 0 && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="h-6 px-1.5 text-xs text-muted-foreground gap-1">
-                  <span className="truncate max-w-[120px]">
-                    {selectedSession ? displaySessionTitle(selectedSession) : "Sessions"}
-                  </span>
-                  <ChevronDown className="h-3 w-3 shrink-0" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
-                {sessions.map((session) => (
-                  <DropdownMenuItem
-                    key={session.id}
-                    onSelect={() => {
-                      setSelectedSessionId(session.id);
-                      setStreamState(null);
-                      closeStream();
-                    }}
-                    className={cn(
-                      "text-xs",
-                      session.id === selectedSessionId && "bg-accent",
-                    )}
-                  >
-                    <span className="truncate">{displaySessionTitle(session)}</span>
-                    <span className="ml-auto pl-2 text-[10px] text-muted-foreground shrink-0">
-                      {relativeTime(session.lastMessageAt ?? session.updatedAt)}
+          {/* Inline rename input */}
+          {renamingSessionId && selectedSession?.id === renamingSessionId ? (
+            <div className="flex items-center gap-1">
+              <Input
+                value={renameDraft}
+                onChange={(e) => setRenameDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    renameSession.mutate({ sessionId: renamingSessionId, nextTitle: renameDraft });
+                  } else if (e.key === "Escape") {
+                    setRenamingSessionId(null);
+                  }
+                }}
+                className="h-6 text-xs w-32"
+                placeholder="Session name"
+                autoFocus
+              />
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                onClick={() => renameSession.mutate({ sessionId: renamingSessionId, nextTitle: renameDraft })}
+                disabled={renameSession.isPending}
+              >
+                <Check className="h-3 w-3" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                onClick={() => setRenamingSessionId(null)}
+              >
+                <X className="h-3 w-3" />
+              </Button>
+            </div>
+          ) : (
+            /* Session selector */
+            sessions.length > 0 && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="sm" className="h-6 px-1.5 text-xs text-muted-foreground gap-1">
+                    <span className="truncate max-w-[120px]">
+                      {selectedSession ? displaySessionTitle(selectedSession) : "Sessions"}
                     </span>
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
+                    <ChevronDown className="h-3 w-3 shrink-0" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto min-w-[220px]">
+                  {sessions.map((session) => (
+                    <DropdownMenuItem
+                      key={session.id}
+                      onSelect={() => {
+                        setSelectedSessionId(session.id);
+                        setStreamState(null);
+                        closeStream();
+                      }}
+                      className={cn(
+                        "text-xs group/session",
+                        session.id === selectedSessionId && "bg-accent",
+                      )}
+                    >
+                      <span className="truncate flex-1">{displaySessionTitle(session)}</span>
+                      <span className="pl-2 text-[10px] text-muted-foreground shrink-0">
+                        {relativeTime(session.lastMessageAt ?? session.updatedAt)}
+                      </span>
+                      <div className="flex items-center gap-0.5 ml-1 shrink-0 opacity-0 group-hover/session:opacity-100 transition-opacity">
+                        <button
+                          type="button"
+                          className="p-0.5 rounded hover:bg-accent-foreground/10"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            setRenamingSessionId(session.id);
+                            setRenameDraft(session.title ?? "");
+                            setSelectedSessionId(session.id);
+                          }}
+                          aria-label="Rename"
+                        >
+                          <Pencil className="h-3 w-3" />
+                        </button>
+                        <button
+                          type="button"
+                          className="p-0.5 rounded hover:bg-destructive/20 hover:text-destructive"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            archiveSession.mutate({ sessionId: session.id, archived: true });
+                          }}
+                          aria-label="Delete"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      </div>
+                    </DropdownMenuItem>
+                  ))}
+                  {selectedSession && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        onSelect={() => {
+                          setRenamingSessionId(selectedSession.id);
+                          setRenameDraft(selectedSession.title ?? "");
+                        }}
+                        className="text-xs"
+                      >
+                        <Pencil className="h-3 w-3" />
+                        Rename current
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onSelect={() => archiveSession.mutate({ sessionId: selectedSession.id, archived: true })}
+                        className="text-xs"
+                      >
+                        <Archive className="h-3 w-3" />
+                        Archive current
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        variant="destructive"
+                        onSelect={() => archiveSession.mutate({ sessionId: selectedSession.id, archived: true })}
+                        className="text-xs"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                        Delete current
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )
           )}
         </div>
 
