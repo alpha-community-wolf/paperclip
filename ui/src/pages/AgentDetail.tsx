@@ -599,24 +599,22 @@ export function AgentDetail() {
         </div>
       </div>
 
-      {!urlRunId && (
-        <Tabs
+      <Tabs
+        value={activeView}
+        onValueChange={(value) => navigate(`/agents/${canonicalAgentRef}/${value}`)}
+      >
+        <PageTabBar
+          items={[
+            { value: "dashboard", label: "Dashboard" },
+            { value: "chat", label: "Chat" },
+            { value: "workspace", label: "Workspace" },
+            { value: "configuration", label: "Configuration" },
+            { value: "runs", label: "Runs" },
+          ]}
           value={activeView}
           onValueChange={(value) => navigate(`/agents/${canonicalAgentRef}/${value}`)}
-        >
-          <PageTabBar
-            items={[
-              { value: "dashboard", label: "Dashboard" },
-              { value: "chat", label: "Chat" },
-              { value: "workspace", label: "Workspace" },
-              { value: "configuration", label: "Configuration" },
-              { value: "runs", label: "Runs" },
-            ]}
-            value={activeView}
-            onValueChange={(value) => navigate(`/agents/${canonicalAgentRef}/${value}`)}
-          />
-        </Tabs>
-      )}
+        />
+      </Tabs>
 
       {actionError && <p className="text-sm text-destructive">{actionError}</p>}
       {isPendingApproval && (
