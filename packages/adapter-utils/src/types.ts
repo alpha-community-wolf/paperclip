@@ -75,6 +75,8 @@ export interface AdapterExecutionResult {
   runtimeServices?: AdapterRuntimeServiceReport[];
   summary?: string | null;
   clearSession?: boolean;
+  /** Signal from a triage run that real work was found and a full-model run should be enqueued. */
+  escalate?: { issueId: string; reason?: string } | null;
 }
 
 export interface AdapterSessionCodec {
