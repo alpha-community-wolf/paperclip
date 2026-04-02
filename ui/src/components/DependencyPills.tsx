@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { cn } from "../lib/utils";
 import { issuesApi } from "../api/issues";
 import { queryKeys } from "../lib/queryKeys";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { StatusIcon } from "./StatusIcon";
 import { ArrowUp, ArrowDown } from "lucide-react";
 import type { IssueLinkSummary } from "@paperclipai/shared";
@@ -25,14 +25,11 @@ export function DependencyPills({ issueId, linkSummary }: DependencyPillsProps) 
   const { incomingCount, outgoingCount, allUpstreamDone } = linkSummary;
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          className="inline-flex items-center gap-1.5 rounded-md border border-border px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground hover:bg-accent/50 transition-colors"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-          }}
+    <HoverCard open={open} onOpenChange={setOpen}>
+      <HoverCardTrigger asChild>
+        <span
+          className="inline-flex items-center gap-1.5 rounded-md border border-border px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground hover:bg-accent/50 transition-colors cursor-default"
+          onClick={(e) => e.stopPropagation()}
         >
           {incomingCount > 0 && (
             <span
@@ -42,11 +39,6 @@ export function DependencyPills({ issueId, linkSummary }: DependencyPillsProps) 
                   ? "bg-green-500/10 text-green-600 dark:text-green-400"
                   : "bg-amber-500/10 text-amber-600 dark:text-amber-400",
               )}
-              title={
-                allUpstreamDone
-                  ? `All ${incomingCount} upstream dependencies done`
-                  : `${incomingCount} upstream dependency pending`
-              }
             >
               <ArrowUp className="h-2.5 w-2.5" />
               {incomingCount}
@@ -55,15 +47,14 @@ export function DependencyPills({ issueId, linkSummary }: DependencyPillsProps) 
           {outgoingCount > 0 && (
             <span
               className="inline-flex items-center gap-0.5 rounded px-1 py-px bg-blue-500/10 text-blue-600 dark:text-blue-400"
-              title={`Triggers ${outgoingCount} downstream issue${outgoingCount > 1 ? "s" : ""}`}
             >
               <ArrowDown className="h-2.5 w-2.5" />
               {outgoingCount}
             </span>
           )}
-        </button>
-      </PopoverTrigger>
-      <PopoverContent
+        </span>
+      </HoverCardTrigger>
+      <HoverCardContent
         className="w-72 p-2"
         align="end"
         onClick={(e) => e.stopPropagation()}
@@ -116,7 +107,7 @@ export function DependencyPills({ issueId, linkSummary }: DependencyPillsProps) 
             )}
           </div>
         )}
-      </PopoverContent>
-    </Popover>
+      </HoverCardContent>
+    </HoverCard>
   );
 }
