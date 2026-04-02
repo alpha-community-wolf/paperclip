@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { NavLink, Link, useLocation } from "@/lib/router";
 import { useQuery } from "@tanstack/react-query";
-import { PanelRightClose, PanelRightOpen, Plus } from "lucide-react";
+import { MessageCircle, PanelRightClose, PanelRightOpen, Plus, Settings } from "lucide-react";
 import { useCompany } from "../context/CompanyContext";
 import { useDialog } from "../context/DialogContext";
 import { useSidebar } from "../context/SidebarContext";
@@ -25,6 +25,7 @@ import {
   formatActivity,
   toolColor,
 } from "../context/AgentActivityContext";
+import { useChatSidePanel } from "../context/ChatSidePanelContext";
 
 /** BFS sort: roots first (no reportsTo), then their direct reports, etc. */
 function sortByHierarchy(agents: Agent[]): Agent[] {
@@ -105,54 +106,103 @@ function AgentRow({
   isActive: boolean;
 }) {
   const location = useLocation();
+  const { toggleChat, agentId: chatAgentId, isOpen: chatOpen } = useChatSidePanel();
+  const isChatActive = chatOpen && chatAgentId === agent.id;
 
   return (
-    <NavLink
-      to={agentSwitchUrl(location.pathname, agent)}
-      className={cn(
-        "flex items-center gap-2 px-3 py-1.5 text-[13px] font-medium transition-colors rounded-md",
-        isActive
-          ? "bg-accent text-foreground"
-          : "text-foreground/80 hover:bg-accent/50 hover:text-foreground",
-      )}
-    >
-      <AgentIcon
-        icon={agent.icon}
-        className="shrink-0 h-3.5 w-3.5 text-muted-foreground"
-      />
-      <div className="flex-1 min-w-0">
-        <span className="truncate block">{agent.name}</span>
-        {activity && (
-          <span
-            className={cn(
-              "text-[10px] truncate block animate-pulse",
-              toolColor(activity.toolName),
-            )}
-          >
-            {formatActivity(activity)}
+    <div className="group/row flex items-center rounded-md">
+      <NavLink
+        to={agentSwitchUrl(location.pathname, agent)}
+        className={cn(
+          "flex flex-1 items-center gap-2 px-3 py-1.5 text-[13px] font-medium transition-colors rounded-l-md min-w-0",
+          isActive
+            ? "bg-accent text-foreground"
+            : "text-foreground/80 hover:bg-accent/50 hover:text-foreground",
+        )}
+      >
+        <AgentIcon
+          icon={agent.icon}
+          className="shrink-0 h-3.5 w-3.5 text-muted-foreground"
+        />
+        <div className="flex-1 min-w-0">
+          <span className="truncate block">{agent.name}</span>
+          {activity && (
+            <span
+              className={cn(
+                "text-[10px] truncate block animate-pulse",
+                toolColor(activity.toolName),
+              )}
+            >
+              {formatActivity(activity)}
+            </span>
+          )}
+        </div>
+        {runCount > 0 && !activity && (
+          <span className="ml-auto flex items-center gap-1.5 shrink-0">
+            <StatusDot status="running" size="sm" />
           </span>
         )}
+        {runCount > 0 && activity && (
+          <span className="ml-auto shrink-0">
+            <StatusDot
+              status="running"
+              size="sm"
+              toolName={activity.toolName}
+            />
+          </span>
+        )}
+        {runCount === 0 && !activity && (
+          <span className="ml-auto shrink-0">
+            <StatusDot status={agent.status} size="sm" />
+          </span>
+        )}
+      </NavLink>
+      <div className="flex items-center shrink-0 opacity-0 group-hover/row:opacity-100 transition-opacity pr-1">
+        <Tooltip delayDuration={300}>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleChat({
+                  id: agent.id,
+                  name: agent.name,
+                  routeId: agentRouteRef(agent),
+                  adapterType: agent.adapterType,
+                });
+              }}
+              className={cn(
+                "flex items-center justify-center h-6 w-6 rounded transition-colors",
+                isChatActive
+                  ? "text-primary bg-primary/10"
+                  : "text-muted-foreground/60 hover:text-foreground hover:bg-accent/50",
+              )}
+              aria-label={`Chat with ${agent.name}`}
+            >
+              <MessageCircle className="h-3 w-3" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="left" sideOffset={4}>
+            <p className="text-xs">Chat</p>
+          </TooltipContent>
+        </Tooltip>
+        <Tooltip delayDuration={300}>
+          <TooltipTrigger asChild>
+            <Link
+              to={`/agents/${agentRouteRef(agent)}/configuration`}
+              onClick={(e) => e.stopPropagation()}
+              className="flex items-center justify-center h-6 w-6 rounded text-muted-foreground/60 hover:text-foreground hover:bg-accent/50 transition-colors"
+              aria-label={`${agent.name} settings`}
+            >
+              <Settings className="h-3 w-3" />
+            </Link>
+          </TooltipTrigger>
+          <TooltipContent side="left" sideOffset={4}>
+            <p className="text-xs">Settings</p>
+          </TooltipContent>
+        </Tooltip>
       </div>
-      {runCount > 0 && !activity && (
-        <span className="ml-auto flex items-center gap-1.5 shrink-0">
-          <StatusDot status="running" size="sm" />
-        </span>
-      )}
-      {runCount > 0 && activity && (
-        <span className="ml-auto shrink-0">
-          <StatusDot
-            status="running"
-            size="sm"
-            toolName={activity.toolName}
-          />
-        </span>
-      )}
-      {runCount === 0 && !activity && (
-        <span className="ml-auto shrink-0">
-          <StatusDot status={agent.status} size="sm" />
-        </span>
-      )}
-    </NavLink>
+    </div>
   );
 }
 

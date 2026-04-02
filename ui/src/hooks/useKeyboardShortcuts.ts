@@ -5,10 +5,11 @@ interface ShortcutHandlers {
   onToggleSidebar?: () => void;
   onTogglePanel?: () => void;
   onToggleContentWidth?: () => void;
+  onToggleChatPanel?: () => void;
   onSwitchCompany?: (index: number) => void;
 }
 
-export function useKeyboardShortcuts({ onNewIssue, onToggleSidebar, onTogglePanel, onToggleContentWidth, onSwitchCompany }: ShortcutHandlers) {
+export function useKeyboardShortcuts({ onNewIssue, onToggleSidebar, onTogglePanel, onToggleContentWidth, onToggleChatPanel, onSwitchCompany }: ShortcutHandlers) {
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       // Don't fire shortcuts when typing in inputs
@@ -55,6 +56,12 @@ export function useKeyboardShortcuts({ onNewIssue, onToggleSidebar, onTogglePane
         e.preventDefault();
         onNewIssue?.();
       }
+
+      // Cmd/Ctrl+Shift+C → Toggle Chat Panel
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "C") {
+        e.preventDefault();
+        onToggleChatPanel?.();
+      }
     }
 
     document.addEventListener("keydown", handleKeyDown);
@@ -63,5 +70,5 @@ export function useKeyboardShortcuts({ onNewIssue, onToggleSidebar, onTogglePane
       document.removeEventListener("keydown", handleKeyDown);
       document.removeEventListener("keydown", handleGlobalKeyDown);
     };
-  }, [onNewIssue, onToggleSidebar, onTogglePanel, onToggleContentWidth, onSwitchCompany]);
+  }, [onNewIssue, onToggleSidebar, onTogglePanel, onToggleContentWidth, onToggleChatPanel, onSwitchCompany]);
 }

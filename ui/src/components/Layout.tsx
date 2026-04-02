@@ -7,6 +7,7 @@ import { Sidebar } from "./Sidebar";
 import { SidebarNavItem } from "./SidebarNavItem";
 import { BreadcrumbBar } from "./BreadcrumbBar";
 import { PropertiesPanel } from "./PropertiesPanel";
+import { ChatSidePanel } from "./ChatSidePanel";
 import { AgentsSidebar } from "./AgentsSidebar";
 import { CommandPalette } from "./CommandPalette";
 import { NewIssueDialog } from "./NewIssueDialog";
@@ -17,6 +18,7 @@ import { ToastViewport } from "./ToastViewport";
 import { MobileBottomNav } from "./MobileBottomNav";
 import { useDialog } from "../context/DialogContext";
 import { usePanel } from "../context/PanelContext";
+import { useChatSidePanel } from "../context/ChatSidePanelContext";
 import { useCompany } from "../context/CompanyContext";
 import { useSidebar } from "../context/SidebarContext";
 import { useTheme } from "../context/ThemeContext";
@@ -63,6 +65,7 @@ export function Layout() {
   const { sidebarOpen, setSidebarOpen, toggleSidebar, isMobile } = useSidebar();
   const { openNewIssue, openOnboarding } = useDialog();
   const { togglePanelVisible } = usePanel();
+  const { toggleChat: toggleChatPanel } = useChatSidePanel();
   const {
     companies,
     loading: companiesLoading,
@@ -192,6 +195,7 @@ export function Layout() {
     onToggleSidebar: toggleSidebar,
     onTogglePanel: togglePanel,
     onToggleContentWidth: toggleContentWidth,
+    onToggleChatPanel: () => toggleChatPanel(),
     onSwitchCompany: switchCompany,
   });
 
@@ -442,6 +446,7 @@ export function Layout() {
             </ErrorBoundary>
           </main>
           <PropertiesPanel />
+          <ChatSidePanel />
         </div>
       </div>
       {!isMobile && <AgentsSidebar />}
