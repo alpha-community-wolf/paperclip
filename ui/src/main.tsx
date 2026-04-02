@@ -8,6 +8,7 @@ import { CompanyProvider } from "./context/CompanyContext";
 import { LiveUpdatesProvider } from "./context/LiveUpdatesProvider";
 import { BreadcrumbProvider } from "./context/BreadcrumbContext";
 import { PanelProvider } from "./context/PanelContext";
+import { ChatSidePanelProvider } from "./context/ChatSidePanelContext";
 import { SidebarProvider } from "./context/SidebarContext";
 import { AgentsSidebarProvider } from "./context/AgentsSidebarContext";
 import { DialogProvider } from "./context/DialogContext";
@@ -45,11 +46,13 @@ createRoot(document.getElementById("root")!).render(
                     <SidebarProvider>
                       <AgentsSidebarProvider>
                       <PanelProvider>
+                      <ChatSidePanelProvider>
                         <DialogProvider>
                           <ErrorBoundary>
                             <App />
                           </ErrorBoundary>
                         </DialogProvider>
+                      </ChatSidePanelProvider>
                       </PanelProvider>
                       </AgentsSidebarProvider>
                     </SidebarProvider>
