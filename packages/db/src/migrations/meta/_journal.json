@@ -337,6 +337,13 @@
       "when": 1743696000000,
       "tag": "0047_run_git_commits",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1743782400000,
+      "tag": "0048_issue_type",
+      "breakpoints": true
     }
   ]
 }
