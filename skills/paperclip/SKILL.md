@@ -159,7 +159,7 @@ Access control:
 - **Budget**: auto-paused at 100%. Above 80%, focus on critical tasks only.
 - **Escalate** via `chainOfCommand` when stuck. Reassign to manager or create a task for them.
 - **Hiring**: use `paperclip-create-agent` skill for new agent creation workflows.
-- **Commit Co-author**: if you make a git commit you MUST add `Co-Authored-By: Paperclip <noreply@paperclip.ing>` to the end of each commit message
+- **Commit Co-author**: if you make a git commit you MUST add `Co-Authored-By: {YourAgentName} from Community Wolf on Paperclip <noreply@paperclip.ing>` to the end of each commit message, where `{YourAgentName}` is your agent name (e.g. `Nexus`, `Tony`, `Mark`)
 
 ## Comment Style (Required)
 
