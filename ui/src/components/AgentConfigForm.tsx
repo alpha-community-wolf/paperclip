@@ -369,6 +369,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
 
   // Section toggle state — advanced always starts collapsed
   const [runPolicyAdvancedOpen, setRunPolicyAdvancedOpen] = useState(false);
+  const [heartbeatModelOpen, setHeartbeatModelOpen] = useState(false);
   // Popover states
   const [modelOpen, setModelOpen] = useState(false);
   const [thinkingEffortOpen, setThinkingEffortOpen] = useState(false);
@@ -1097,6 +1098,32 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                   className={inputClass}
                 />
               </Field>
+              <div className="border-t border-border pt-3 space-y-3">
+                <ToggleField
+                  label="Skip when idle"
+                  hint="Skip timer heartbeats entirely when the agent has no assigned work. Saves 100% of polling tokens for idle agents."
+                  checked={eff("heartbeat", "skipWhenIdle", Boolean(heartbeat.skipWhenIdle))}
+                  onChange={(v) => mark("heartbeat", "skipWhenIdle", v)}
+                />
+                <Field label="Heartbeat model override" hint="Use a cheaper model for timer-triggered polling heartbeats. The full model is used for on-demand wakes and escalated work.">
+                  <ModelDropdown
+                    models={models}
+                    value={(() => {
+                      const overrides = eff("heartbeat", "adapterOverrides", (heartbeat.adapterOverrides ?? {}) as Record<string, unknown>);
+                      return String((overrides as Record<string, unknown>).model ?? "");
+                    })()}
+                    onChange={(v) => {
+                      const existing = eff("heartbeat", "adapterOverrides", (heartbeat.adapterOverrides ?? {}) as Record<string, unknown>) as Record<string, unknown>;
+                      mark("heartbeat", "adapterOverrides", { ...existing, model: v || undefined });
+                    }}
+                    open={heartbeatModelOpen}
+                    onOpenChange={setHeartbeatModelOpen}
+                    allowDefault={true}
+                    required={false}
+                    groupByProvider={adapterType === "opencode_local" || adapterType === "hermes_local"}
+                  />
+                </Field>
+              </div>
             </div>
           </CollapsibleSection>
           </div>

@@ -57,6 +57,8 @@ export const help: Record<string, string> = {
   wakeOnDemand: "Allow this agent to be woken by assignments, API calls, UI actions, or automated systems.",
   cooldownSec: "Minimum seconds between consecutive heartbeat runs.",
   maxConcurrentRuns: "Maximum number of heartbeat runs that can execute simultaneously for this agent.",
+  skipWhenIdle: "Skip timer heartbeats entirely when the agent has no assigned work. Saves 100% of polling tokens for idle agents.",
+  heartbeatModelOverride: "Use a cheaper model for timer-triggered polling heartbeats. The full model is used for on-demand wakes and escalated work.",
   taskCron: "Optional recurring task schedule. Runs separately from heartbeat intervals and records work in issues.",
   taskCronExpression: "Cron expression for recurring task execution (e.g. 0 9 * * 1-5).",
   taskCronTimezone: "IANA timezone used to evaluate the cron expression.",
