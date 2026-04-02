@@ -160,7 +160,7 @@ export function approvalRoutes(db: Db) {
         try {
           const wakeRun = await heartbeat.wakeup(approval.requestedByAgentId, {
             source: "automation",
-            triggerDetail: "system",
+            triggerDetail: "approval",
             reason: "approval_approved",
             payload: {
               approvalId: approval.id,
