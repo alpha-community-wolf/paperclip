@@ -175,6 +175,7 @@ export type {
   InboxDismissalItemType,
   AgentTelegramConfig,
   AgentTelegramTestResult,
+  SendTelegramNotificationOptions,
   CostTrendPoint,
   CostTrend,
   CostForecast,

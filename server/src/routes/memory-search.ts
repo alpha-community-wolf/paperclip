@@ -168,7 +168,7 @@ export function memorySearchRoutes(svcOrDb: AgentServiceLike | unknown) {
   }
 
   async function resolveAgent(req: Request): Promise<AgentLike> {
-    const rawId = (req.params.id ?? "").trim();
+    const rawId = (String(req.params.id ?? "")).trim();
     if (!rawId) throw badRequest("Agent ID is required");
 
     const svc = getSvc();
