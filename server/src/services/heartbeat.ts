@@ -1378,7 +1378,9 @@ export function heartbeatService(db: Db) {
       .from(heartbeatRuns)
       .where(inArray(heartbeatRuns.status, ["queued", "running"]));
 
+    const MAX_REAP_RETRIES = 2;
     const reaped: string[] = [];
+    const requeued: string[] = [];
 
     for (const run of activeRuns) {
       if (runningProcesses.has(run.id)) continue;
@@ -1389,6 +1391,35 @@ export function heartbeatService(db: Db) {
         if (now.getTime() - refTime < staleThresholdMs) continue;
       }
 
+      // COM-436: If the run never started (queued but never claimed), re-queue
+      // it instead of marking as failed. This handles the common case where a
+      // server restart kills queued runs before they could execute.
+      const reapRetryCount = Number((run.metadata as Record<string, unknown> | null)?.reapRetryCount ?? 0);
+      if (!run.startedAt && run.status === "queued" && reapRetryCount < MAX_REAP_RETRIES) {
+        await db
+          .update(heartbeatRuns)
+          .set({
+            updatedAt: now,
+            metadata: { ...(run.metadata as Record<string, unknown> | null), reapRetryCount: reapRetryCount + 1 },
+          })
+          .where(eq(heartbeatRuns.id, run.id));
+        const retriedRun = await getRun(run.id);
+        if (retriedRun) {
+          await appendRunEvent(retriedRun, 1, {
+            eventType: "lifecycle",
+            stream: "system",
+            level: "warn",
+            message: `Run never started — re-queued for retry (attempt ${reapRetryCount + 1}/${MAX_REAP_RETRIES})`,
+          });
+        }
+        requeued.push(run.id);
+        // Kick off execution for this agent so the re-queued run actually starts
+        void startNextQueuedRunForAgent(run.agentId).catch((err) => {
+          logger.error({ err, runId: run.id }, "failed to start re-queued run after reap retry");
+        });
+        continue;
+      }
+
       // Build enriched error message with contextual detail
       const parts: string[] = [];
       if (run.startedAt) {
@@ -1396,7 +1427,7 @@ export function heartbeatService(db: Db) {
         const elapsedMin = Math.round(elapsedMs / 60_000);
         parts.push(`ran ${elapsedMin}m`);
       } else {
-        parts.push("never started");
+        parts.push(`never started, exhausted ${MAX_REAP_RETRIES} retries`);
       }
       const agent = await getAgent(run.agentId);
       const maxTurns = agent?.adapterConfig?.maxTurnsPerRun;
@@ -1434,10 +1465,13 @@ export function heartbeatService(db: Db) {
       reaped.push(run.id);
     }
 
+    if (requeued.length > 0) {
+      logger.info({ requeuedCount: requeued.length, runIds: requeued }, "re-queued never-started orphaned runs");
+    }
     if (reaped.length > 0) {
       logger.warn({ reapedCount: reaped.length, runIds: reaped }, "reaped orphaned heartbeat runs");
     }
-    return { reaped: reaped.length, runIds: reaped };
+    return { reaped: reaped.length, requeued: requeued.length, runIds: reaped };
   }
 
   async function updateRuntimeState(
