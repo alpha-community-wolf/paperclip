@@ -802,6 +802,19 @@ export function issueService(db: Db) {
         assertTransition(existing.status, issueData.status);
       }
 
+      // Plan issues require metadata.planDocumentPath before completion
+      if (issueData.status === "done" && existing.status !== "done" && existing.type === "plan") {
+        const nextMetadata = issueData.metadata !== undefined
+          ? (issueData.metadata as Record<string, unknown> | null)
+          : (existing.metadata as Record<string, unknown> | null);
+        if (!nextMetadata?.planDocumentPath) {
+          throw unprocessable(
+            "Plan issues require metadata.planDocumentPath to be set before marking as done",
+            { requirement: "planDocumentPath" },
+          );
+        }
+      }
+
       if (issueData.status === "done" && existing.status !== "done") {
         const nextProjectId = issueData.projectId !== undefined ? issueData.projectId : existing.projectId;
         const nextReviewBundleMode =

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ISSUE_PRIORITIES, ISSUE_STATUSES } from "../constants.js";
+import { ISSUE_PRIORITIES, ISSUE_STATUSES, ISSUE_TYPES } from "../constants.js";
 import { issueReviewBundleModeSchema } from "./review-bundle.js";
 
 const executionWorkspaceStrategySchema = z
@@ -34,6 +34,7 @@ export const createIssueSchema = z.object({
   parentId: z.string().uuid().optional().nullable(),
   title: z.string().min(1),
   description: z.string().optional().nullable(),
+  type: z.enum(ISSUE_TYPES).optional().default("task"),
   status: z.enum(ISSUE_STATUSES).optional().default("backlog"),
   priority: z.enum(ISSUE_PRIORITIES).optional().default("medium"),
   assigneeAgentId: z.string().uuid().optional().nullable(),

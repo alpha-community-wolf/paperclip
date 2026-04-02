@@ -408,6 +408,31 @@ export function IssueDetail() {
     },
   });
 
+  const createBuildIssue = useMutation({
+    mutationFn: () => {
+      const meta = issue?.metadata as Record<string, unknown> | null;
+      return issuesApi.create(selectedCompanyId!, {
+        title: `Build plan ${issue?.identifier ?? ""}`,
+        description: `Execute the plan defined in \`${meta?.planDocumentPath ?? ""}\`.\n\nPlan source: ${issue?.identifier ?? issue?.id}`,
+        type: "task",
+        status: "todo",
+        parentId: issue?.id,
+        assigneeAgentId: issue?.assigneeAgentId,
+        projectId: issue?.projectId,
+        goalId: issue?.goalId,
+        metadata: {
+          planDocumentPath: meta?.planDocumentPath,
+          planIssueId: issue?.id,
+          planIssueIdentifier: issue?.identifier,
+        },
+      });
+    },
+    onSuccess: (newIssue) => {
+      invalidateIssue();
+      navigate(`/issues/${newIssue.identifier ?? newIssue.id}`);
+    },
+  });
+
   const addComment = useMutation({
     mutationFn: ({ body, reopen }: { body: string; reopen?: boolean }) =>
       issuesApi.addComment(issueId!, body, reopen),
@@ -732,6 +757,12 @@ export function IssueDetail() {
           />
           <span className="text-sm font-mono text-muted-foreground shrink-0">{issue.identifier ?? issue.id.slice(0, 8)}</span>
 
+          {issue.type === "plan" && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-violet-500/10 border border-violet-500/30 px-2 py-0.5 text-[10px] font-medium text-violet-600 dark:text-violet-400 shrink-0">
+              Plan
+            </span>
+          )}
+
           {hasLiveRuns && (
             <span className="inline-flex items-center gap-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/30 px-2 py-0.5 text-[10px] font-medium text-cyan-600 dark:text-cyan-400 shrink-0">
               <span className="relative flex h-1.5 w-1.5">
@@ -845,6 +876,25 @@ export function IssueDetail() {
           }}
         />
       </div>
+
+      {issue.type === "plan" && issue.status === "done" && !!(issue.metadata as Record<string, unknown> | null)?.planDocumentPath && (
+        <div className="flex items-center gap-3 rounded-lg border border-violet-500/30 bg-violet-500/5 p-3">
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium">Plan complete</p>
+            <p className="text-xs text-muted-foreground truncate">
+              Ready to execute: <code className="text-[11px]">{String((issue.metadata as Record<string, unknown>).planDocumentPath)}</code>
+            </p>
+          </div>
+          <Button
+            size="sm"
+            onClick={() => createBuildIssue.mutate()}
+            disabled={createBuildIssue.isPending}
+          >
+            <Play className="h-3.5 w-3.5 mr-1.5" />
+            {createBuildIssue.isPending ? "Creating..." : "Build"}
+          </Button>
+        </div>
+      )}
 
       {issue.metadata && Object.keys(issue.metadata).length > 0 && (
         <Collapsible>

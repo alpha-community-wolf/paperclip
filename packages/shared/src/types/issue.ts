@@ -1,4 +1,4 @@
-import type { IssuePriority, IssueStatus } from "../constants.js";
+import type { IssuePriority, IssueStatus, IssueType } from "../constants.js";
 import type { Goal } from "./goal.js";
 import type { Project, ProjectWorkspace } from "./project.js";
 import type { IssueExecutionWorkspaceSettings } from "./workspace-runtime.js";
@@ -61,6 +61,7 @@ export interface Issue {
   ancestors?: IssueAncestor[];
   title: string;
   description: string | null;
+  type: IssueType;
   status: IssueStatus;
   priority: IssuePriority;
   assigneeAgentId: string | null;

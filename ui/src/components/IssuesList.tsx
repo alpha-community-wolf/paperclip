@@ -625,6 +625,11 @@ export function IssuesList({
           <span className="text-xs text-muted-foreground font-mono shrink-0 sm:w-[68px]">
             {issue.identifier ?? issue.id.slice(0, 8)}
           </span>
+          {issue.type === "plan" && (
+            <span className="inline-flex items-center gap-1 rounded-full border border-violet-500/40 bg-violet-500/10 px-1.5 py-0.5 text-[10px] text-violet-600 dark:text-violet-400">
+              Plan
+            </span>
+          )}
           {recurringIssueIds.has(issue.id) && (
             <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-600 dark:text-amber-400">
               <Clock3 className="h-2.5 w-2.5" />

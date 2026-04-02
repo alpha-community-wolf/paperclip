@@ -622,6 +622,7 @@ async function buildAgentSelfContext(
             id: issues.id,
             identifier: issues.identifier,
             title: issues.title,
+            type: issues.type,
             status: issues.status,
             priority: issues.priority,
             description: issues.description,
@@ -685,6 +686,31 @@ async function buildAgentSelfContext(
       lines.push("```json");
       lines.push(truncated);
       lines.push("```");
+    }
+
+    // Plan-mode instruction injection
+    const meta = currentIssue.metadata as Record<string, unknown> | null;
+    if (currentIssue.type === "plan") {
+      const identifier = currentIssue.identifier ?? currentIssue.id.slice(0, 8);
+      lines.push("");
+      lines.push("## Plan Mode Instructions");
+      lines.push("");
+      lines.push("You are working on a **PLAN** issue. Your job is to create a plan document, NOT to execute.");
+      lines.push("");
+      lines.push("Requirements:");
+      lines.push(`1. Create a plan document at: \`{workspace}/workspace/plans/${identifier}-plan.md\``);
+      lines.push("2. The plan must include: objective, approach, steps, files affected, risks, and success criteria");
+      lines.push("3. Iterate on the plan based on user feedback in comments");
+      lines.push(`4. When the plan is finalized, update the issue metadata with \`planDocumentPath\` set to the plan file path`);
+      lines.push("5. Do NOT execute the plan — a separate execution issue will be created for that");
+    } else if (meta?.planDocumentPath) {
+      lines.push("");
+      lines.push("## Execution Plan Reference");
+      lines.push("");
+      lines.push(`This issue executes a plan. Read the plan at \`${meta.planDocumentPath}\` and follow it.`);
+      if (meta.planIssueIdentifier) {
+        lines.push(`Plan source: ${meta.planIssueIdentifier}`);
+      }
     }
 
     if (recentComments.length > 0) {
