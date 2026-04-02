@@ -13,7 +13,7 @@ import { getRecentAssigneeIds, sortAgentsByRecency, trackRecentAssignee } from "
 import { StatusIcon } from "./StatusIcon";
 import { PriorityIcon } from "./PriorityIcon";
 import { Identity } from "./Identity";
-import { formatDate, cn, projectUrl } from "../lib/utils";
+import { formatDate, cn, projectUrl, activityLevel, activityConfig } from "../lib/utils";
 import { timeAgo } from "../lib/timeAgo";
 import { resolveEffectiveReviewBundleMode } from "../lib/review-bundles";
 import { Separator } from "@/components/ui/separator";
@@ -689,7 +689,22 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
           <span className="text-sm">{formatDate(issue.createdAt)}</span>
         </PropertyRow>
         <PropertyRow label="Updated">
-          <span className="text-sm">{timeAgo(issue.updatedAt)}</span>
+          {(() => {
+            const level = activityLevel(issue.updatedAt);
+            const config = activityConfig[level];
+            return (
+              <span className="inline-flex items-center gap-1.5 text-sm">
+                <span className={cn("inline-block h-2 w-2 rounded-full shrink-0", {
+                  "bg-orange-500": level === "hot",
+                  "bg-yellow-500 dark:bg-yellow-400": level === "warm",
+                  "bg-blue-400": level === "cold",
+                  "bg-muted-foreground/40": level === "stale",
+                })} />
+                <span>{timeAgo(issue.updatedAt)}</span>
+                <span className={cn("text-xs", config.className)}>({config.label})</span>
+              </span>
+            );
+          })()}
         </PropertyRow>
       </div>
     </div>
