@@ -31,6 +31,6 @@ export { notifyHireApproved, type NotifyHireApprovedInput } from "./hire-hook.js
 export { publishLiveEvent, subscribeCompanyLiveEvents, configureInternalEventRouter } from "./live-events.js";
 export { eventRoutingService } from "./event-routing.js";
 export { taskCronService, computeNextCronTrigger } from "./task-cron-schedules.js";
-export { reconcilePersistedRuntimeServicesOnStartup } from "./workspace-runtime.js";
+export { reconcilePersistedRuntimeServicesOnStartup, stopAllRuntimeServices } from "./workspace-runtime.js";
 export { createStorageServiceFromConfig, getStorageService } from "../storage/index.js";
 export { telegramService } from "./telegram.js";
