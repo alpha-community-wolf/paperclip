@@ -5,9 +5,9 @@ import https from "node:https";
 import path from "node:path";
 import { Bot, InputFile } from "grammy";
 import { run as grammyRun, type RunnerHandle } from "@grammyjs/runner";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, count, eq, isNull } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { agents, agentTelegramConfigs, chatSessions } from "@paperclipai/db";
+import { agents, agentTelegramConfigs, chatMessages, chatSessions } from "@paperclipai/db";
 import type { AgentTelegramConfig, AgentTelegramTestResult, SendTelegramNotificationOptions } from "@paperclipai/shared";
 import { logger } from "../middleware/logger.js";
 import { resolvePaperclipInstanceRoot } from "../home-paths.js";
@@ -15,6 +15,7 @@ import { subscribeCompanyLiveEvents } from "./live-events.js";
 import { chatService } from "./chat.js";
 import { heartbeatService } from "./heartbeat.js";
 import { agentService } from "./agents.js";
+import { inlineChoreService } from "./inline-chore.js";
 import {
   parseLogLines,
   buildTranscript,
@@ -396,6 +397,91 @@ export function telegramService(db: Db) {
   }
 
   const agentsSvc = agentService(db);
+  const inlineChore = inlineChoreService(db);
+
+  /** Default title assigned to new Telegram sessions. */
+  const DEFAULT_TELEGRAM_TITLE = "Telegram chat";
+
+  /**
+   * After the first user message + agent reply in a session that still has the
+   * default title, fire an inline chore to generate a descriptive title.
+   * Runs asynchronously — errors are logged, never propagated to the caller.
+   */
+  async function maybeAutoTitleSession(
+    agentId: string,
+    sessionId: string,
+    sessionTitle: string | null,
+    runId: string,
+  ): Promise<void> {
+    // Only auto-title sessions still using the default name
+    if (sessionTitle && sessionTitle !== DEFAULT_TELEGRAM_TITLE) return;
+
+    try {
+      // Only trigger on the first user message in the session
+      const [{ total }] = await db
+        .select({ total: count() })
+        .from(chatMessages)
+        .where(
+          and(
+            eq(chatMessages.chatSessionId, sessionId),
+            eq(chatMessages.role, "user"),
+          ),
+        );
+
+      if (Number(total) !== 1) return;
+
+      // Get the first user message
+      const [userMessage] = await db
+        .select({ content: chatMessages.content })
+        .from(chatMessages)
+        .where(
+          and(
+            eq(chatMessages.chatSessionId, sessionId),
+            eq(chatMessages.role, "user"),
+          ),
+        )
+        .orderBy(chatMessages.createdAt)
+        .limit(1);
+
+      if (!userMessage) return;
+
+      // Get the agent's reply from the run transcript
+      const agent = await agentsSvc.getById(agentId);
+      if (!agent) return;
+
+      const chunks = await heartbeat.readLog(runId, { offset: 0, limitBytes: 64_000 }).catch(() => null);
+      let assistantText = "";
+      if (chunks?.content) {
+        const parsed = parseLogLines(chunks.content, "");
+        const transcript = buildTranscript(parsed.chunks, resolveStdoutParser(agent.adapterType));
+        assistantText = transcript
+          .filter((e) => e.kind === "assistant")
+          .map((e) => e.text.trim())
+          .filter(Boolean)
+          .join("\n\n")
+          .trim();
+      }
+
+      // Build messages for the inline chore
+      const messages: { role: "user" | "assistant"; content: string }[] = [
+        { role: "user", content: userMessage.content },
+      ];
+      if (assistantText) {
+        // Truncate long replies — title generation only needs a summary
+        const truncated = assistantText.length > 500 ? assistantText.slice(0, 500) + "…" : assistantText;
+        messages.push({ role: "assistant", content: truncated });
+      }
+
+      const title = await inlineChore.generateSessionTitle(agentId, messages);
+
+      if (title) {
+        await chat.updateSession({ agentId, sessionId, title });
+        logger.info({ agentId, sessionId, title }, "telegram: auto-titled session");
+      }
+    } catch (err) {
+      logger.warn({ err, agentId, sessionId }, "telegram: auto-title failed (non-fatal)");
+    }
+  }
 
   async function archiveTelegramSession(agentId: string, telegramChatId: string) {
     const existing = await db
@@ -648,6 +734,9 @@ export function telegramService(db: Db) {
         }
 
         await streamRunToTelegram(bot, ctx.chat.id, result.runId, agentId);
+
+        // Fire-and-forget: auto-title after first user message + agent reply
+        maybeAutoTitleSession(agentId, session.id, session.title, result.runId).catch(() => {});
       } catch (err) {
         logger.error({ err, agentId, telegramChatId }, "telegram: failed to process message");
         try {
@@ -763,6 +852,9 @@ export function telegramService(db: Db) {
         }
 
         await streamRunToTelegram(bot, chatId, result.runId, agentId);
+
+        // Fire-and-forget: auto-title after first user message + agent reply
+        maybeAutoTitleSession(agentId, session.id, session.title, result.runId).catch(() => {});
       } catch (err) {
         logger.error({ err, agentId, telegramChatId }, "telegram: failed to process media message");
         try {
