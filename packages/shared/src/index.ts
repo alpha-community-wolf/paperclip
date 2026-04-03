@@ -199,6 +199,7 @@ export {
   updateAgentInstructionsPathSchema,
   createAgentKeySchema,
   wakeAgentSchema,
+  triggerChoreSchema,
   resetAgentSessionSchema,
   testAdapterEnvironmentSchema,
   agentPermissionsSchema,
