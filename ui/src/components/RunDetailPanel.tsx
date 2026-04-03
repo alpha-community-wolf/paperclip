@@ -111,6 +111,11 @@ export function RunDetailPanel({ run: initialRun, agent, onClose }: RunDetailPan
               >
                 {invocationSourceLabel[run.invocationSource] ?? run.invocationSource}
               </span>
+              {!run.startedAt && run.status !== "queued" && run.status !== "running" && (
+                <span className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium shrink-0 bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                  Never started
+                </span>
+              )}
               {(run.status === "running" || run.status === "queued") && (
                 <Button
                   variant="ghost"
