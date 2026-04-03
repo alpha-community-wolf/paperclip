@@ -1304,7 +1304,6 @@ export function heartbeatService(db: Db) {
       wakeOnDemand: asBoolean(heartbeat.wakeOnDemand ?? heartbeat.wakeOnAssignment ?? heartbeat.wakeOnOnDemand ?? heartbeat.wakeOnAutomation, true),
       maxConcurrentRuns: normalizeMaxConcurrentRuns(heartbeat.maxConcurrentRuns),
       skipWhenIdle: asBoolean(heartbeat.skipWhenIdle, false),
-      adapterOverrides: parseObject(heartbeat.adapterOverrides),
     };
   }
 
@@ -1826,19 +1825,10 @@ export function heartbeatService(db: Db) {
       mode: executionWorkspaceMode,
       legacyUseProjectWorkspace: issueAssigneeOverrides?.useProjectWorkspace ?? null,
     });
-    // Layer 2: Apply heartbeat adapter overrides for timer-triggered polling runs
-    const heartbeatPolicy = parseHeartbeatPolicy(agent);
-    const isPollingHeartbeat = run.invocationSource === "timer" && !issueId;
-    const heartbeatOverrides =
-      isPollingHeartbeat && Object.keys(heartbeatPolicy.adapterOverrides).length > 0
-        ? heartbeatPolicy.adapterOverrides
-        : null;
-    const baseWithHeartbeatOverrides = heartbeatOverrides
-      ? { ...workspaceManagedConfig, ...heartbeatOverrides }
-      : workspaceManagedConfig;
+    // Layer 2: Merge issue assignee overrides
     const mergedConfig = issueAssigneeOverrides?.adapterConfig
-      ? { ...baseWithHeartbeatOverrides, ...issueAssigneeOverrides.adapterConfig }
-      : baseWithHeartbeatOverrides;
+      ? { ...workspaceManagedConfig, ...issueAssigneeOverrides.adapterConfig }
+      : workspaceManagedConfig;
     // Layer 3: For chore runs, override model with choreModel if configured
     const isChoreRun = run.type === "chore";
     const choreModelId = isChoreRun ? readNonEmptyString(config.choreModel) : null;
@@ -3411,20 +3401,90 @@ export function heartbeatService(db: Db) {
           }
         }
 
-        const run = await enqueueWakeup(agent.id, {
-          source: "timer",
-          triggerDetail: "system",
-          reason: "heartbeat_timer",
-          requestedByActorType: "system",
-          requestedByActorId: "heartbeat_scheduler",
-          contextSnapshot: {
-            source: "scheduler",
-            reason: "interval_elapsed",
-            now: now.toISOString(),
-          },
-        });
-        if (run) enqueued += 1;
-        else skipped += 1;
+        // If choreModel is configured, spawn a chore triage run instead of a
+        // full-model heartbeat.  The chore uses the cheap model to check whether
+        // there is actionable work; if it returns `escalate`, the existing
+        // escalation handler (post-run) enqueues a full-model run automatically.
+        const agentConfig = parseObject(agent.adapterConfig);
+        const hasChoreModel = !!readNonEmptyString(agentConfig.choreModel);
+
+        if (hasChoreModel) {
+          const wakeupRequest = await db
+            .insert(agentWakeupRequests)
+            .values({
+              companyId: agent.companyId,
+              agentId: agent.id,
+              source: "timer",
+              triggerDetail: "system",
+              reason: "heartbeat_triage",
+              status: "queued",
+              requestedByActorType: "system",
+              requestedByActorId: "heartbeat_scheduler",
+            })
+            .returning()
+            .then((rows) => rows[0]);
+
+          const choreRun = await db
+            .insert(heartbeatRuns)
+            .values({
+              companyId: agent.companyId,
+              agentId: agent.id,
+              type: "chore",
+              invocationSource: "timer",
+              triggerDetail: "system",
+              status: "queued",
+              wakeupRequestId: wakeupRequest.id,
+              contextSnapshot: {
+                chorePrompt:
+                  "You are a heartbeat triage agent. Check your assigned issues " +
+                  "and determine if any require immediate action. If there is " +
+                  "actionable work, respond with escalate and the issue ID. " +
+                  "If nothing needs attention, exit quietly.",
+                source: "heartbeat_triage",
+                reason: "interval_elapsed",
+                now: now.toISOString(),
+              },
+              metadata: null,
+            })
+            .returning()
+            .then((rows) => rows[0]);
+
+          await db
+            .update(agentWakeupRequests)
+            .set({ runId: choreRun.id, updatedAt: now })
+            .where(eq(agentWakeupRequests.id, wakeupRequest.id));
+
+          publishLiveEvent({
+            companyId: choreRun.companyId,
+            type: "heartbeat.run.queued",
+            payload: {
+              runId: choreRun.id,
+              agentId: choreRun.agentId,
+              invocationSource: choreRun.invocationSource,
+              triggerDetail: choreRun.triggerDetail,
+              wakeupRequestId: choreRun.wakeupRequestId,
+            },
+          });
+
+          await startNextQueuedRunForAgent(agent.id);
+          enqueued += 1;
+        } else {
+          // No choreModel configured — fall back to standard full-model heartbeat
+          const run = await enqueueWakeup(agent.id, {
+            source: "timer",
+            triggerDetail: "system",
+            reason: "heartbeat_timer",
+            requestedByActorType: "system",
+            requestedByActorId: "heartbeat_scheduler",
+            contextSnapshot: {
+              source: "scheduler",
+              reason: "interval_elapsed",
+              now: now.toISOString(),
+            },
+          });
+          if (run) enqueued += 1;
+          else skipped += 1;
+        }
       }
 
       return { checked, enqueued, skipped };
