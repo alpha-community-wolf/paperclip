@@ -16,6 +16,7 @@ import {
   updateAgentPermissionsSchema,
   updateAgentInstructionsPathSchema,
   wakeAgentSchema,
+  triggerChoreSchema,
   updateAgentSchema,
 } from "@paperclipai/shared";
 import { validate } from "../middleware/validate.js";
@@ -1477,6 +1478,41 @@ export function agentRoutes(db: Db) {
       agentId: actor.agentId,
       runId: actor.runId,
       action: "heartbeat.invoked",
+      entityType: "heartbeat_run",
+      entityId: run.id,
+      details: { agentId: id },
+    });
+
+    res.status(202).json(run);
+  });
+
+  router.post("/agents/:id/chore", validate(triggerChoreSchema), async (req, res) => {
+    const id = req.params.id as string;
+    const agent = await svc.getById(id);
+    if (!agent) {
+      res.status(404).json({ error: "Agent not found" });
+      return;
+    }
+    assertCompanyAccess(req, agent.companyId);
+
+    const run = await heartbeat.triggerChore(id, {
+      prompt: req.body.prompt,
+      issueId: req.body.issueId,
+      metadata: req.body.metadata,
+      actor: {
+        actorType: req.actor.type === "agent" ? "agent" : "user",
+        actorId: req.actor.type === "agent" ? req.actor.agentId ?? null : req.actor.userId ?? null,
+      },
+    });
+
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId: agent.companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      action: "chore.triggered",
       entityType: "heartbeat_run",
       entityId: run.id,
       details: { agentId: id },

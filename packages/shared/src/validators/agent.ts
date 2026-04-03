@@ -84,6 +84,14 @@ export const wakeAgentSchema = z.object({
 
 export type WakeAgent = z.infer<typeof wakeAgentSchema>;
 
+export const triggerChoreSchema = z.object({
+  prompt: z.string().min(1),
+  issueId: z.string().uuid().optional(),
+  metadata: z.record(z.unknown()).optional(),
+});
+
+export type TriggerChore = z.infer<typeof triggerChoreSchema>;
+
 export const resetAgentSessionSchema = z.object({
   taskKey: z.string().min(1).optional().nullable(),
 });
