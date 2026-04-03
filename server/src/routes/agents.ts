@@ -1608,7 +1608,8 @@ export function agentRoutes(db: Db) {
     const projectId = req.query.projectId as string | undefined;
     const limitParam = req.query.limit as string | undefined;
     const limit = limitParam ? Math.max(1, Math.min(1000, parseInt(limitParam, 10) || 200)) : undefined;
-    const result = await heartbeat.list(companyId, agentId, limit, projectId);
+    const includeChores = req.query.includeChores === "true";
+    const result = await heartbeat.list(companyId, agentId, limit, projectId, includeChores);
     res.json(result);
   });
 
@@ -1621,6 +1622,7 @@ export function agentRoutes(db: Db) {
 
     const columns = {
       id: heartbeatRuns.id,
+      type: heartbeatRuns.type,
       status: heartbeatRuns.status,
       invocationSource: heartbeatRuns.invocationSource,
       triggerDetail: heartbeatRuns.triggerDetail,

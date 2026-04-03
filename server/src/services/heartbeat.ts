@@ -107,6 +107,7 @@ const heartbeatRunListColumns = {
   id: heartbeatRuns.id,
   companyId: heartbeatRuns.companyId,
   agentId: heartbeatRuns.agentId,
+  type: heartbeatRuns.type,
   invocationSource: heartbeatRuns.invocationSource,
   triggerDetail: heartbeatRuns.triggerDetail,
   status: heartbeatRuns.status,
@@ -3185,9 +3186,10 @@ export function heartbeatService(db: Db) {
   } as const;
 
   return {
-    list: async (companyId: string, agentId?: string, limit?: number, projectId?: string): Promise<{ runs: (typeof heartbeatRuns.$inferSelect)[]; degraded: boolean }> => {
+    list: async (companyId: string, agentId?: string, limit?: number, projectId?: string, includeChores = false): Promise<{ runs: (typeof heartbeatRuns.$inferSelect)[]; degraded: boolean }> => {
       const conditions = [eq(heartbeatRuns.companyId, companyId)];
       if (agentId) conditions.push(eq(heartbeatRuns.agentId, agentId));
+      if (!includeChores) conditions.push(sql`${heartbeatRuns.type} != 'chore'`);
 
       const issueIdExpr = sql`${heartbeatRuns.contextSnapshot} ->> 'issueId'`;
       const needsJoin = !!projectId;
