@@ -29,9 +29,11 @@ import {
   heartbeatService,
   reconcilePersistedRuntimeServicesOnStartup,
   seedBuiltInSkillsForAllCompanies,
+  stopAllRuntimeServices,
   taskCronService,
   telegramService,
 } from "./services/index.js";
+import { runningProcesses } from "./adapters/index.js";
 import { createStorageServiceFromConfig } from "./storage/index.js";
 import { printStartupBanner } from "./startup-banner.js";
 import { getBoardClaimWarningUrl, initializeBoardClaimChallenge } from "./board-claim.js";
@@ -686,25 +688,80 @@ export async function startServer(): Promise<StartedServer> {
     });
   });
   
-  if (embeddedPostgres && embeddedPostgresStartedByThisProcess) {
-    const shutdown = async (signal: "SIGINT" | "SIGTERM") => {
-      logger.info({ signal }, "Stopping embedded PostgreSQL");
+  const GRACEFUL_SHUTDOWN_TIMEOUT_MS = 30_000;
+
+  const gracefulShutdown = async (signal: "SIGINT" | "SIGTERM") => {
+    logger.info({ signal }, "Graceful shutdown initiated");
+
+    // 1. Stop accepting new connections
+    server.close();
+    logger.info("HTTP server closed to new connections");
+
+    // 2. Wait for running agent processes to finish (with timeout)
+    const runCount = runningProcesses.size;
+    if (runCount > 0) {
+      logger.info({ runCount }, "Waiting for running agent processes to finish");
+      const deadline = Date.now() + GRACEFUL_SHUTDOWN_TIMEOUT_MS;
+
+      while (runningProcesses.size > 0 && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 500));
+      }
+
+      if (runningProcesses.size > 0) {
+        logger.warn(
+          { remaining: runningProcesses.size },
+          "Shutdown timeout reached — sending SIGTERM to remaining agent processes",
+        );
+        for (const [runId, rp] of runningProcesses) {
+          try {
+            rp.child.kill("SIGTERM");
+          } catch {
+            // already dead
+          }
+          runningProcesses.delete(runId);
+        }
+      } else {
+        logger.info("All agent processes exited cleanly");
+      }
+    }
+
+    // 3. Stop workspace runtime services
+    try {
+      await stopAllRuntimeServices();
+      logger.info("Workspace runtime services stopped");
+    } catch (err) {
+      logger.error({ err }, "Failed to stop workspace runtime services");
+    }
+
+    // 4. Stop telegram bots
+    try {
+      const telegram = telegramService(db as any);
+      await telegram.stopAllBots();
+      logger.info("Telegram bots stopped");
+    } catch (err) {
+      logger.error({ err }, "Failed to stop telegram bots cleanly");
+    }
+
+    // 5. Stop embedded PostgreSQL if applicable
+    if (embeddedPostgres && embeddedPostgresStartedByThisProcess) {
       try {
-        await embeddedPostgres?.stop();
+        await embeddedPostgres.stop();
+        logger.info("Embedded PostgreSQL stopped");
       } catch (err) {
         logger.error({ err }, "Failed to stop embedded PostgreSQL cleanly");
-      } finally {
-        process.exit(0);
       }
-    };
-  
-    process.once("SIGINT", () => {
-      void shutdown("SIGINT");
-    });
-    process.once("SIGTERM", () => {
-      void shutdown("SIGTERM");
-    });
-  }
+    }
+
+    logger.info("Graceful shutdown complete");
+    process.exit(0);
+  };
+
+  process.once("SIGINT", () => {
+    void gracefulShutdown("SIGINT");
+  });
+  process.once("SIGTERM", () => {
+    void gracefulShutdown("SIGTERM");
+  });
 
   return {
     server,

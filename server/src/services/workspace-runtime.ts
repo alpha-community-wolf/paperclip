@@ -791,6 +791,13 @@ async function stopRuntimeService(serviceId: string) {
   await persistRuntimeServiceRecord(record.db, record);
 }
 
+export async function stopAllRuntimeServices(): Promise<void> {
+  const ids = Array.from(runtimeServicesById.keys());
+  for (const id of ids) {
+    await stopRuntimeService(id);
+  }
+}
+
 function registerRuntimeService(db: Db | undefined, record: RuntimeServiceRecord) {
   record.db = db;
   runtimeServicesById.set(record.id, record);
