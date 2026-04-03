@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ChatMessage, ChatSession, CreateChatMessageResponse } from "@paperclipai/shared";
 import {
   Archive,
+  ArchiveRestore,
   Check,
   ChevronDown,
   Loader2,
@@ -151,22 +152,26 @@ export function ChatSidePanel() {
     eventSourceRef.current = null;
   }, [agentId]);
 
-  const sessionsQueryKey = agentId ? queryKeys.chatSessions(agentId, false) : ["chat", "sessions", "none"];
+  const sessionsQueryKey = agentId ? queryKeys.chatSessions(agentId, true) : ["chat", "sessions", "none"];
   const { data: sessions = [] } = useQuery({
     queryKey: sessionsQueryKey,
-    queryFn: () => chatApi.listSessions(agentId!, { includeArchived: false }),
+    queryFn: () => chatApi.listSessions(agentId!, { includeArchived: true }),
     enabled: Boolean(agentId && isOpen),
   });
 
-  // Auto-select first session
+  const activeSessions = useMemo(() => sessions.filter((s) => !s.archivedAt), [sessions]);
+  const archivedSessions = useMemo(() => sessions.filter((s) => s.archivedAt), [sessions]);
+
+  // Auto-select first active session
   useEffect(() => {
     if (!sessions.length) {
       setSelectedSessionId(null);
       return;
     }
     if (selectedSessionId && sessions.some((s) => s.id === selectedSessionId)) return;
-    setSelectedSessionId(sessions[0]?.id ?? null);
-  }, [selectedSessionId, sessions]);
+    const firstActive = activeSessions[0];
+    setSelectedSessionId(firstActive?.id ?? sessions[0]?.id ?? null);
+  }, [selectedSessionId, sessions, activeSessions]);
 
   const selectedSession = useMemo(
     () => sessions.find((s) => s.id === selectedSessionId) ?? null,
@@ -392,7 +397,8 @@ export function ChatSidePanel() {
   const hasPersistedReply = Boolean(
     activeRunId && messages.some((m) => m.role === "assistant" && m.runId === activeRunId),
   );
-  const canSend = draft.trim().length > 0 && !sendMessage.isPending && !streaming;
+  const isArchivedSession = Boolean(selectedSession?.archivedAt);
+  const canSend = draft.trim().length > 0 && !sendMessage.isPending && !streaming && !isArchivedSession;
 
   const handleResize = useCallback(
     (delta: number) => {
@@ -461,7 +467,7 @@ export function ChatSidePanel() {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto min-w-[220px]">
-                  {sessions.map((session) => (
+                  {activeSessions.map((session) => (
                     <DropdownMenuItem
                       key={session.id}
                       onSelect={() => {
@@ -508,6 +514,48 @@ export function ChatSidePanel() {
                       </div>
                     </DropdownMenuItem>
                   ))}
+                  {archivedSessions.length > 0 && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <div className="px-2 py-1.5 text-[10px] font-medium text-muted-foreground">
+                        Past conversations
+                      </div>
+                      {archivedSessions.map((session) => (
+                        <DropdownMenuItem
+                          key={session.id}
+                          onSelect={() => {
+                            setSelectedSessionId(session.id);
+                            setStreamState(null);
+                            closeStream();
+                          }}
+                          className={cn(
+                            "text-xs group/session text-muted-foreground",
+                            session.id === selectedSessionId && "bg-accent",
+                          )}
+                        >
+                          <Archive className="h-3 w-3 shrink-0 mr-1" />
+                          <span className="truncate flex-1">{displaySessionTitle(session)}</span>
+                          <span className="pl-2 text-[10px] text-muted-foreground shrink-0">
+                            {relativeTime(session.lastMessageAt ?? session.updatedAt)}
+                          </span>
+                          <div className="flex items-center gap-0.5 ml-1 shrink-0 opacity-0 group-hover/session:opacity-100 transition-opacity">
+                            <button
+                              type="button"
+                              className="p-0.5 rounded hover:bg-accent-foreground/10"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                e.preventDefault();
+                                archiveSession.mutate({ sessionId: session.id, archived: false });
+                              }}
+                              aria-label="Restore"
+                            >
+                              <ArchiveRestore className="h-3 w-3" />
+                            </button>
+                          </div>
+                        </DropdownMenuItem>
+                      ))}
+                    </>
+                  )}
                   {selectedSession && (
                     <>
                       <DropdownMenuSeparator />
@@ -521,13 +569,23 @@ export function ChatSidePanel() {
                         <Pencil className="h-3 w-3" />
                         Rename current
                       </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onSelect={() => archiveSession.mutate({ sessionId: selectedSession.id, archived: true })}
-                        className="text-xs"
-                      >
-                        <Archive className="h-3 w-3" />
-                        Archive current
-                      </DropdownMenuItem>
+                      {selectedSession.archivedAt ? (
+                        <DropdownMenuItem
+                          onSelect={() => archiveSession.mutate({ sessionId: selectedSession.id, archived: false })}
+                          className="text-xs"
+                        >
+                          <ArchiveRestore className="h-3 w-3" />
+                          Restore current
+                        </DropdownMenuItem>
+                      ) : (
+                        <DropdownMenuItem
+                          onSelect={() => archiveSession.mutate({ sessionId: selectedSession.id, archived: true })}
+                          className="text-xs"
+                        >
+                          <Archive className="h-3 w-3" />
+                          Archive current
+                        </DropdownMenuItem>
+                      )}
                       <DropdownMenuItem
                         variant="destructive"
                         onSelect={() => archiveSession.mutate({ sessionId: selectedSession.id, archived: true })}
@@ -648,7 +706,7 @@ export function ChatSidePanel() {
           <Textarea
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            placeholder="Message..."
+            placeholder={isArchivedSession ? "Archived conversation (read-only)" : "Message..."}
             rows={1}
             className="min-h-[36px] max-h-[120px] resize-none text-xs"
             onKeyDown={(e) => {
@@ -657,7 +715,7 @@ export function ChatSidePanel() {
                 sendMessage.mutate(draft.trim());
               }
             }}
-            disabled={!selectedSessionId || sendMessage.isPending || streaming}
+            disabled={!selectedSessionId || sendMessage.isPending || streaming || isArchivedSession}
           />
           <Button
             size="icon-sm"
