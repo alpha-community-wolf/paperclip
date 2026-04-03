@@ -68,6 +68,7 @@ export function buildClaudeLocalConfig(v: CreateConfigValues): Record<string, un
   if (v.instructionsFilePath) ac.instructionsFilePath = v.instructionsFilePath;
   if (v.promptTemplate) ac.promptTemplate = v.promptTemplate;
   if (v.model) ac.model = v.model;
+  if (v.choreModel) ac.choreModel = v.choreModel;
   if (v.thinkingEffort) ac.effort = v.thinkingEffort;
   if (v.mode) ac.mode = v.mode;
   if (v.chrome) ac.chrome = true;
