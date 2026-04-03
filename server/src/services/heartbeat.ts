@@ -65,6 +65,20 @@ const HEARTBEAT_MAX_CONCURRENT_RUNS_DEFAULT = 1;
 const HEARTBEAT_MAX_CONCURRENT_RUNS_MAX = 10;
 const DEFERRED_WAKE_CONTEXT_KEY = "_paperclipWakeContext";
 const startLocksByAgent = new Map<string, Promise<void>>();
+
+/**
+ * In-memory callbacks for chore run completion.
+ * Used by triggerChore callers that need post-processing (e.g. auto-titling).
+ * Not durable — lost on server restart (acceptable for non-critical tasks).
+ */
+type ChoreCompletionInfo = {
+  runId: string;
+  agentId: string;
+  agentAdapterType: string;
+  outcome: "succeeded" | "failed" | "timed_out" | "cancelled";
+  stdoutExcerpt: string;
+};
+const choreCompletionCallbacks = new Map<string, (info: ChoreCompletionInfo) => Promise<void>>();
 const REPO_ONLY_CWD_SENTINEL = "/__paperclip_repo_only__";
 const CHAT_HISTORY_LIMIT = 40;
 
@@ -2397,6 +2411,24 @@ export function heartbeatService(db: Db) {
           }
         }
       }
+
+      // Invoke chore completion callback if registered
+      const choreCallback = choreCompletionCallbacks.get(run.id);
+      if (choreCallback) {
+        choreCompletionCallbacks.delete(run.id);
+        try {
+          await choreCallback({
+            runId: run.id,
+            agentId: agent.id,
+            agentAdapterType: agent.adapterType,
+            outcome,
+            stdoutExcerpt,
+          });
+        } catch (cbErr) {
+          logger.warn({ err: cbErr, runId: run.id }, "chore completion callback failed (non-fatal)");
+        }
+      }
+
       await finalizeAgentStatus(agent.id, outcome);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown adapter failure";
@@ -3618,6 +3650,8 @@ export function heartbeatService(db: Db) {
         issueId?: string;
         metadata?: Record<string, unknown>;
         actor?: { actorType?: "user" | "agent" | "system"; actorId?: string | null };
+        /** Optional callback invoked when the chore run completes. Not durable across restarts. */
+        onComplete?: (info: ChoreCompletionInfo) => Promise<void>;
       },
     ) => {
       const agent = await getAgent(agentId);
@@ -3683,6 +3717,10 @@ export function heartbeatService(db: Db) {
           wakeupRequestId: newRun.wakeupRequestId,
         },
       });
+
+      if (opts.onComplete) {
+        choreCompletionCallbacks.set(newRun.id, opts.onComplete);
+      }
 
       await startNextQueuedRunForAgent(agent.id);
 
