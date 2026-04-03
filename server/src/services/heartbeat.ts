@@ -1838,9 +1838,19 @@ export function heartbeatService(db: Db) {
     const mergedConfig = issueAssigneeOverrides?.adapterConfig
       ? { ...baseWithHeartbeatOverrides, ...issueAssigneeOverrides.adapterConfig }
       : baseWithHeartbeatOverrides;
+    // Layer 3: For chore runs, override model with choreModel if configured
+    const isChoreRun = run.type === "chore";
+    const choreModelId = isChoreRun ? readNonEmptyString(config.choreModel) : null;
+    const chorePrompt = isChoreRun ? readNonEmptyString(context.chorePrompt) : null;
+    const choreOverrides: Record<string, unknown> = {};
+    if (choreModelId) choreOverrides.model = choreModelId;
+    if (chorePrompt) choreOverrides.promptTemplate = chorePrompt;
+    const configForRun = Object.keys(choreOverrides).length > 0
+      ? { ...mergedConfig, ...choreOverrides }
+      : mergedConfig;
     const { config: resolvedConfig, secretKeys } = await secretsSvc.resolveAdapterConfigForRuntime(
       agent.companyId,
-      mergedConfig,
+      configForRun,
     );
     const issueRef = issueId
       ? await db
@@ -3532,6 +3542,89 @@ export function heartbeatService(db: Db) {
         .then((rows) => rows[0] ?? null);
 
       return updated;
+    },
+
+    /**
+     * Trigger a lightweight chore run for an agent.
+     * Chore runs use the agent's choreModel (falling back to primary model)
+     * and are tagged with type='chore' so they don't clutter the main run list.
+     */
+    triggerChore: async (
+      agentId: string,
+      opts: {
+        prompt: string;
+        issueId?: string;
+        metadata?: Record<string, unknown>;
+        actor?: { actorType?: "user" | "agent" | "system"; actorId?: string | null };
+      },
+    ) => {
+      const agent = await getAgent(agentId);
+      if (!agent) throw notFound("Agent not found");
+
+      if (
+        agent.status === "paused" ||
+        agent.status === "terminated" ||
+        agent.status === "pending_approval"
+      ) {
+        throw conflict("Agent is not invokable in its current state", { status: agent.status });
+      }
+
+      const contextSnapshot: Record<string, unknown> = {
+        chorePrompt: opts.prompt,
+        ...(opts.issueId ? { issueId: opts.issueId } : {}),
+      };
+
+      const wakeupRequest = await db
+        .insert(agentWakeupRequests)
+        .values({
+          companyId: agent.companyId,
+          agentId,
+          source: "on_demand",
+          triggerDetail: "system",
+          reason: "chore",
+          status: "queued",
+          requestedByActorType: opts.actor?.actorType ?? "system",
+          requestedByActorId: opts.actor?.actorId ?? null,
+        })
+        .returning()
+        .then((rows) => rows[0]);
+
+      const newRun = await db
+        .insert(heartbeatRuns)
+        .values({
+          companyId: agent.companyId,
+          agentId,
+          type: "chore",
+          invocationSource: "on_demand",
+          triggerDetail: "system",
+          status: "queued",
+          wakeupRequestId: wakeupRequest.id,
+          contextSnapshot,
+          metadata: opts.metadata ?? null,
+        })
+        .returning()
+        .then((rows) => rows[0]);
+
+      await db
+        .update(agentWakeupRequests)
+        .set({ runId: newRun.id, updatedAt: new Date() })
+        .where(eq(agentWakeupRequests.id, wakeupRequest.id));
+
+      publishLiveEvent({
+        companyId: newRun.companyId,
+        type: "heartbeat.run.queued",
+        payload: {
+          runId: newRun.id,
+          agentId: newRun.agentId,
+          invocationSource: newRun.invocationSource,
+          triggerDetail: newRun.triggerDetail,
+          wakeupRequestId: newRun.wakeupRequestId,
+        },
+      });
+
+      await startNextQueuedRunForAgent(agent.id);
+
+      return newRun;
     },
   };
 }
