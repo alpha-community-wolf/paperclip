@@ -17,6 +17,7 @@ Core fields:
 - cwd (string, optional): default absolute working directory fallback for the agent process (created if missing when possible)
 - instructionsFilePath (string, optional): absolute path to a markdown instructions file injected at runtime
 - model (string, optional): Claude model id
+- choreModel (string, optional): model id used for chore runs (lightweight background tasks). Falls back to the primary model when unset.
 - effort (string, optional): reasoning effort passed via --effort (low|medium|high)
 - mode (string, optional): execution mode. Set to "plan" for read-only analysis mode (passes --permission-mode plan). Default: normal execution.
 - chrome (boolean, optional): pass --chrome when running Claude

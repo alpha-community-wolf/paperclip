@@ -231,6 +231,7 @@ export interface CreateConfigValues {
   instructionsFilePath?: string;
   promptTemplate: string;
   model: string;
+  choreModel: string;
   thinkingEffort: string;
   chrome: boolean;
   dangerouslySkipPermissions: boolean;
