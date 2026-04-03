@@ -311,7 +311,7 @@ export function taskCronService(db: Db) {
 
         const run = await heartbeat.wakeup(schedule.agentId, {
           source: "automation",
-          triggerDetail: "system",
+          triggerDetail: "task_cron",
           reason: "task_cron",
           payload: {
             issueId: issue.id,

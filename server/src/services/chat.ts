@@ -381,7 +381,7 @@ export function chatService(db: Db) {
       try {
         const run = await heartbeat.wakeup(agent.id, {
           source: "on_demand",
-          triggerDetail: "manual",
+          triggerDetail: "chat",
           reason: "chat_message",
           payload: {
             chatMessageId: message.id,
@@ -462,7 +462,7 @@ export function chatService(db: Db) {
 
       const resumedRun = await heartbeat.wakeup(agent.id, {
         source: "on_demand",
-        triggerDetail: "manual",
+        triggerDetail: "chat",
         reason: "chat_message",
         payload: {
           chatMessageId: sourceMessage.id,

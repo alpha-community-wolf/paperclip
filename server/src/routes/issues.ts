@@ -699,7 +699,7 @@ export function issueRoutes(db: Db, storage: StorageService) {
             if (target.assigneeAgentId && !wakeups.has(target.assigneeAgentId)) {
               wakeups.set(target.assigneeAgentId, {
                 source: "automation",
-                triggerDetail: "system",
+                triggerDetail: "dependency_trigger",
                 reason: "dependency_triggered",
                 payload: {
                   issueId: target.id,
@@ -1022,7 +1022,7 @@ export function issueRoutes(db: Db, storage: StorageService) {
         if (reopened) {
           wakeups.set(assigneeId, {
             source: "automation",
-            triggerDetail: "system",
+            triggerDetail: "comment",
             reason: "issue_reopened_via_comment",
             payload: {
               issueId: currentIssue.id,
@@ -1049,7 +1049,7 @@ export function issueRoutes(db: Db, storage: StorageService) {
           const commentWakeReason = isBoardComment ? "board_comment" : "issue_commented";
           wakeups.set(assigneeId, {
             source: "automation",
-            triggerDetail: "system",
+            triggerDetail: isBoardComment ? "board_comment" : "comment",
             reason: commentWakeReason,
             payload: {
               issueId: currentIssue.id,
@@ -1084,7 +1084,7 @@ export function issueRoutes(db: Db, storage: StorageService) {
         if (actorIsAgent && actor.actorId === mentionedId) continue;
         wakeups.set(mentionedId, {
           source: "automation",
-          triggerDetail: "system",
+          triggerDetail: "comment_mention",
           reason: "issue_comment_mentioned",
           payload: { issueId: id, commentId: comment.id },
           requestedByActorType: actor.actorType,

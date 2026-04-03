@@ -445,7 +445,7 @@ export function eventRoutingService(db: Db) {
       }
       const run = await heartbeat.wakeup(agentId, {
         source: "automation",
-        triggerDetail: "callback",
+        triggerDetail: "event_router",
         reason: buildReason(event.eventType, action.reason),
         payload: {
           ...wakePayload,
@@ -499,7 +499,7 @@ export function eventRoutingService(db: Db) {
       if (shouldWake && issue.assigneeAgentId) {
         const wake = await heartbeat.wakeup(issue.assigneeAgentId, {
           source: "automation",
-          triggerDetail: "callback",
+          triggerDetail: "event_router",
           reason: buildReason(event.eventType, action.reason),
           payload: {
             issueId: issue.id,

@@ -163,7 +163,7 @@ async function withAgentStartLock<T>(agentId: string, fn: () => Promise<T>) {
 
 interface WakeupOptions {
   source?: "timer" | "assignment" | "on_demand" | "automation";
-  triggerDetail?: "manual" | "ping" | "callback" | "system";
+  triggerDetail?: "manual" | "ping" | "callback" | "system" | "task_cron" | "event_router" | "dependency_trigger" | "approval" | "comment" | "comment_mention" | "board_comment" | "chat";
   reason?: string | null;
   payload?: Record<string, unknown> | null;
   idempotencyKey?: string | null;
@@ -3306,7 +3306,7 @@ export function heartbeatService(db: Db) {
       agentId: string,
       source: "timer" | "assignment" | "on_demand" | "automation" = "on_demand",
       contextSnapshot: Record<string, unknown> = {},
-      triggerDetail: "manual" | "ping" | "callback" | "system" = "manual",
+      triggerDetail: WakeupOptions["triggerDetail"] = "manual",
       actor?: { actorType?: "user" | "agent" | "system"; actorId?: string | null },
     ) =>
       enqueueWakeup(agentId, {
