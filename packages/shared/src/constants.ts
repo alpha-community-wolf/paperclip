@@ -216,6 +216,9 @@ export const WAKEUP_REQUEST_STATUSES = [
 ] as const;
 export type WakeupRequestStatus = (typeof WAKEUP_REQUEST_STATUSES)[number];
 
+export const HEARTBEAT_RUN_TYPES = ["standard", "chore"] as const;
+export type HeartbeatRunType = (typeof HEARTBEAT_RUN_TYPES)[number];
+
 export const HEARTBEAT_RUN_STATUSES = [
   "queued",
   "running",

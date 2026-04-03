@@ -24,6 +24,7 @@ Core fields:
 - cwd (string, optional): default absolute working directory fallback for the agent process (created if missing when possible)
 - instructionsFilePath (string, optional): absolute path to a markdown instructions file prepended to stdin prompt at runtime
 - model (string, optional): Codex model id
+- choreModel (string, optional): model id used for chore runs (lightweight background tasks). Falls back to the primary model when unset.
 - modelReasoningEffort (string, optional): reasoning effort override (minimal|low|medium|high) passed via -c model_reasoning_effort=...
 - mode (string, optional): execution mode. Set to "plan" for read-only sandbox (passes --sandbox read-only). Default: normal execution.
 - promptTemplate (string, optional): run prompt template

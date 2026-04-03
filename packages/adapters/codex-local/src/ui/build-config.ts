@@ -72,6 +72,7 @@ export function buildCodexLocalConfig(v: CreateConfigValues): Record<string, unk
   if (v.instructionsFilePath) ac.instructionsFilePath = v.instructionsFilePath;
   if (v.promptTemplate) ac.promptTemplate = v.promptTemplate;
   ac.model = v.model || DEFAULT_CODEX_LOCAL_MODEL;
+  if (v.choreModel) ac.choreModel = v.choreModel;
   if (v.thinkingEffort) ac.modelReasoningEffort = v.thinkingEffort;
   if (v.mode) ac.mode = v.mode;
   ac.timeoutSec = 0;

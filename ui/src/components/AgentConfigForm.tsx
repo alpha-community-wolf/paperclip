@@ -372,6 +372,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
   const [heartbeatModelOpen, setHeartbeatModelOpen] = useState(false);
   // Popover states
   const [modelOpen, setModelOpen] = useState(false);
+  const [choreModelOpen, setChoreModelOpen] = useState(false);
   const [thinkingEffortOpen, setThinkingEffortOpen] = useState(false);
 
   // Create mode helpers
@@ -403,6 +404,10 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
   const currentModelId = isCreate
     ? val!.model
     : eff("adapterConfig", "model", String(config.model ?? ""));
+
+  const currentChoreModelId = isCreate
+    ? val!.choreModel
+    : eff("adapterConfig", "choreModel", String(config.choreModel ?? ""));
 
   const thinkingEffortKey =
     adapterType === "codex_local"
@@ -704,6 +709,25 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                     ? fetchedModelsError.message
                     : "Failed to load adapter models."}
                 </p>
+              )}
+
+              {models.length > 0 && (
+                <ModelDropdown
+                  models={models}
+                  value={currentChoreModelId}
+                  onChange={(v) =>
+                    isCreate
+                      ? set!({ choreModel: v })
+                      : mark("adapterConfig", "choreModel", v || undefined)
+                  }
+                  open={choreModelOpen}
+                  onOpenChange={setChoreModelOpen}
+                  allowDefault
+                  required={false}
+                  groupByProvider={adapterType === "opencode_local" || adapterType === "hermes_local"}
+                  label="Chore Model"
+                  hint="Cheap/fast model for background housekeeping tasks (chores). Falls back to the primary model when unset."
+                />
               )}
 
               <ThinkingEffortDropdown
@@ -1494,6 +1518,8 @@ function ModelDropdown({
   allowDefault,
   required,
   groupByProvider,
+  label: fieldLabel = "Model",
+  hint,
 }: {
   models: AdapterModel[];
   value: string;
@@ -1503,6 +1529,8 @@ function ModelDropdown({
   allowDefault: boolean;
   required: boolean;
   groupByProvider: boolean;
+  label?: string;
+  hint?: string;
 }) {
   const [modelSearch, setModelSearch] = useState("");
   const selected = models.find((m) => m.id === value);
@@ -1543,7 +1571,7 @@ function ModelDropdown({
   }, [filteredModels, groupByProvider]);
 
   return (
-    <Field label="Model" hint={help.model}>
+    <Field label={fieldLabel} hint={hint ?? help.model}>
       <Popover
         open={open}
         onOpenChange={(nextOpen) => {
