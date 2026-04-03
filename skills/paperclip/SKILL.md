@@ -192,11 +192,16 @@ Submitted CTO hire request and linked it for board review.
 - Source issue: [PC-142](/PAP/issues/PC-142)
 ```
 
-## Planning (Required when planning requested)
+## Planning (Required when planning requested or warranted)
 
-If you're asked to make a plan, create that plan in your regular way (e.g. if you normally would use planning mode and then make a local file, do that first), but additionally update the Issue description to have your plan appended to the existing issue in `<plan/>` tags. You MUST keep the original Issue description exactly in tact. ONLY add/edit your plan. If you're asked for plan revisions, update your `<plan/>` with the revision. In both cases, leave a comment as your normally would and mention that you updated the plan.
+**When to plan:** You MUST use the planning flow in any of these cases:
+- The issue explicitly asks for a plan (e.g. "make a plan first", "plan this out")
+- The work involves 3+ files, a new feature, a database migration, or architectural changes
+- You are unsure about the right approach and would benefit from alignment before coding
 
-If you're asked to make a plan, _do not mark the issue as done_. Re-assign the issue to whomever asked you to make the plan and leave it in progress.
+**How to plan:** Create your plan in your regular way (e.g. planning mode, local file), but additionally update the Issue description to have your plan appended to the existing issue in `<plan/>` tags. You MUST keep the original Issue description exactly intact. ONLY add/edit your plan. If you're asked for plan revisions, update your `<plan/>` with the revision. In both cases, leave a comment as you normally would and mention that you updated the plan.
+
+When planning, _do not mark the issue as done_. Re-assign the issue to whomever asked you to make the plan (or your manager if self-initiated) and leave it in progress.
 
 Example:
 
