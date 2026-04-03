@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { and, asc, desc, eq, gt, inArray, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, ne, sql } from "drizzle-orm";
 import { resolveConfiguredEnvFilePath } from "@paperclipai/adapter-utils/server-utils";
 import { mcpConfigPath, fromClaudeMcpJson, fromOpenCodeJson, fromCodexToml } from "@paperclipai/adapter-utils";
 import type { Db } from "@paperclipai/db";
@@ -1302,6 +1302,8 @@ export function heartbeatService(db: Db) {
       intervalSec: Math.max(0, asNumber(heartbeat.intervalSec, 0)),
       wakeOnDemand: asBoolean(heartbeat.wakeOnDemand ?? heartbeat.wakeOnAssignment ?? heartbeat.wakeOnOnDemand ?? heartbeat.wakeOnAutomation, true),
       maxConcurrentRuns: normalizeMaxConcurrentRuns(heartbeat.maxConcurrentRuns),
+      skipWhenIdle: asBoolean(heartbeat.skipWhenIdle, false),
+      adapterOverrides: parseObject(heartbeat.adapterOverrides),
     };
   }
 
@@ -1823,9 +1825,19 @@ export function heartbeatService(db: Db) {
       mode: executionWorkspaceMode,
       legacyUseProjectWorkspace: issueAssigneeOverrides?.useProjectWorkspace ?? null,
     });
-    const mergedConfig = issueAssigneeOverrides?.adapterConfig
-      ? { ...workspaceManagedConfig, ...issueAssigneeOverrides.adapterConfig }
+    // Layer 2: Apply heartbeat adapter overrides for timer-triggered polling runs
+    const heartbeatPolicy = parseHeartbeatPolicy(agent);
+    const isPollingHeartbeat = run.invocationSource === "timer" && !issueId;
+    const heartbeatOverrides =
+      isPollingHeartbeat && Object.keys(heartbeatPolicy.adapterOverrides).length > 0
+        ? heartbeatPolicy.adapterOverrides
+        : null;
+    const baseWithHeartbeatOverrides = heartbeatOverrides
+      ? { ...workspaceManagedConfig, ...heartbeatOverrides }
       : workspaceManagedConfig;
+    const mergedConfig = issueAssigneeOverrides?.adapterConfig
+      ? { ...baseWithHeartbeatOverrides, ...issueAssigneeOverrides.adapterConfig }
+      : baseWithHeartbeatOverrides;
     const { config: resolvedConfig, secretKeys } = await secretsSvc.resolveAdapterConfigForRuntime(
       agent.companyId,
       mergedConfig,
@@ -2296,6 +2308,28 @@ export function heartbeatService(db: Db) {
           },
         });
         await releaseIssueExecutionAndPromote(finalizedRun);
+      }
+
+      // Escalation: if a triage run signals real work, enqueue a full-model run
+      if (finalizedRun && outcome === "succeeded" && adapterResult.escalate) {
+        const escalateIssueId = adapterResult.escalate.issueId;
+        const escalateReason = adapterResult.escalate.reason ?? "triage identified actionable work";
+        logger.info(
+          { agentId: agent.id, runId: run.id, escalateIssueId, escalateReason },
+          "triage run escalating to full model",
+        );
+        await enqueueWakeup(agent.id, {
+          source: "assignment",
+          triggerDetail: "system",
+          reason: `escalation: ${escalateReason}`,
+          requestedByActorType: "system",
+          requestedByActorId: run.id,
+          contextSnapshot: {
+            source: "triage_escalation",
+            issueId: escalateIssueId,
+            triageRunId: run.id,
+          },
+        });
       }
 
       if (finalizedRun) {
@@ -3336,6 +3370,34 @@ export function heartbeatService(db: Db) {
         const baseline = new Date(agent.lastHeartbeatAt ?? agent.createdAt).getTime();
         const elapsedMs = now.getTime() - baseline;
         if (elapsedMs < policy.intervalSec * 1000) continue;
+
+        // Layer 1: Skip heartbeat entirely when agent has no assigned work
+        if (policy.skipWhenIdle) {
+          const assignedCount = await db
+            .select({ count: sql<number>`count(*)` })
+            .from(issues)
+            .where(
+              and(
+                eq(issues.assigneeAgentId, agent.id),
+                inArray(issues.status, ["todo", "in_progress", "blocked"]),
+                isNull(issues.cancelledAt),
+              ),
+            )
+            .then((rows) => Number(rows[0]?.count ?? 0));
+          if (assignedCount === 0) {
+            logger.debug(
+              { agentId: agent.id, agentName: agent.name },
+              "skipWhenIdle: no assigned work, skipping timer heartbeat",
+            );
+            // Update lastHeartbeatAt so the timer doesn't fire again immediately
+            await db
+              .update(agents)
+              .set({ lastHeartbeatAt: now, updatedAt: now })
+              .where(eq(agents.id, agent.id));
+            skipped += 1;
+            continue;
+          }
+        }
 
         const run = await enqueueWakeup(agent.id, {
           source: "timer",
