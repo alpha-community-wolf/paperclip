@@ -842,8 +842,8 @@ export function NewIssueDialog() {
           />
         </div>
 
-        {/* Stage 1: Assignee */}
-        <div className="px-4 pb-2 shrink-0">
+        {/* Stage 1: Assignee + core properties */}
+        <div className="px-4 pb-2 shrink-0 space-y-2">
           <div className="overflow-x-auto overscroll-x-contain">
             <div className="inline-flex items-center gap-2 text-sm text-muted-foreground flex-wrap sm:flex-nowrap sm:min-w-max">
               <span>For</span>
@@ -882,6 +882,127 @@ export function NewIssueDialog() {
                 }}
               />
             </div>
+          </div>
+
+          {/* Project, Status, Priority, Labels */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <InlineEntitySelector
+              ref={projectSelectorRef}
+              value={projectId}
+              options={projectOptions}
+              placeholder="No project"
+              disablePortal
+              noneLabel="No project"
+              searchPlaceholder="Search projects..."
+              emptyMessage="No projects found."
+              onChange={handleProjectChange}
+              renderTriggerValue={(option) =>
+                option && currentProject ? (
+                  <>
+                    <span
+                      className="h-3.5 w-3.5 shrink-0 rounded-sm"
+                      style={{ backgroundColor: currentProject.color ?? "#6366f1" }}
+                    />
+                    <span className="truncate">{option.label}</span>
+                  </>
+                ) : (
+                  <span className="text-muted-foreground">Project</span>
+                )
+              }
+              renderOption={(option) => {
+                if (!option.id) return <span className="truncate">{option.label}</span>;
+                const project = orderedProjects.find((item) => item.id === option.id);
+                return (
+                  <>
+                    <span
+                      className="h-3.5 w-3.5 shrink-0 rounded-sm"
+                      style={{ backgroundColor: project?.color ?? "#6366f1" }}
+                    />
+                    <span className="truncate">{option.label}</span>
+                  </>
+                );
+              }}
+            />
+
+            <Popover open={statusOpen} onOpenChange={setStatusOpen}>
+              <PopoverTrigger asChild>
+                <button className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors">
+                  <CircleDot className={cn("h-3 w-3", currentStatus.color)} />
+                  {currentStatus.label}
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="w-36 p-1" align="start">
+                {statuses.map((s) => (
+                  <button
+                    key={s.value}
+                    className={cn(
+                      "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
+                      s.value === status && "bg-accent"
+                    )}
+                    onClick={() => { setStatus(s.value); setStatusOpen(false); }}
+                  >
+                    <CircleDot className={cn("h-3 w-3", s.color)} />
+                    {s.label}
+                  </button>
+                ))}
+              </PopoverContent>
+            </Popover>
+
+            <Popover open={priorityOpen} onOpenChange={setPriorityOpen}>
+              <PopoverTrigger asChild>
+                <button className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors">
+                  {currentPriority ? (
+                    <>
+                      <currentPriority.icon className={cn("h-3 w-3", currentPriority.color)} />
+                      {currentPriority.label}
+                    </>
+                  ) : (
+                    <>
+                      <Minus className="h-3 w-3 text-muted-foreground" />
+                      Priority
+                    </>
+                  )}
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="w-36 p-1" align="start">
+                {priorities.map((p) => (
+                  <button
+                    key={p.value}
+                    className={cn(
+                      "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
+                      p.value === priority && "bg-accent"
+                    )}
+                    onClick={() => { setPriority(p.value); setPriorityOpen(false); }}
+                  >
+                    <p.icon className={cn("h-3 w-3", p.color)} />
+                    {p.label}
+                  </button>
+                ))}
+              </PopoverContent>
+            </Popover>
+
+            <button className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors text-muted-foreground">
+              <Tag className="h-3 w-3" />
+              Labels
+            </button>
+
+            <Popover open={moreOpen} onOpenChange={setMoreOpen}>
+              <PopoverTrigger asChild>
+                <button className="inline-flex items-center justify-center rounded-md border border-border p-1 text-xs hover:bg-accent/50 transition-colors text-muted-foreground">
+                  <MoreHorizontal className="h-3 w-3" />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="w-44 p-1" align="start">
+                <button className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 text-muted-foreground">
+                  <Calendar className="h-3 w-3" />
+                  Start date
+                </button>
+                <button className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 text-muted-foreground">
+                  <Calendar className="h-3 w-3" />
+                  Due date
+                </button>
+              </PopoverContent>
+            </Popover>
           </div>
         </div>
 
@@ -943,131 +1064,6 @@ export function NewIssueDialog() {
         {/* Stage 2: Advanced options */}
         {advancedOpen && (
           <div className="border-t border-border/60 px-4 py-3 space-y-3 shrink-0 bg-muted/5">
-            {/* Project selector */}
-            <div className="space-y-1.5">
-              <div className="text-xs font-medium text-muted-foreground">Project</div>
-              <InlineEntitySelector
-                ref={projectSelectorRef}
-                value={projectId}
-                options={projectOptions}
-                placeholder="No project"
-                disablePortal
-                noneLabel="No project"
-                searchPlaceholder="Search projects..."
-                emptyMessage="No projects found."
-                onChange={handleProjectChange}
-                renderTriggerValue={(option) =>
-                  option && currentProject ? (
-                    <>
-                      <span
-                        className="h-3.5 w-3.5 shrink-0 rounded-sm"
-                        style={{ backgroundColor: currentProject.color ?? "#6366f1" }}
-                      />
-                      <span className="truncate">{option.label}</span>
-                    </>
-                  ) : (
-                    <span className="text-muted-foreground">No project</span>
-                  )
-                }
-                renderOption={(option) => {
-                  if (!option.id) return <span className="truncate">{option.label}</span>;
-                  const project = orderedProjects.find((item) => item.id === option.id);
-                  return (
-                    <>
-                      <span
-                        className="h-3.5 w-3.5 shrink-0 rounded-sm"
-                        style={{ backgroundColor: project?.color ?? "#6366f1" }}
-                      />
-                      <span className="truncate">{option.label}</span>
-                    </>
-                  );
-                }}
-              />
-            </div>
-
-            {/* Status & Priority row */}
-            <div className="flex items-center gap-2 flex-wrap">
-              <Popover open={statusOpen} onOpenChange={setStatusOpen}>
-                <PopoverTrigger asChild>
-                  <button className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors">
-                    <CircleDot className={cn("h-3 w-3", currentStatus.color)} />
-                    {currentStatus.label}
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent className="w-36 p-1" align="start">
-                  {statuses.map((s) => (
-                    <button
-                      key={s.value}
-                      className={cn(
-                        "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
-                        s.value === status && "bg-accent"
-                      )}
-                      onClick={() => { setStatus(s.value); setStatusOpen(false); }}
-                    >
-                      <CircleDot className={cn("h-3 w-3", s.color)} />
-                      {s.label}
-                    </button>
-                  ))}
-                </PopoverContent>
-              </Popover>
-
-              <Popover open={priorityOpen} onOpenChange={setPriorityOpen}>
-                <PopoverTrigger asChild>
-                  <button className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors">
-                    {currentPriority ? (
-                      <>
-                        <currentPriority.icon className={cn("h-3 w-3", currentPriority.color)} />
-                        {currentPriority.label}
-                      </>
-                    ) : (
-                      <>
-                        <Minus className="h-3 w-3 text-muted-foreground" />
-                        Priority
-                      </>
-                    )}
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent className="w-36 p-1" align="start">
-                  {priorities.map((p) => (
-                    <button
-                      key={p.value}
-                      className={cn(
-                        "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
-                        p.value === priority && "bg-accent"
-                      )}
-                      onClick={() => { setPriority(p.value); setPriorityOpen(false); }}
-                    >
-                      <p.icon className={cn("h-3 w-3", p.color)} />
-                      {p.label}
-                    </button>
-                  ))}
-                </PopoverContent>
-              </Popover>
-
-              <button className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors text-muted-foreground">
-                <Tag className="h-3 w-3" />
-                Labels
-              </button>
-
-              <Popover open={moreOpen} onOpenChange={setMoreOpen}>
-                <PopoverTrigger asChild>
-                  <button className="inline-flex items-center justify-center rounded-md border border-border p-1 text-xs hover:bg-accent/50 transition-colors text-muted-foreground">
-                    <MoreHorizontal className="h-3 w-3" />
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent className="w-44 p-1" align="start">
-                  <button className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 text-muted-foreground">
-                    <Calendar className="h-3 w-3" />
-                    Start date
-                  </button>
-                  <button className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 text-muted-foreground">
-                    <Calendar className="h-3 w-3" />
-                    Due date
-                  </button>
-                </PopoverContent>
-              </Popover>
-            </div>
-
             {/* Review bundle */}
             {currentProjectSupportsReviewBundles && (
               <div className="space-y-1">
