@@ -28,6 +28,7 @@ import { Inbox } from "./pages/Inbox";
 import { CompanySettings } from "./pages/CompanySettings";
 import { DesignGuide } from "./pages/DesignGuide";
 import { OrgChart } from "./pages/OrgChart";
+import { Timeline } from "./pages/Timeline";
 import { MyWork } from "./pages/MyWork";
 import { NewAgent } from "./pages/NewAgent";
 import { AuthPage } from "./pages/Auth";
@@ -146,6 +147,7 @@ function boardRoutes() {
       <Route path="runs/:runId" element={<RunRedirect />} />
       <Route path="goals" element={<Goals />} />
       <Route path="goals/:goalId" element={<GoalDetail />} />
+      <Route path="timeline" element={<Timeline />} />
       <Route path="schedules" element={<Schedules />} />
       <Route path="approvals" element={<Navigate to="/approvals/pending" replace />} />
       <Route path="approvals/pending" element={<Approvals />} />
@@ -306,6 +308,7 @@ export function App() {
           <Route path="runs/:runId" element={<UnprefixedBoardRedirect />} />
           <Route path="chat" element={<UnprefixedBoardRedirect />} />
           <Route path="chat/:agentId" element={<UnprefixedBoardRedirect />} />
+          <Route path="timeline" element={<UnprefixedBoardRedirect />} />
           <Route path="schedules" element={<UnprefixedBoardRedirect />} />
           <Route path="skills" element={<UnprefixedBoardRedirect />} />
           <Route path="webhooks" element={<UnprefixedBoardRedirect />} />

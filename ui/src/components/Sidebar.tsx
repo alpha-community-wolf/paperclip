@@ -12,6 +12,7 @@ import {
   Blocks,
   Webhook,
   CalendarClock,
+  CalendarDays,
   PanelLeftClose,
   Briefcase,
   Play,
@@ -125,6 +126,7 @@ export function Sidebar() {
         <SidebarSection label="Planning">
           <SidebarNavItem to="/chat" label="Chat" icon={MessageSquare} badge={inboxBadge.unreadChatSessions} />
           <SidebarNavItem to="/goals" label="Goals" icon={Target} />
+          <SidebarNavItem to="/timeline" label="Timeline" icon={CalendarDays} />
           <SidebarNavItem to="/schedules" label="Schedules" icon={CalendarClock} />
         </SidebarSection>
 
