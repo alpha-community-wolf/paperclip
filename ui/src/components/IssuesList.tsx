@@ -600,7 +600,7 @@ export function IssuesList({
       to={`/issues/${issue.identifier ?? issue.id}`}
       state={issueLinkState}
       className={cn(
-        "group/row flex items-start gap-2 py-2.5 pl-3 pr-3 text-sm last:border-b-0 cursor-pointer hover:bg-accent/50 transition-colors no-underline text-inherit sm:grid sm:grid-cols-[auto_auto_1fr_auto] sm:items-center sm:py-2",
+        "group/row flex items-start gap-2 py-2.5 pl-3 pr-3 text-sm last:border-b-0 cursor-pointer hover:bg-accent/50 transition-colors no-underline text-inherit sm:grid sm:grid-cols-[auto_auto_1fr_auto_auto_auto] sm:items-center sm:py-2",
         isKbSelected && "ring-2 ring-inset ring-primary bg-accent/60",
         isChecked && "bg-primary/5",
       )}
@@ -655,6 +655,59 @@ export function IssuesList({
           <span className="text-xs text-muted-foreground font-mono shrink-0 sm:w-[68px]">
             {issue.identifier ?? issue.id.slice(0, 8)}
           </span>
+          {/* Mobile-only type & run state badges */}
+          <span className="inline-flex items-center gap-1 sm:hidden">
+            {issue.type === "plan" && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-violet-500/40 bg-violet-500/10 px-1.5 py-0.5 text-[10px] text-violet-600 dark:text-violet-400">
+                Plan
+              </span>
+            )}
+            {templateIssueIds.has(issue.id) ? (
+              <span className="inline-flex items-center gap-1 rounded-full border border-teal-500/40 bg-teal-500/10 px-1.5 py-0.5 text-[10px] text-teal-600 dark:text-teal-400">
+                <Repeat className="h-2.5 w-2.5" />
+                Template
+              </span>
+            ) : recurringIssueIds.has(issue.id) ? (
+              <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-600 dark:text-amber-400">
+                <Clock3 className="h-2.5 w-2.5" />
+                Recurring
+              </span>
+            ) : null}
+            {spawnedFromTemplateIds.has(issue.id) && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-sky-500/40 bg-sky-500/10 px-1.5 py-0.5 text-[10px] text-sky-600 dark:text-sky-400">
+                <Copy className="h-2.5 w-2.5" />
+                Scheduled
+              </span>
+            )}
+            {liveIssueIds?.has(issue.id) && (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-blue-500/10">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-pulse absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
+                </span>
+              </span>
+            )}
+            {!liveIssueIds?.has(issue.id) && failedRunMap?.has(issue.id) && (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-red-500/10">
+                <XCircle className="h-3 w-3 text-red-500" />
+              </span>
+            )}
+          </span>
+          {issue.linkSummary && (
+            <span className="sm:hidden" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
+              <DependencyPills issueId={issue.id} linkSummary={issue.linkSummary} />
+            </span>
+          )}
+          <span className="text-xs text-muted-foreground sm:hidden">&middot;</span>
+          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground sm:hidden">
+            <ActivityDot date={issue.updatedAt} />
+            {timeAgo(issue.updatedAt)}
+          </span>
+        </span>
+      </span>
+
+      {/* Type column */}
+      <span className="hidden sm:flex sm:order-3 items-center gap-1 shrink-0 sm:w-[80px]">
           {issue.type === "plan" && (
             <span className="inline-flex items-center gap-1 rounded-full border border-violet-500/40 bg-violet-500/10 px-1.5 py-0.5 text-[10px] text-violet-600 dark:text-violet-400">
               Plan
@@ -677,13 +730,17 @@ export function IssuesList({
               Scheduled
             </span>
           )}
+      </span>
+
+      {/* Run state column */}
+      <span className="hidden sm:flex sm:order-4 items-center gap-1 shrink-0 sm:w-[80px]">
           {liveIssueIds?.has(issue.id) && (
             <span className="inline-flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2 py-0.5 rounded-full bg-blue-500/10">
               <span className="relative flex h-2 w-2">
                 <span className="animate-pulse absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
               </span>
-              <span className="text-[11px] font-medium text-blue-600 dark:text-blue-400 hidden sm:inline">Live</span>
+              <span className="text-[11px] font-medium text-blue-600 dark:text-blue-400">Live</span>
             </span>
           )}
           {!liveIssueIds?.has(issue.id) && failedRunMap?.has(issue.id) && (() => {
@@ -696,7 +753,7 @@ export function IssuesList({
                   title={info.error ?? `Last run by ${info.agentName} failed`}
                 >
                   <XCircle className="h-3 w-3 text-red-500" />
-                  <span className="text-[11px] font-medium text-red-600 dark:text-red-400 hidden sm:inline">Failed</span>
+                  <span className="text-[11px] font-medium text-red-600 dark:text-red-400">Failed</span>
                 </span>
                 <button
                   type="button"
@@ -717,20 +774,9 @@ export function IssuesList({
               </span>
             );
           })()}
-          {issue.linkSummary && (
-            <span className="sm:hidden" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
-              <DependencyPills issueId={issue.id} linkSummary={issue.linkSummary} />
-            </span>
-          )}
-          <span className="text-xs text-muted-foreground sm:hidden">&middot;</span>
-          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground sm:hidden">
-            <ActivityDot date={issue.updatedAt} />
-            {timeAgo(issue.updatedAt)}
-          </span>
-        </span>
       </span>
 
-      <span className="hidden sm:flex sm:order-3 items-center gap-2 sm:gap-3 shrink-0 sm:justify-end">
+      <span className="hidden sm:flex sm:order-5 items-center gap-2 sm:gap-3 shrink-0 sm:justify-end">
         {(() => {
           const issueSchedules = recurringByIssueId.get(issue.id) ?? [];
           if (issueSchedules.length === 0) return null;
