@@ -23,7 +23,7 @@ import { getUIAdapter, buildTranscript } from "../adapters";
 import type { TranscriptEntry } from "../adapters";
 import { StatusBadge } from "../components/StatusBadge";
 import { TranscriptRenderer } from "../components/TranscriptRenderer";
-import { agentStatusDot, agentStatusDotDefault, invocationSourceLabel, invocationSourceBadge, invocationSourceBadgeDefault } from "../lib/status-colors";
+import { agentStatusDot, agentStatusDotDefault, invocationSourceBadge, invocationSourceBadgeDefault, resolveRunTypeBadge } from "../lib/status-colors";
 import { runStatusIcons as sharedRunStatusIcons, runMetrics as sharedRunMetrics, usageNumber as sharedUsageNumber, runSummary, SOURCE_FILTER_OPTIONS } from "../lib/run-utils";
 import { MarkdownBody } from "../components/MarkdownBody";
 import { CopyText } from "../components/CopyText";
@@ -805,12 +805,14 @@ function LatestRunCard({ runs, agentId }: { runs: HeartbeatRun[]; agentId: strin
           <StatusIcon className={cn("h-3.5 w-3.5", statusInfo.color, run.status === "running" && "animate-spin")} />
           <StatusBadge status={run.status} />
           <span className="font-mono text-xs text-muted-foreground">{run.id.slice(0, 8)}</span>
+          {(() => { const tb = resolveRunTypeBadge(run.invocationSource, run.type); return (
           <span className={cn(
             "inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium",
-            invocationSourceBadge[run.invocationSource] ?? invocationSourceBadgeDefault,
+            tb.badge,
           )}>
-            {invocationSourceLabel[run.invocationSource] ?? run.invocationSource}
+            {tb.label}
           </span>
+          ); })()}
           <span className="ml-auto text-xs text-muted-foreground">{relativeTime(run.createdAt)}</span>
         </div>
 
@@ -1444,12 +1446,14 @@ function RunListItem({ run, isSelected, agentId }: { run: HeartbeatRun; isSelect
         <span className="font-mono text-xs text-muted-foreground">
           {run.id.slice(0, 8)}
         </span>
+        {(() => { const tb = resolveRunTypeBadge(run.invocationSource, run.type); return (
         <span className={cn(
           "inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium shrink-0",
-          invocationSourceBadge[run.invocationSource] ?? invocationSourceBadgeDefault,
+          tb.badge,
         )}>
-          {invocationSourceLabel[run.invocationSource] ?? run.invocationSource}
+          {tb.label}
         </span>
+        ); })()}
         <span className="ml-auto text-[11px] text-muted-foreground shrink-0">
           {relativeTime(run.createdAt)}
         </span>

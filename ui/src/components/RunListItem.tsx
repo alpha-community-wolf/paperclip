@@ -2,7 +2,7 @@ import { Link } from "@/lib/router";
 import { Clock } from "lucide-react";
 import { cn, relativeTime, formatTokens } from "../lib/utils";
 import { runStatusIcons, runMetrics, runSummary } from "../lib/run-utils";
-import { invocationSourceLabel, invocationSourceBadge, invocationSourceBadgeDefault } from "../lib/status-colors";
+import { resolveRunTypeBadge } from "../lib/status-colors";
 import { Identity } from "./Identity";
 import type { HeartbeatRun, Agent } from "@paperclipai/shared";
 
@@ -21,6 +21,7 @@ export function RunListItem({ run, isSelected, linkTo, deselectTo, agentName }: 
   const StatusIcon = statusInfo.icon;
   const metrics = runMetrics(run);
   const summary = runSummary(run);
+  const typeBadge = resolveRunTypeBadge(run.invocationSource, run.type);
 
   const href = isSelected && deselectTo ? deselectTo : linkTo;
 
@@ -39,9 +40,9 @@ export function RunListItem({ run, isSelected, linkTo, deselectTo, agentName }: 
         </span>
         <span className={cn(
           "inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium shrink-0",
-          invocationSourceBadge[run.invocationSource] ?? invocationSourceBadgeDefault,
+          typeBadge.badge,
         )}>
-          {invocationSourceLabel[run.invocationSource] ?? run.invocationSource}
+          {typeBadge.label}
         </span>
         {agentName && (
           <Identity name={agentName} size="xs" className="max-w-[140px] text-foreground/70" />

@@ -16,7 +16,7 @@ import { StatusBadge } from "./StatusBadge";
 import { StatusIcon } from "./StatusIcon";
 import { AgentIcon } from "./AgentIconPicker";
 import { cn, formatDateTime, formatTokens, relativeTime } from "../lib/utils";
-import { invocationSourceLabel, invocationSourceBadge, invocationSourceBadgeDefault } from "../lib/status-colors";
+import { resolveRunTypeBadge } from "../lib/status-colors";
 
 interface CommentWithRunMeta extends IssueComment {
   runId?: string | null;
@@ -30,6 +30,7 @@ interface LinkedRunItem {
   createdAt: Date | string;
   startedAt: Date | string | null;
   invocationSource?: string;
+  type?: string;
 }
 
 interface CommentReassignment {
@@ -231,14 +232,14 @@ function ExpandableRunCard({ run, agentMap }: { run: LinkedRunItem; agentMap?: M
             {run.runId.slice(0, 8)}
           </Link>
           <StatusBadge status={run.status} />
-          {run.invocationSource && (
+          {run.invocationSource && (() => { const tb = resolveRunTypeBadge(run.invocationSource, run.type); return (
             <span className={cn(
               "inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium",
-              invocationSourceBadge[run.invocationSource] ?? invocationSourceBadgeDefault,
+              tb.badge,
             )}>
-              {invocationSourceLabel[run.invocationSource] ?? run.invocationSource}
+              {tb.label}
             </span>
-          )}
+          ); })()}
           <button
             type="button"
             onClick={toggle}

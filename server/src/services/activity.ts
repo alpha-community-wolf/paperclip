@@ -70,6 +70,7 @@ export function activityService(db: Db) {
           finishedAt: heartbeatRuns.finishedAt,
           createdAt: heartbeatRuns.createdAt,
           invocationSource: heartbeatRuns.invocationSource,
+          type: heartbeatRuns.type,
           usageJson: heartbeatRuns.usageJson,
           resultJson: heartbeatRuns.resultJson,
         })
