@@ -127,4 +127,6 @@ export const queryKeys = {
   inboxDismissals: (companyId: string) => ["inbox-dismissals", companyId] as const,
   inboxFeed: (companyId: string) => ["inbox-feed", companyId] as const,
   org: (companyId: string) => ["org", companyId] as const,
+  timeline: (companyId: string, from: string, to: string, agentId?: string) =>
+    ["timeline", companyId, from, to, agentId ?? "__all__"] as const,
 };
