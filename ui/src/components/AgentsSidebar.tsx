@@ -7,6 +7,7 @@ import { useDialog } from "../context/DialogContext";
 import { useSidebar } from "../context/SidebarContext";
 import { useAgentsSidebar } from "../context/AgentsSidebarContext";
 import { agentsApi } from "../api/agents";
+import { chatApi } from "../api/chat";
 import { heartbeatsApi } from "../api/heartbeats";
 import { queryKeys } from "../lib/queryKeys";
 import { cn, agentRouteRef, agentSwitchUrl } from "../lib/utils";
@@ -52,10 +53,12 @@ function sortByHierarchy(agents: Agent[]): Agent[] {
 function CollapsedStrip({
   agents,
   liveCountByAgent,
+  unreadByAgent,
   onExpand,
 }: {
   agents: Agent[];
   liveCountByAgent: Map<string, number>;
+  unreadByAgent: Map<string, number>;
   onExpand: () => void;
 }) {
   return (
@@ -63,6 +66,7 @@ function CollapsedStrip({
       {agents.map((agent) => {
         const isRunning = (liveCountByAgent.get(agent.id) ?? 0) > 0;
         const dotStatus = isRunning ? "running" : agent.status;
+        const unread = unreadByAgent.get(agent.id) ?? 0;
         return (
           <Tooltip key={agent.id} delayDuration={200}>
             <TooltipTrigger asChild>
@@ -79,11 +83,17 @@ function CollapsedStrip({
                 <span className="absolute bottom-0.5 right-0.5">
                   <StatusDot status={dotStatus} size="sm" />
                 </span>
+                {unread > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 flex items-center justify-center min-w-[14px] h-[14px] rounded-full bg-primary text-primary-foreground text-[9px] font-bold leading-none px-0.5">
+                    {unread > 9 ? "9+" : unread}
+                  </span>
+                )}
               </button>
             </TooltipTrigger>
             <TooltipContent side="left" sideOffset={8}>
               <p className="text-xs">
                 {agent.name} — {dotStatus}
+                {unread > 0 ? ` (${unread} unread)` : ""}
               </p>
             </TooltipContent>
           </Tooltip>
@@ -99,11 +109,13 @@ function AgentRow({
   runCount,
   activity,
   isActive,
+  unreadCount,
 }: {
   agent: Agent;
   runCount: number;
   activity: import("../context/AgentActivityContext").AgentActivity | null;
   isActive: boolean;
+  unreadCount: number;
 }) {
   const location = useLocation();
   const { toggleChat, agentId: chatAgentId, isOpen: chatOpen } = useChatSidePanel();
@@ -137,25 +149,18 @@ function AgentRow({
             </span>
           )}
         </div>
-        {runCount > 0 && !activity && (
-          <span className="ml-auto flex items-center gap-1.5 shrink-0">
-            <StatusDot status="running" size="sm" />
-          </span>
-        )}
-        {runCount > 0 && activity && (
-          <span className="ml-auto shrink-0">
-            <StatusDot
-              status="running"
-              size="sm"
-              toolName={activity.toolName}
-            />
-          </span>
-        )}
-        {runCount === 0 && !activity && (
-          <span className="ml-auto shrink-0">
-            <StatusDot status={agent.status} size="sm" />
-          </span>
-        )}
+        <span className="ml-auto flex items-center gap-1.5 shrink-0">
+          {unreadCount > 0 && (
+            <span className="flex items-center justify-center min-w-[16px] h-[16px] rounded-full bg-primary text-primary-foreground text-[10px] font-bold leading-none px-1">
+              {unreadCount > 9 ? "9+" : unreadCount}
+            </span>
+          )}
+          {runCount > 0 ? (
+            <StatusDot status="running" size="sm" toolName={activity?.toolName} />
+          ) : (
+            !activity && <StatusDot status={agent.status} size="sm" />
+          )}
+        </span>
       </NavLink>
       <div className="flex items-center shrink-0 opacity-0 group-hover/row:opacity-100 transition-opacity pr-1">
         <Tooltip delayDuration={300}>
@@ -226,6 +231,13 @@ export function AgentsSidebar() {
     refetchInterval: 10_000,
   });
 
+  const { data: unreadSummary } = useQuery({
+    queryKey: queryKeys.chatUnreadSummary(selectedCompanyId!),
+    queryFn: () => chatApi.getUnreadSummary(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+    refetchInterval: 15_000,
+  });
+
   const liveCountByAgent = useMemo(() => {
     const counts = new Map<string, number>();
     for (const run of liveRuns ?? []) {
@@ -233,6 +245,14 @@ export function AgentsSidebar() {
     }
     return counts;
   }, [liveRuns]);
+
+  const unreadByAgent = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const entry of unreadSummary ?? []) {
+      counts.set(entry.agentId, entry.unreadCount);
+    }
+    return counts;
+  }, [unreadSummary]);
 
   const visibleAgents = useMemo(() => {
     const filtered = (agents ?? []).filter(
@@ -277,6 +297,7 @@ export function AgentsSidebar() {
           <CollapsedStrip
             agents={visibleAgents}
             liveCountByAgent={liveCountByAgent}
+            unreadByAgent={unreadByAgent}
             onExpand={toggleAgentsSidebar}
           />
         </ScrollArea>
@@ -336,6 +357,7 @@ export function AgentsSidebar() {
                 runCount={runCount}
                 activity={activity ?? null}
                 isActive={activeAgentId === agentRouteRef(agent)}
+                unreadCount={unreadByAgent.get(agent.id) ?? 0}
               />
             );
           })}
