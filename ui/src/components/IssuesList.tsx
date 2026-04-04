@@ -44,6 +44,8 @@ import {
   Search,
   CalendarClock,
   Clock3,
+  Repeat,
+  Copy,
   Pause,
   Play,
   Save,
@@ -97,6 +99,7 @@ export type IssueViewState = {
   assignees: string[];
   labels: string[];
   recurringFilter: "all" | "recurring_only";
+  showTemplates: boolean;
   sortField: "status" | "priority" | "title" | "created" | "updated";
   sortDir: "asc" | "desc";
   groupBy: "status" | "priority" | "assignee" | "recurring" | "none";
@@ -110,6 +113,7 @@ const defaultViewState: IssueViewState = {
   assignees: [],
   labels: [],
   recurringFilter: "all",
+  showTemplates: false,
   sortField: "updated",
   sortDir: "desc",
   groupBy: "none",
@@ -151,6 +155,7 @@ function applyFilters(
   issues: Issue[],
   state: IssueViewState,
   recurringIssueIds: Set<string>,
+  templateIssueIds: Set<string>,
 ): Issue[] {
   let result = issues;
   if (state.statuses.length > 0) result = result.filter((i) => state.statuses.includes(i.status));
@@ -158,6 +163,7 @@ function applyFilters(
   if (state.assignees.length > 0) result = result.filter((i) => i.assigneeAgentId != null && state.assignees.includes(i.assigneeAgentId));
   if (state.labels.length > 0) result = result.filter((i) => (i.labelIds ?? []).some((id) => state.labels.includes(id)));
   if (state.recurringFilter === "recurring_only") result = result.filter((i) => recurringIssueIds.has(i.id));
+  if (!state.showTemplates) result = result.filter((i) => !templateIssueIds.has(i.id));
   return result;
 }
 
@@ -190,6 +196,7 @@ function countActiveFilters(state: IssueViewState): number {
   if (state.assignees.length > 0) count++;
   if (state.labels.length > 0) count++;
   if (state.recurringFilter === "recurring_only") count++;
+  if (state.showTemplates) count++;
   return count;
 }
 
@@ -361,6 +368,29 @@ export function IssuesList({
     [recurringByIssueId],
   );
 
+  // Issues that have at least one active create_new schedule (template sources)
+  const templateIssueIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const [issueId, schedules] of recurringByIssueId) {
+      if (schedules.some((s) => s.enabled && s.issueMode === "create_new")) {
+        ids.add(issueId);
+      }
+    }
+    return ids;
+  }, [recurringByIssueId]);
+
+  // Issues spawned from a template (parentId points to a template issue)
+  const spawnedFromTemplateIds = useMemo(() => {
+    if (!issues || templateIssueIds.size === 0) return new Set<string>();
+    const ids = new Set<string>();
+    for (const issue of issues) {
+      if (issue.parentId && templateIssueIds.has(issue.parentId)) {
+        ids.add(issue.id);
+      }
+    }
+    return ids;
+  }, [issues, templateIssueIds]);
+
   const updateSchedule = useMutation({
     mutationFn: ({
       scheduleId,
@@ -389,9 +419,9 @@ export function IssuesList({
 
   const filtered = useMemo(() => {
     const sourceIssues = normalizedIssueSearch.length > 0 ? searchedIssues : issues;
-    const filteredByControls = applyFilters(sourceIssues, viewState, recurringIssueIds);
+    const filteredByControls = applyFilters(sourceIssues, viewState, recurringIssueIds, templateIssueIds);
     return sortIssues(filteredByControls, viewState);
-  }, [issues, searchedIssues, viewState, normalizedIssueSearch, recurringIssueIds]);
+  }, [issues, searchedIssues, viewState, normalizedIssueSearch, recurringIssueIds, templateIssueIds]);
 
   // Clear multi-selection when filtered list changes
   useEffect(() => {
@@ -630,10 +660,21 @@ export function IssuesList({
               Plan
             </span>
           )}
-          {recurringIssueIds.has(issue.id) && (
+          {templateIssueIds.has(issue.id) ? (
+            <span className="inline-flex items-center gap-1 rounded-full border border-teal-500/40 bg-teal-500/10 px-1.5 py-0.5 text-[10px] text-teal-600 dark:text-teal-400">
+              <Repeat className="h-2.5 w-2.5" />
+              Template
+            </span>
+          ) : recurringIssueIds.has(issue.id) ? (
             <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-600 dark:text-amber-400">
               <Clock3 className="h-2.5 w-2.5" />
               Recurring
+            </span>
+          ) : null}
+          {spawnedFromTemplateIds.has(issue.id) && (
+            <span className="inline-flex items-center gap-1 rounded-full border border-sky-500/40 bg-sky-500/10 px-1.5 py-0.5 text-[10px] text-sky-600 dark:text-sky-400">
+              <Copy className="h-2.5 w-2.5" />
+              Scheduled
             </span>
           )}
           {liveIssueIds?.has(issue.id) && (
@@ -988,7 +1029,7 @@ export function IssuesList({
         </span>
       </span>
     </Link>
-  ); }, [issueLinkState, onUpdateIssue, recurringIssueIds, liveIssueIds, recurringByIssueId, recurringPickerIssueId, updateSchedule, scheduleDraftValue, recurringDrafts, assigneePickerIssueId, assigneeSearch, agentName, agents, projectPickerIssueId, projectSearch, allProjects, flatVisibleIssues, selectedIndex, selectedIds, hasSelection, toggleSelect]); // eslint-disable-line react-hooks/exhaustive-deps
+  ); }, [issueLinkState, onUpdateIssue, recurringIssueIds, templateIssueIds, spawnedFromTemplateIds, liveIssueIds, recurringByIssueId, recurringPickerIssueId, updateSchedule, scheduleDraftValue, recurringDrafts, assigneePickerIssueId, assigneeSearch, agentName, agents, projectPickerIssueId, projectSearch, allProjects, flatVisibleIssues, selectedIndex, selectedIds, hasSelection, toggleSelect]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="space-y-4">
@@ -1016,16 +1057,19 @@ export function IssuesList({
 
         <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
           <Select
-            value={viewState.recurringFilter}
-            onValueChange={(value) =>
-              updateView({ recurringFilter: value as "all" | "recurring_only" })
-            }
+            value={viewState.showTemplates ? (viewState.recurringFilter === "recurring_only" ? "recurring_only" : "all_with_templates") : viewState.recurringFilter === "recurring_only" ? "recurring_only" : "all"}
+            onValueChange={(value) => {
+              if (value === "all") updateView({ recurringFilter: "all", showTemplates: false });
+              else if (value === "all_with_templates") updateView({ recurringFilter: "all", showTemplates: true });
+              else if (value === "recurring_only") updateView({ recurringFilter: "recurring_only", showTemplates: true });
+            }}
           >
-            <SelectTrigger className="h-8 w-[130px] text-xs">
+            <SelectTrigger className="h-8 w-[150px] text-xs">
               <SelectValue placeholder="Scope" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All issues</SelectItem>
+              <SelectItem value="all_with_templates">Include templates</SelectItem>
               <SelectItem value="recurring_only">Recurring only</SelectItem>
             </SelectContent>
           </Select>
@@ -1062,7 +1106,7 @@ export function IssuesList({
                     className="h-3 w-3 ml-1 hidden sm:block"
                     onClick={(e) => {
                       e.stopPropagation();
-                      updateView({ statuses: [], priorities: [], assignees: [], labels: [], recurringFilter: "all" });
+                      updateView({ statuses: [], priorities: [], assignees: [], labels: [], recurringFilter: "all", showTemplates: false });
                     }}
                   />
                 )}
@@ -1082,6 +1126,7 @@ export function IssuesList({
                           assignees: [],
                           labels: [],
                           recurringFilter: "all",
+                          showTemplates: false,
                         })
                       }
                     >
@@ -1126,6 +1171,16 @@ export function IssuesList({
                     />
                     <Clock3 className="h-3.5 w-3.5 text-muted-foreground" />
                     <span className="text-sm">Recurring only</span>
+                  </label>
+                  <label className="flex items-center gap-2 px-2 py-1 rounded-sm hover:bg-accent/50 cursor-pointer">
+                    <Checkbox
+                      checked={viewState.showTemplates}
+                      onCheckedChange={(checked) =>
+                        updateView({ showTemplates: !!checked })
+                      }
+                    />
+                    <Repeat className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="text-sm">Show templates</span>
                   </label>
                 </div>
 
@@ -1392,6 +1447,8 @@ export function IssuesList({
           agents={agents}
           liveIssueIds={liveIssueIds}
           recurringIssueIds={recurringIssueIds}
+          templateIssueIds={templateIssueIds}
+          spawnedFromTemplateIds={spawnedFromTemplateIds}
           onUpdateIssue={onUpdateIssue}
         />
       ) : (
