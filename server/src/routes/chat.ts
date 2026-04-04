@@ -29,6 +29,19 @@ export function chatRoutes(db: Db) {
     return agent;
   }
 
+  router.get("/companies/:companyId/chat/unread-summary", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const actor = getActorInfo(req);
+    if (actor.actorType !== "user" || !actor.actorId) {
+      res.json([]);
+      return;
+    }
+    const byAgent = await chatReadStates.countUnreadSessionsByAgent(companyId, actor.actorId);
+    const summary = Object.entries(byAgent).map(([agentId, unreadCount]) => ({ agentId, unreadCount }));
+    res.json(summary);
+  });
+
   router.get("/companies/:companyId/chat/sessions", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
