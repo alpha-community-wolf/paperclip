@@ -532,6 +532,31 @@ export function eventRoutingService(db: Db) {
       };
     }
 
+    if (actionType === "update_issue") {
+      const issueId =
+        asString(action.issueId) ??
+        (action.issueIdTemplate ? renderTemplate(String(action.issueIdTemplate), context) : null) ??
+        asString(getByPath(event.payload, "issueId"));
+
+      if (!issueId) return { status: "ignored", actionType };
+
+      const updates: Record<string, unknown> = {};
+      if (action.status) updates.status = asString(action.status);
+      if (action.priority) updates.priority = asString(action.priority);
+      if (action.assigneeAgentId) updates.assigneeAgentId = asString(action.assigneeAgentId);
+
+      await issues.update(issueId, updates);
+
+      if (action.comment) {
+        const commentBody = renderTemplate(String(action.comment), context);
+        if (commentBody) {
+          await issues.addComment(issueId, commentBody, {});
+        }
+      }
+
+      return { status: "dispatched", actionType, createdIssueId: null };
+    }
+
     return { status: "ignored", actionType };
   }
 
