@@ -132,3 +132,64 @@ export const invocationSourceBadge: Record<string, string> = {
 };
 
 export const invocationSourceBadgeDefault = "bg-muted text-muted-foreground";
+
+// ---------------------------------------------------------------------------
+// Run type badges — resolved from invocationSource + type combination
+// ---------------------------------------------------------------------------
+
+export interface RunTypeBadgeInfo {
+  label: string;
+  badge: string;
+}
+
+export function resolveRunTypeBadge(
+  invocationSource: string,
+  type?: string,
+): RunTypeBadgeInfo {
+  if (invocationSource === "automation") {
+    return {
+      label: "Automation",
+      badge: "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300",
+    };
+  }
+  if (invocationSource === "assignment") {
+    return {
+      label: "Assignment",
+      badge: "bg-violet-100 text-violet-700 dark:bg-violet-900/50 dark:text-violet-300",
+    };
+  }
+  if (invocationSource === "chat") {
+    return {
+      label: "Chat",
+      badge: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300",
+    };
+  }
+  if (invocationSource === "timer" && type === "chore") {
+    return {
+      label: "Chore",
+      badge: "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400",
+    };
+  }
+  if (invocationSource === "timer") {
+    return {
+      label: "Heartbeat",
+      badge: "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300",
+    };
+  }
+  if (invocationSource === "on_demand" && type === "chore") {
+    return {
+      label: "Manual Chore",
+      badge: "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400",
+    };
+  }
+  if (invocationSource === "on_demand") {
+    return {
+      label: "Manual",
+      badge: "bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300",
+    };
+  }
+  return {
+    label: invocationSource,
+    badge: invocationSourceBadgeDefault,
+  };
+}

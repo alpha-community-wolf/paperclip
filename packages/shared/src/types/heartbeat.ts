@@ -1,6 +1,7 @@
 import type {
   HeartbeatInvocationSource,
   HeartbeatRunStatus,
+  HeartbeatRunType,
   WakeupTriggerDetail,
   WakeupRequestStatus,
 } from "../constants.js";
@@ -12,6 +13,7 @@ export interface HeartbeatRun {
   invocationSource: HeartbeatInvocationSource;
   triggerDetail: WakeupTriggerDetail | null;
   status: HeartbeatRunStatus;
+  type: HeartbeatRunType;
   startedAt: Date | null;
   finishedAt: Date | null;
   error: string | null;

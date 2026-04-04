@@ -7,7 +7,7 @@ import { queryKeys } from "../lib/queryKeys";
 import { runMetrics } from "../lib/run-utils";
 import { StatusBadge } from "./StatusBadge";
 import { RunLogViewer } from "./RunLogViewer";
-import { invocationSourceLabel, invocationSourceBadge, invocationSourceBadgeDefault } from "../lib/status-colors";
+import { resolveRunTypeBadge } from "../lib/status-colors";
 import { cn, relativeTime, formatTokens, agentRouteRef } from "../lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -103,14 +103,16 @@ export function RunDetailPanel({ run: initialRun, agent, onClose }: RunDetailPan
           <div className="flex-1 p-4 space-y-3">
             <div className="flex items-center gap-2 flex-wrap">
               <StatusBadge status={run.status} />
+              {(() => { const tb = resolveRunTypeBadge(run.invocationSource, run.type); return (
               <span
                 className={cn(
                   "inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium shrink-0",
-                  invocationSourceBadge[run.invocationSource] ?? invocationSourceBadgeDefault,
+                  tb.badge,
                 )}
               >
-                {invocationSourceLabel[run.invocationSource] ?? run.invocationSource}
+                {tb.label}
               </span>
+              ); })()}
               {!run.startedAt && run.status !== "queued" && run.status !== "running" && (
                 <span className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium shrink-0 bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
                   Never started

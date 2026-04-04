@@ -12,6 +12,7 @@ export interface LiveRunForIssue {
   status: string;
   invocationSource: string;
   triggerDetail: string | null;
+  type?: string;
   startedAt: string | null;
   finishedAt: string | null;
   createdAt: string;
