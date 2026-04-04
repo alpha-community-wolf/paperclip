@@ -53,6 +53,7 @@ import {
   Plus,
   Search,
   SlidersHorizontal,
+  Repeat,
   Trash2,
   X,
 } from "lucide-react";
@@ -171,6 +172,11 @@ export function IssueDetail() {
     queryFn: () => taskCronsApi.listIssueSchedules(issueId!, selectedCompanyId ?? undefined),
     enabled: !!issueId,
   });
+
+  const isTemplateIssue = useMemo(
+    () => recurringSchedules?.some((s) => s.enabled && s.issueMode === "create_new") ?? false,
+    [recurringSchedules],
+  );
 
   const { data: issueLinks } = useQuery({
     queryKey: queryKeys.issues.links(issueId!),
@@ -760,6 +766,13 @@ export function IssueDetail() {
           {issue.type === "plan" && (
             <span className="inline-flex items-center gap-1 rounded-full bg-violet-500/10 border border-violet-500/30 px-2 py-0.5 text-[10px] font-medium text-violet-600 dark:text-violet-400 shrink-0">
               Plan
+            </span>
+          )}
+
+          {isTemplateIssue && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-teal-500/10 border border-teal-500/30 px-2 py-0.5 text-[10px] font-medium text-teal-600 dark:text-teal-400 shrink-0">
+              <Repeat className="h-3 w-3" />
+              Template
             </span>
           )}
 
