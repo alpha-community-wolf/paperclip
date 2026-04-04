@@ -15,7 +15,6 @@ import { subscribeCompanyLiveEvents } from "./live-events.js";
 import { chatService } from "./chat.js";
 import { heartbeatService } from "./heartbeat.js";
 import { agentService } from "./agents.js";
-import { inlineChoreService } from "./inline-chore.js";
 import {
   parseLogLines,
   buildTranscript,
@@ -397,15 +396,14 @@ export function telegramService(db: Db) {
   }
 
   const agentsSvc = agentService(db);
-  const inlineChore = inlineChoreService(db);
 
   /** Default title assigned to new Telegram sessions. */
   const DEFAULT_TELEGRAM_TITLE = "Telegram chat";
 
   /**
    * After the first user message + agent reply in a session that still has the
-   * default title, fire an inline chore to generate a descriptive title.
-   * Runs asynchronously — errors are logged, never propagated to the caller.
+   * default title, fire a chore run via the agent's adapter to generate a
+   * descriptive title. Runs asynchronously — errors are logged, never propagated.
    */
   async function maybeAutoTitleSession(
     agentId: string,
@@ -462,25 +460,84 @@ export function telegramService(db: Db) {
           .trim();
       }
 
-      // Build messages for the inline chore
-      const messages: { role: "user" | "assistant"; content: string }[] = [
-        { role: "user", content: userMessage.content },
-      ];
-      if (assistantText) {
-        // Truncate long replies — title generation only needs a summary
-        const truncated = assistantText.length > 500 ? assistantText.slice(0, 500) + "…" : assistantText;
-        messages.push({ role: "assistant", content: truncated });
-      }
+      // Build the chore prompt with conversation context
+      const truncatedReply = assistantText.length > 500
+        ? assistantText.slice(0, 500) + "…"
+        : assistantText;
 
-      const title = await inlineChore.generateSessionTitle(agentId, messages);
+      const chorePrompt = [
+        "Generate a short descriptive title (3-8 words) for this conversation.",
+        "Return ONLY the title text, nothing else. No quotes, no punctuation at the end.",
+        "Examples: Deploying budget page, Telegram bot config help, Fix CI pipeline timeout",
+        "",
+        `User: ${userMessage.content}`,
+        ...(truncatedReply ? [`Assistant: ${truncatedReply}`] : []),
+      ].join("\n");
 
-      if (title) {
-        await chat.updateSession({ agentId, sessionId, title });
-        logger.info({ agentId, sessionId, title }, "telegram: auto-titled session");
-      }
+      // Fire-and-forget: trigger a chore run with a completion callback
+      await heartbeat.triggerChore(agentId, {
+        prompt: chorePrompt,
+        metadata: { purpose: "auto-title-session", sessionId },
+        actor: { actorType: "system" },
+        onComplete: async (info) => {
+          if (info.outcome !== "succeeded") return;
+
+          // Extract assistant text from the chore run's stdout
+          const titleText = extractTitleFromStdout(info.stdoutExcerpt, info.agentAdapterType);
+          if (titleText) {
+            await chat.updateSession({ agentId, sessionId, title: titleText });
+            logger.info({ agentId, sessionId, title: titleText }, "telegram: auto-titled session via chore");
+          }
+        },
+      }).catch((err) => {
+        logger.warn({ err, agentId, sessionId }, "telegram: failed to trigger auto-title chore (non-fatal)");
+      });
     } catch (err) {
       logger.warn({ err, agentId, sessionId }, "telegram: auto-title failed (non-fatal)");
     }
+  }
+
+  /**
+   * Extract a clean title string from a chore run's raw stdout excerpt.
+   * Uses the adapter-specific stdout parser to find assistant text.
+   */
+  function extractTitleFromStdout(stdoutExcerpt: string, adapterType: string): string | null {
+    if (!stdoutExcerpt.trim()) return null;
+
+    const parser = resolveStdoutParser(adapterType);
+    const ts = new Date().toISOString();
+    const lines = stdoutExcerpt.split(/\r?\n/);
+
+    // Parse each stdout line through the adapter's parser to find assistant text
+    const assistantParts: string[] = [];
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      try {
+        for (const entry of parser(trimmed, ts)) {
+          if (entry.kind === "assistant" && entry.text.trim()) {
+            assistantParts.push(entry.text.trim());
+          }
+        }
+      } catch {
+        // Skip unparseable lines
+      }
+    }
+
+    if (assistantParts.length > 0) {
+      const title = assistantParts.join(" ").trim();
+      return title.length > 100 ? title.slice(0, 100) : title;
+    }
+
+    // Fallback: treat stdout as plain text, take the first non-empty line
+    const firstLine = lines
+      .map((l) => l.trim())
+      .find((l) => l.length > 0);
+    if (firstLine) {
+      return firstLine.length > 100 ? firstLine.slice(0, 100) : firstLine;
+    }
+
+    return null;
   }
 
   async function archiveTelegramSession(agentId: string, telegramChatId: string) {
