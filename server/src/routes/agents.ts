@@ -30,6 +30,7 @@ import {
   logActivity,
   secretService,
   taskCronService,
+  timelineService,
 } from "../services/index.js";
 import { conflict, forbidden, notFound, unprocessable } from "../errors.js";
 import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
@@ -1610,6 +1611,29 @@ export function agentRoutes(db: Db) {
     const limit = limitParam ? Math.max(1, Math.min(1000, parseInt(limitParam, 10) || 200)) : undefined;
     const includeChores = req.query.includeChores === "true";
     const result = await heartbeat.list(companyId, agentId, limit, projectId, includeChores);
+    res.json(result);
+  });
+
+  // --- Timeline: projected heartbeats + cron schedule occurrences ---
+  const timeline = timelineService(db);
+  router.get("/companies/:companyId/timeline", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const agentId = req.query.agentId as string | undefined;
+    const fromParam = req.query.from as string | undefined;
+    const toParam = req.query.to as string | undefined;
+
+    const now = new Date();
+    const from = fromParam ? new Date(fromParam) : now;
+    // Default: 30 days ahead
+    const to = toParam ? new Date(toParam) : new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+    if (isNaN(from.getTime()) || isNaN(to.getTime())) {
+      res.status(400).json({ error: "Invalid from/to date" });
+      return;
+    }
+
+    const result = await timeline.list(companyId, from, to, { agentId });
     res.json(result);
   });
 

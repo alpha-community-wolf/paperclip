@@ -34,3 +34,4 @@ export { taskCronService, computeNextCronTrigger } from "./task-cron-schedules.j
 export { reconcilePersistedRuntimeServicesOnStartup, stopAllRuntimeServices } from "./workspace-runtime.js";
 export { createStorageServiceFromConfig, getStorageService } from "../storage/index.js";
 export { telegramService } from "./telegram.js";
+export { timelineService } from "./timeline.js";
