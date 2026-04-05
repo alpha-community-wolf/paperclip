@@ -27,6 +27,7 @@ interface IssueBaseOptions extends BaseClientOptions {
 interface IssueCreateOptions extends BaseClientOptions {
   title: string;
   description?: string;
+  type?: string;
   status?: string;
   priority?: string;
   assigneeAgentId?: string;
@@ -41,6 +42,7 @@ interface IssueCreateOptions extends BaseClientOptions {
 interface IssueUpdateOptions extends BaseClientOptions {
   title?: string;
   description?: string;
+  type?: string;
   status?: string;
   priority?: string;
   assigneeAgentId?: string;
@@ -145,6 +147,7 @@ export function registerIssueCommands(program: Command): void {
       .requiredOption("-C, --company-id <id>", "Company ID")
       .requiredOption("--title <title>", "Issue title")
       .option("--description <text>", "Issue description")
+      .option("--type <type>", "Issue type (task or plan)")
       .option("--status <status>", "Issue status")
       .option("--priority <priority>", "Issue priority")
       .option("--assignee-agent-id <id>", "Assignee agent ID")
@@ -160,6 +163,7 @@ export function registerIssueCommands(program: Command): void {
           const payload = createIssueSchema.parse({
             title: opts.title,
             description: opts.description,
+            type: opts.type,
             status: opts.status,
             priority: opts.priority,
             assigneeAgentId: opts.assigneeAgentId,
@@ -187,6 +191,7 @@ export function registerIssueCommands(program: Command): void {
       .argument("<issueId>", "Issue ID")
       .option("--title <title>", "Issue title")
       .option("--description <text>", "Issue description")
+      .option("--type <type>", "Issue type (task or plan)")
       .option("--status <status>", "Issue status")
       .option("--priority <priority>", "Issue priority")
       .option("--assignee-agent-id <id>", "Assignee agent ID")
@@ -204,6 +209,7 @@ export function registerIssueCommands(program: Command): void {
           const payload = updateIssueSchema.parse({
             title: opts.title,
             description: opts.description,
+            type: opts.type,
             status: opts.status,
             priority: opts.priority,
             assigneeAgentId: opts.assigneeAgentId,
