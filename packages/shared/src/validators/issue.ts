@@ -45,6 +45,10 @@ export const createIssueSchema = z.object({
   executionWorkspaceSettings: issueExecutionWorkspaceSettingsSchema.optional().nullable(),
   metadata: z.record(z.unknown()).optional().nullable(),
   reviewBundleMode: issueReviewBundleModeSchema.optional().default("inherit"),
+  reviewerAgentId: z.string().uuid().optional().nullable(),
+  reviewerUserId: z.string().optional().nullable(),
+  approverAgentId: z.string().uuid().optional().nullable(),
+  approverUserId: z.string().optional().nullable(),
   labelIds: z.array(z.string().uuid()).optional(),
 });
 
