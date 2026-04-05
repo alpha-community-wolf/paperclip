@@ -3419,10 +3419,50 @@ export function heartbeatService(db: Db) {
             )
             .then((rows) => Number(rows[0]?.count ?? 0));
           if (assignedCount === 0) {
-            logger.debug(
+            logger.info(
               { agentId: agent.id, agentName: agent.name },
-              "skipWhenIdle: no assigned work, skipping timer heartbeat",
+              "skipWhenIdle: no assigned work, creating skipped-idle run record",
             );
+
+            // Create a wakeup request so the run has a proper audit trail
+            const skippedWakeup = await db
+              .insert(agentWakeupRequests)
+              .values({
+                companyId: agent.companyId,
+                agentId: agent.id,
+                source: "timer",
+                triggerDetail: "system",
+                reason: "heartbeat_timer",
+                status: "completed",
+                requestedByActorType: "system",
+                requestedByActorId: "heartbeat_scheduler",
+                claimedAt: now,
+                finishedAt: now,
+              })
+              .returning()
+              .then((rows) => rows[0]);
+
+            // Create a run record so skipped-idle ticks are visible in the UI
+            await db
+              .insert(heartbeatRuns)
+              .values({
+                companyId: agent.companyId,
+                agentId: agent.id,
+                type: "skipped_idle",
+                invocationSource: "timer",
+                triggerDetail: "system",
+                status: "skipped",
+                wakeupRequestId: skippedWakeup.id,
+                startedAt: now,
+                finishedAt: now,
+                resultJson: { reason: "no_assigned_work", skipWhenIdle: true },
+                contextSnapshot: {
+                  source: "scheduler",
+                  reason: "skipped_idle",
+                  now: now.toISOString(),
+                },
+              });
+
             // Update lastHeartbeatAt so the timer doesn't fire again immediately
             await db
               .update(agents)
