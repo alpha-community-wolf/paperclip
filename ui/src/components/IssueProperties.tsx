@@ -110,6 +110,10 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
   const [projectOpen, setProjectOpen] = useState(false);
   const [projectSearch, setProjectSearch] = useState("");
   const [reviewModeOpen, setReviewModeOpen] = useState(false);
+  const [reviewerOpen, setReviewerOpen] = useState(false);
+  const [reviewerSearch, setReviewerSearch] = useState("");
+  const [approverOpen, setApproverOpen] = useState(false);
+  const [approverSearch, setApproverSearch] = useState("");
   const [labelsOpen, setLabelsOpen] = useState(false);
   const [labelSearch, setLabelSearch] = useState("");
   const [newLabelName, setNewLabelName] = useState("");
@@ -228,6 +232,11 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
       : null;
   const assigneeUserLabel = userLabel(issue.assigneeUserId);
   const creatorUserLabel = userLabel(issue.createdByUserId);
+
+  const reviewer = issue.reviewerAgentId ? agents?.find((a) => a.id === issue.reviewerAgentId) : null;
+  const reviewerUserLabel = userLabel(issue.reviewerUserId);
+  const approver = issue.approverAgentId ? agents?.find((a) => a.id === issue.approverAgentId) : null;
+  const approverUserLabel = userLabel(issue.approverUserId);
 
   const labelsTrigger = (issue.labels ?? []).length > 0 ? (
     <div className="flex items-center gap-1 flex-wrap">
@@ -653,6 +662,124 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
             )}
           </PropertyPicker>
         )}
+
+        <PropertyPicker
+          inline={inline}
+          label="Reviewer"
+          open={reviewerOpen}
+          onOpenChange={(open) => { setReviewerOpen(open); if (!open) setReviewerSearch(""); }}
+          triggerContent={
+            reviewer ? (
+              <Identity name={reviewer.name} size="sm" />
+            ) : reviewerUserLabel ? (
+              <>
+                <User className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-sm">{reviewerUserLabel}</span>
+              </>
+            ) : (
+              <>
+                <User className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-sm text-muted-foreground">No reviewer</span>
+              </>
+            )
+          }
+          popoverClassName="w-52"
+        >
+          <>
+            <input
+              className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-muted-foreground/50"
+              placeholder="Search agents..."
+              value={reviewerSearch}
+              onChange={(e) => setReviewerSearch(e.target.value)}
+              autoFocus={!inline}
+            />
+            <div className="max-h-48 overflow-y-auto overscroll-contain">
+              <button
+                className={cn(
+                  "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
+                  !issue.reviewerAgentId && !issue.reviewerUserId && "bg-accent"
+                )}
+                onClick={() => { onUpdate({ reviewerAgentId: null, reviewerUserId: null }); setReviewerOpen(false); }}
+              >
+                No reviewer
+              </button>
+              {sortedAgents
+                .filter((a) => !reviewerSearch.trim() || a.name.toLowerCase().includes(reviewerSearch.toLowerCase()))
+                .map((a) => (
+                <button
+                  key={a.id}
+                  className={cn(
+                    "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
+                    a.id === issue.reviewerAgentId && "bg-accent"
+                  )}
+                  onClick={() => { onUpdate({ reviewerAgentId: a.id, reviewerUserId: null }); setReviewerOpen(false); }}
+                >
+                  <AgentIcon icon={a.icon} className="shrink-0 h-3 w-3 text-muted-foreground" />
+                  {a.name}
+                </button>
+              ))}
+            </div>
+          </>
+        </PropertyPicker>
+
+        <PropertyPicker
+          inline={inline}
+          label="Approver"
+          open={approverOpen}
+          onOpenChange={(open) => { setApproverOpen(open); if (!open) setApproverSearch(""); }}
+          triggerContent={
+            approver ? (
+              <Identity name={approver.name} size="sm" />
+            ) : approverUserLabel ? (
+              <>
+                <User className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-sm">{approverUserLabel}</span>
+              </>
+            ) : (
+              <>
+                <User className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-sm text-muted-foreground">No approver</span>
+              </>
+            )
+          }
+          popoverClassName="w-52"
+        >
+          <>
+            <input
+              className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-muted-foreground/50"
+              placeholder="Search agents..."
+              value={approverSearch}
+              onChange={(e) => setApproverSearch(e.target.value)}
+              autoFocus={!inline}
+            />
+            <div className="max-h-48 overflow-y-auto overscroll-contain">
+              <button
+                className={cn(
+                  "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
+                  !issue.approverAgentId && !issue.approverUserId && "bg-accent"
+                )}
+                onClick={() => { onUpdate({ approverAgentId: null, approverUserId: null }); setApproverOpen(false); }}
+              >
+                No approver
+              </button>
+              {sortedAgents
+                .filter((a) => !approverSearch.trim() || a.name.toLowerCase().includes(approverSearch.toLowerCase()))
+                .map((a) => (
+                <button
+                  key={a.id}
+                  className={cn(
+                    "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
+                    a.id === issue.approverAgentId && "bg-accent"
+                  )}
+                  onClick={() => { onUpdate({ approverAgentId: a.id, approverUserId: null }); setApproverOpen(false); }}
+                >
+                  <AgentIcon icon={a.icon} className="shrink-0 h-3 w-3 text-muted-foreground" />
+                  {a.name}
+                </button>
+              ))}
+            </div>
+          </>
+        </PropertyPicker>
 
         {issue.parentId && (
           <PropertyRow label="Parent">

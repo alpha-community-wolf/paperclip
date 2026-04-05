@@ -190,6 +190,8 @@ export function NewIssueDialog() {
   const [assigneeThinkingEffort, setAssigneeThinkingEffort] = useState("");
   const [assigneeChrome, setAssigneeChrome] = useState(false);
   const [useIsolatedExecutionWorkspace, setUseIsolatedExecutionWorkspace] = useState(false);
+  const [reviewerId, setReviewerId] = useState("");
+  const [approverId, setApproverId] = useState("");
   const [reviewBundleMode, setReviewBundleMode] = useState<"inherit" | "optional" | "required">("inherit");
   const [recurringSectionOpen, setRecurringSectionOpen] = useState(false);
   const [recurringEnabled, setRecurringEnabled] = useState(false);
@@ -482,6 +484,8 @@ export function NewIssueDialog() {
     setAssigneeThinkingEffort("");
     setAssigneeChrome(false);
     setUseIsolatedExecutionWorkspace(false);
+    setReviewerId("");
+    setApproverId("");
     setReviewBundleMode("inherit");
     setRecurringEnabled(false);
     setRecurringSectionOpen(false);
@@ -506,6 +510,8 @@ export function NewIssueDialog() {
     setAssigneeThinkingEffort("");
     setAssigneeChrome(false);
     setUseIsolatedExecutionWorkspace(false);
+    setReviewerId("");
+    setApproverId("");
     setReviewBundleMode("inherit");
   }
 
@@ -544,6 +550,8 @@ export function NewIssueDialog() {
       status,
       priority: priority || "medium",
       ...(assigneeId ? { assigneeAgentId: assigneeId } : {}),
+      ...(reviewerId ? { reviewerAgentId: reviewerId } : {}),
+      ...(approverId ? { approverAgentId: approverId } : {}),
       ...(projectId ? { projectId } : {}),
       ...(assigneeAdapterOverrides ? { assigneeAdapterOverrides } : {}),
       ...(executionWorkspaceSettings ? { executionWorkspaceSettings } : {}),
@@ -1110,6 +1118,74 @@ export function NewIssueDialog() {
                 )}
               </div>
             )}
+
+            {/* Reviewer & Approver */}
+            <div className="space-y-1">
+              <div className="text-xs font-medium">Reviewer</div>
+              <InlineEntitySelector
+                value={reviewerId}
+                options={assigneeOptions}
+                placeholder="No reviewer"
+                disablePortal
+                noneLabel="No reviewer"
+                searchPlaceholder="Search agents..."
+                emptyMessage="No agents found."
+                onChange={setReviewerId}
+                renderTriggerValue={(option) => {
+                  if (!option) return <span className="text-muted-foreground">No reviewer</span>;
+                  const agent = (agents ?? []).find((a) => a.id === option.id);
+                  return (
+                    <>
+                      <AgentIcon icon={agent?.icon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      <span className="truncate">{option.label}</span>
+                    </>
+                  );
+                }}
+                renderOption={(option) => {
+                  if (!option.id) return <span className="truncate">{option.label}</span>;
+                  const agent = (agents ?? []).find((a) => a.id === option.id);
+                  return (
+                    <>
+                      <AgentIcon icon={agent?.icon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      <span className="truncate">{option.label}</span>
+                    </>
+                  );
+                }}
+              />
+            </div>
+            <div className="space-y-1">
+              <div className="text-xs font-medium">Approver</div>
+              <InlineEntitySelector
+                value={approverId}
+                options={assigneeOptions}
+                placeholder="No approver"
+                disablePortal
+                noneLabel="No approver"
+                searchPlaceholder="Search agents..."
+                emptyMessage="No agents found."
+                onChange={setApproverId}
+                renderTriggerValue={(option) => {
+                  if (!option) return <span className="text-muted-foreground">No approver</span>;
+                  const agent = (agents ?? []).find((a) => a.id === option.id);
+                  return (
+                    <>
+                      <AgentIcon icon={agent?.icon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      <span className="truncate">{option.label}</span>
+                    </>
+                  );
+                }}
+                renderOption={(option) => {
+                  if (!option.id) return <span className="truncate">{option.label}</span>;
+                  const agent = (agents ?? []).find((a) => a.id === option.id);
+                  return (
+                    <>
+                      <AgentIcon icon={agent?.icon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      <span className="truncate">{option.label}</span>
+                    </>
+                  );
+                }}
+              />
+            </div>
 
             {/* Execution workspace */}
             {currentProjectSupportsExecutionWorkspace && (
