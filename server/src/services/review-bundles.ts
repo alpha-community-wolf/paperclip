@@ -110,6 +110,7 @@ export function reviewBundleService(db: Db) {
             submittedByUserId: actor.userId ?? null,
             decisionNote: null,
             decidedByUserId: null,
+            decidedByAgentId: null,
             decidedAt: null,
             submittedAt: null,
             updatedAt: now,
@@ -169,6 +170,7 @@ export function reviewBundleService(db: Db) {
           submittedAt: now,
           decisionNote: null,
           decidedByUserId: null,
+          decidedByAgentId: null,
           decidedAt: null,
           updatedAt: now,
         })
@@ -178,7 +180,7 @@ export function reviewBundleService(db: Db) {
       return toIssueReviewBundle(updated);
     },
 
-    approve: async (issueId: string, input: { decidedByUserId: string; decisionNote?: string | null }) => {
+    approve: async (issueId: string, input: { decidedByUserId: string; decidedByAgentId?: string | null; decisionNote?: string | null }) => {
       const existing = await db
         .select()
         .from(issueReviewBundles)
@@ -193,6 +195,7 @@ export function reviewBundleService(db: Db) {
         .set({
           status: "approved",
           decidedByUserId: input.decidedByUserId,
+          decidedByAgentId: input.decidedByAgentId ?? null,
           decisionNote: input.decisionNote ?? null,
           decidedAt: now,
           updatedAt: now,
@@ -203,7 +206,7 @@ export function reviewBundleService(db: Db) {
       return toIssueReviewBundle(updated);
     },
 
-    requestChanges: async (issueId: string, input: { decidedByUserId: string; decisionNote?: string | null }) => {
+    requestChanges: async (issueId: string, input: { decidedByUserId: string; decidedByAgentId?: string | null; decisionNote?: string | null }) => {
       const existing = await db
         .select()
         .from(issueReviewBundles)
@@ -218,6 +221,7 @@ export function reviewBundleService(db: Db) {
         .set({
           status: "changes_requested",
           decidedByUserId: input.decidedByUserId,
+          decidedByAgentId: input.decidedByAgentId ?? null,
           decisionNote: input.decisionNote ?? null,
           decidedAt: now,
           updatedAt: now,
