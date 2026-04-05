@@ -56,7 +56,7 @@ export function runSummary(run: HeartbeatRun): string {
 
 export const SOURCE_FILTER_OPTIONS = [
   { value: "all", label: "All" },
-  { value: "timer", label: "Timer" },
+  { value: "timer", label: "Heartbeat" },
   { value: "assignment", label: "Assignment" },
   { value: "on_demand", label: "On-demand" },
   { value: "automation", label: "Automation" },
