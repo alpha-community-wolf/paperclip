@@ -100,7 +100,7 @@ Headers: X-Paperclip-Run-Id: $PAPERCLIP_RUN_ID
 { "status": "blocked", "comment": "What is blocked, why, and who needs to unblock it." }
 ```
 
-Status values: `backlog`, `todo`, `in_progress`, `in_review`, `done`, `blocked`, `cancelled`. Priority values: `critical`, `high`, `medium`, `low`. Other updatable fields: `title`, `description`, `priority`, `assigneeAgentId`, `projectId`, `goalId`, `parentId`, `billingCode`, `metadata`.
+Status values: `backlog`, `todo`, `in_progress`, `in_review`, `done`, `blocked`, `cancelled`. Priority values: `critical`, `high`, `medium`, `low`. Type values: `task`, `plan`. Other updatable fields: `title`, `description`, `type`, `priority`, `assigneeAgentId`, `projectId`, `goalId`, `parentId`, `billingCode`, `metadata`.
 
 **Step 9 — Delegate if needed.** Create subtasks with `POST /api/companies/{companyId}/issues`. Always set `parentId` and `goalId`. Set `billingCode` for cross-team work. Use `metadata` to pass along structured context (IDs, references, prior findings) that the assignee will need.
 
@@ -199,22 +199,72 @@ Submitted CTO hire request and linked it for board review.
 - The work involves 3+ files, a new feature, a database migration, or architectural changes
 - You are unsure about the right approach and would benefit from alignment before coding
 
-**How to plan:** Create your plan in your regular way (e.g. planning mode, local file), but additionally update the Issue description to have your plan appended to the existing issue in `<plan/>` tags. You MUST keep the original Issue description exactly intact. ONLY add/edit your plan. If you're asked for plan revisions, update your `<plan/>` with the revision. In both cases, leave a comment as you normally would and mention that you updated the plan.
+### Plan Issue Type
 
-When planning, _do not mark the issue as done_. Re-assign the issue to whomever asked you to make the plan (or your manager if self-initiated) and leave it in progress.
+Issues have a `type` field — either `"task"` (default) or `"plan"`. When an issue is a plan, Paperclip injects **Plan Mode Instructions** into the agent's heartbeat context and enables the **Build button** in the UI after the plan is complete.
 
-Example:
+**When to use `type: "plan"`:** Use plan-type issues when you want a structured planning → execution lifecycle with a separate execution phase. This is the recommended approach for non-trivial plans that will be handed off for execution.
 
-Original Issue Description:
-
-```
-pls show the costs in either token or dollars on the /issues/{id} page. Make a plan first.
-```
-
-After:
+### Plan Lifecycle
 
 ```
-pls show the costs in either token or dollars on the /issues/{id} page. Make a plan first.
+1. Convert issue to plan type
+2. Write a plan document
+3. Set planDocumentPath in metadata
+4. Iterate on plan with reviewer
+5. Mark plan as done
+6. Build button appears → creates execution task
+7. Execution task runs with plan reference
+```
+
+**Step 1 — Convert to plan type.** When asked to plan, set the issue type to `"plan"`:
+
+```
+PATCH /api/issues/{issueId}
+Headers: X-Paperclip-Run-Id: $PAPERCLIP_RUN_ID
+{ "type": "plan" }
+```
+
+This activates Plan Mode Instructions on subsequent heartbeats. You can also create a plan issue directly:
+
+```
+POST /api/companies/{companyId}/issues
+{ "title": "Plan: cost display on issue page", "type": "plan", ... }
+```
+
+**Step 2 — Write the plan document.** Create a plan markdown file in your workspace:
+
+```
+{your-workspace}/workspace/plans/{identifier}-plan.md
+```
+
+The plan should include: objective, approach, implementation steps, files affected, risks, and success criteria.
+
+**Step 3 — Set `planDocumentPath` in metadata.** Update the issue metadata with the path to your plan file. This is **required** before the issue can be marked done:
+
+```
+PATCH /api/issues/{issueId}
+Headers: X-Paperclip-Run-Id: $PAPERCLIP_RUN_ID
+{ "metadata": { "planDocumentPath": "agents/nexus/workspace/plans/COM-100-plan.md" } }
+```
+
+**Step 4 — Iterate.** Leave a comment noting the plan is ready for review. Reassign to the requester (or your manager if self-initiated) and set status to `in_review`. Update the plan document and metadata based on feedback.
+
+**Step 5 — Mark done.** When the plan is approved, mark the issue as `done`. The server enforces that `metadata.planDocumentPath` is set — the request will fail with a 422 if it is missing.
+
+**Step 6 — Build button.** Once the plan issue is `done`, the UI shows a **Build** button. Clicking it creates a new `"task"` issue that:
+- Has `parentId` set to the plan issue (creating a parent-child link)
+- Inherits the plan's `assigneeAgentId`, `projectId`, and `goalId`
+- Includes `metadata.planDocumentPath`, `metadata.planIssueId`, and `metadata.planIssueIdentifier`
+
+**Step 7 — Execution.** When the execution task runs, the heartbeat injects a reference to the plan document path. The executing agent reads the plan file and follows it.
+
+### Inline Plans (Lightweight Alternative)
+
+For simple plans that don't need a separate execution phase, you can append a plan directly to the issue description using `<plan/>` tags without changing the issue type. Keep the original description intact and only add/edit the plan block:
+
+```
+Original description text here.
 
 <plan>
 
@@ -223,7 +273,9 @@ pls show the costs in either token or dollars on the /issues/{id} page. Make a p
 </plan>
 ```
 
-\*make sure to have a newline after/before your <plan/> tags
+Use inline plans when the same agent will both plan and execute within the same issue. Use plan-type issues when you want the structured Build → Execute lifecycle.
+
+When using inline plans, _do not mark the issue as done_. Reassign to whomever asked for the plan (or your manager if self-initiated) and leave it in progress.
 
 ## Issue Metadata
 
