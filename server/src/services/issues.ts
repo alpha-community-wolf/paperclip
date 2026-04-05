@@ -66,6 +66,8 @@ export interface IssueFilters {
   projectId?: string;
   parentId?: string;
   labelId?: string;
+  reviewerAgentId?: string;
+  approverAgentId?: string;
   q?: string;
 }
 
@@ -535,6 +537,8 @@ export function issueService(db: Db) {
       }
       if (filters?.projectId) conditions.push(eq(issues.projectId, filters.projectId));
       if (filters?.parentId) conditions.push(eq(issues.parentId, filters.parentId));
+      if (filters?.reviewerAgentId) conditions.push(eq(issues.reviewerAgentId, filters.reviewerAgentId));
+      if (filters?.approverAgentId) conditions.push(eq(issues.approverAgentId, filters.approverAgentId));
       if (filters?.labelId) {
         const labeledIssueIds = await db
           .select({ issueId: issueLabels.issueId })
@@ -761,9 +765,34 @@ export function issueService(db: Db) {
         const issueNumber = company.issueCounter;
         const identifier = `${company.issuePrefix}-${issueNumber}`;
 
+        // Auto-populate reviewer/approver from project defaults
+        let effectiveReviewerAgentId = issueData.reviewerAgentId ?? null;
+        let effectiveApproverAgentId = issueData.approverAgentId ?? null;
+        if (projectReviewBundlePolicy?.enabled) {
+          if (!effectiveReviewerAgentId && projectReviewBundlePolicy.defaultReviewerAgentId) {
+            effectiveReviewerAgentId = projectReviewBundlePolicy.defaultReviewerAgentId;
+          }
+          if (!effectiveApproverAgentId && projectReviewBundlePolicy.defaultApproverAgentId) {
+            effectiveApproverAgentId = projectReviewBundlePolicy.defaultApproverAgentId;
+          }
+          // Chain-of-command: auto-assign assignee's manager as reviewer
+          if (!effectiveReviewerAgentId && projectReviewBundlePolicy.useManagerAsReviewer && issueData.assigneeAgentId) {
+            const assigneeAgent = await tx
+              .select({ reportsTo: agents.reportsTo })
+              .from(agents)
+              .where(eq(agents.id, issueData.assigneeAgentId))
+              .then((rows) => rows[0] ?? null);
+            if (assigneeAgent?.reportsTo) {
+              effectiveReviewerAgentId = assigneeAgent.reportsTo;
+            }
+          }
+        }
+
         const values = {
           ...issueData,
           ...(executionWorkspaceSettings ? { executionWorkspaceSettings } : {}),
+          ...(effectiveReviewerAgentId && !issueData.reviewerAgentId ? { reviewerAgentId: effectiveReviewerAgentId } : {}),
+          ...(effectiveApproverAgentId && !issueData.approverAgentId ? { approverAgentId: effectiveApproverAgentId } : {}),
           reviewBundleMode,
           companyId,
           issueNumber,

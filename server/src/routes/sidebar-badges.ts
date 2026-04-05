@@ -1,7 +1,7 @@
 import { Router } from "express";
 import type { Db } from "@paperclipai/db";
-import { and, eq, sql } from "drizzle-orm";
-import { joinRequests } from "@paperclipai/db";
+import { and, eq, or, sql } from "drizzle-orm";
+import { issues as issuesTable, issueReviewBundles, joinRequests } from "@paperclipai/db";
 import {
   computeSidebarAlertsCount,
   computeSidebarInboxCount,
@@ -72,12 +72,32 @@ export function sidebarBadgeRoutes(db: Db) {
         ])
       : [0, {} as Record<string, number>];
 
+    // Count issues with submitted review bundles where the board user is reviewer/approver
+    const pendingReviews = boardUserId
+      ? await db
+          .select({ count: sql<number>`count(*)` })
+          .from(issueReviewBundles)
+          .innerJoin(issuesTable, eq(issueReviewBundles.issueId, issuesTable.id))
+          .where(
+            and(
+              eq(issueReviewBundles.companyId, companyId),
+              eq(issueReviewBundles.status, "submitted"),
+              or(
+                eq(issuesTable.reviewerUserId, boardUserId),
+                eq(issuesTable.approverUserId, boardUserId),
+              ),
+            ),
+          )
+          .then((rows) => Number(rows[0]?.count ?? 0))
+      : 0;
+
     const badges = await svc.get(companyId, {
       joinRequests: joinRequestCount,
       unreadTouchedIssues,
       dismissedFailedRunIds,
       unreadChatSessions,
       unreadChatByAgent,
+      pendingReviews,
     });
 
     const summary = await dashboard.summary(companyId);

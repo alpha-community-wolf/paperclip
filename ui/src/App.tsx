@@ -30,6 +30,7 @@ import { DesignGuide } from "./pages/DesignGuide";
 import { OrgChart } from "./pages/OrgChart";
 import { Timeline } from "./pages/Timeline";
 import { MyWork } from "./pages/MyWork";
+import { Reviews } from "./pages/Reviews";
 import { NewAgent } from "./pages/NewAgent";
 import { AuthPage } from "./pages/Auth";
 import { BoardClaimPage } from "./pages/BoardClaim";
@@ -137,6 +138,7 @@ function boardRoutes() {
       <Route path="projects/:projectId/runs/:runId" element={<ProjectDetail />} />
       <Route path="projects/:projectId/configuration" element={<ProjectDetail />} />
       <Route path="issues" element={<Issues />} />
+      <Route path="reviews" element={<Reviews />} />
       <Route path="issues/all" element={<Navigate to="/issues" replace />} />
       <Route path="issues/active" element={<Navigate to="/issues" replace />} />
       <Route path="issues/backlog" element={<Navigate to="/issues" replace />} />

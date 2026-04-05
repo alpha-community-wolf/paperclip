@@ -17,6 +17,7 @@ import {
   Briefcase,
   Play,
   MessageSquare,
+  ClipboardCheck,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { SidebarSection } from "./SidebarSection";
@@ -118,6 +119,7 @@ export function Sidebar() {
           />
           <SidebarNavItem to="/my-work" label="My Work" icon={Briefcase} />
           <SidebarNavItem to="/issues" label="Issues" icon={CircleDot} />
+          <SidebarNavItem to="/reviews" label="Reviews" icon={ClipboardCheck} badge={inboxBadge.pendingReviews} />
           <SidebarNavItem to="/runs" label="Runs" icon={Play} />
         </SidebarSection>
 
