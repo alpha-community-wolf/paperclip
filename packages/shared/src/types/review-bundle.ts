@@ -6,6 +6,10 @@ export interface ProjectReviewBundlePolicy {
   enabled: boolean;
   defaultMode?: ReviewBundleRequirementMode;
   allowIssueOverride?: boolean;
+  defaultReviewerAgentId?: string | null;
+  defaultApproverAgentId?: string | null;
+  /** When true, auto-assign the agent's manager (from chainOfCommand / reportsTo) as reviewer. */
+  useManagerAsReviewer?: boolean;
 }
 
 export type IssueReviewBundleStatus = "draft" | "submitted" | "changes_requested" | "approved";

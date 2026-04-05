@@ -226,6 +226,8 @@ export function issueRoutes(db: Db, storage: StorageService) {
       projectId: req.query.projectId as string | undefined,
       parentId: req.query.parentId as string | undefined,
       labelId: req.query.labelId as string | undefined,
+      reviewerAgentId: req.query.reviewerAgentId as string | undefined,
+      approverAgentId: req.query.approverAgentId as string | undefined,
       q: req.query.q as string | undefined,
     });
     res.json(result);

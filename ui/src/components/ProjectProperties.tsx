@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link } from "@/lib/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { Project } from "@paperclipai/shared";
+import type { Agent, Project } from "@paperclipai/shared";
 import { StatusBadge } from "./StatusBadge";
 import { cn, formatDate } from "../lib/utils";
+import { agentsApi } from "../api/agents";
 import { goalsApi } from "../api/goals";
 import { projectsApi } from "../api/projects";
 import { useCompany } from "../context/CompanyContext";
@@ -50,6 +51,9 @@ export type ProjectConfigFieldKey =
   | "review_bundle_enabled"
   | "review_bundle_default_mode"
   | "review_bundle_allow_issue_override"
+  | "review_bundle_default_reviewer"
+  | "review_bundle_default_approver"
+  | "review_bundle_use_manager_as_reviewer"
   | "execution_workspace_enabled"
   | "execution_workspace_default_mode"
   | "execution_workspace_base_ref"
@@ -220,10 +224,23 @@ export function ProjectProperties({
 
   const availableGoals = (allGoals ?? []).filter((g) => !linkedGoalIds.includes(g.id));
   const workspaces = project.workspaces ?? [];
+  const { data: allAgents } = useQuery({
+    queryKey: queryKeys.agents.list(selectedCompanyId ?? ""),
+    queryFn: () => agentsApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+  const [reviewerOpen, setReviewerOpen] = useState(false);
+  const [approverOpen, setApproverOpen] = useState(false);
+
   const reviewBundlePolicy = project.reviewBundlePolicy ?? null;
   const reviewBundlesEnabled = reviewBundlePolicy?.enabled === true;
   const reviewBundleDefaultMode = reviewBundlePolicy?.defaultMode === "required" ? "required" : "optional";
   const reviewBundleAllowIssueOverride = reviewBundlePolicy?.allowIssueOverride ?? true;
+  const defaultReviewerAgentId = reviewBundlePolicy?.defaultReviewerAgentId ?? null;
+  const defaultApproverAgentId = reviewBundlePolicy?.defaultApproverAgentId ?? null;
+  const useManagerAsReviewer = reviewBundlePolicy?.useManagerAsReviewer ?? false;
+  const defaultReviewer = defaultReviewerAgentId ? allAgents?.find((a: Agent) => a.id === defaultReviewerAgentId) : null;
+  const defaultApprover = defaultApproverAgentId ? allAgents?.find((a: Agent) => a.id === defaultApproverAgentId) : null;
   const executionWorkspacePolicy = project.executionWorkspacePolicy ?? null;
   const executionWorkspacesEnabled = executionWorkspacePolicy?.enabled === true;
   const executionWorkspaceDefaultMode =
@@ -888,6 +905,149 @@ export function ProjectProperties({
                       className={cn(
                         "inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform",
                         reviewBundleAllowIssueOverride ? "translate-x-4.5" : "translate-x-0.5",
+                      )}
+                    />
+                  </button>
+                </div>
+
+                <Separator className="my-2" />
+
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-2 text-sm">
+                    <span>Default reviewer</span>
+                    <SaveIndicator state={fieldState("review_bundle_default_reviewer")} />
+                  </div>
+                  <div className="text-[11px] text-muted-foreground">
+                    Auto-assigned as reviewer on new issues in this project.
+                  </div>
+                  <Popover open={reviewerOpen} onOpenChange={setReviewerOpen}>
+                    <PopoverTrigger asChild>
+                      <button
+                        type="button"
+                        className="mt-1 flex items-center gap-1.5 rounded border border-border px-2 py-1 text-xs hover:bg-accent"
+                      >
+                        {defaultReviewer ? (
+                          <>
+                            {defaultReviewer.icon && <span>{defaultReviewer.icon}</span>}
+                            <span>{defaultReviewer.name}</span>
+                          </>
+                        ) : (
+                          <span className="text-muted-foreground">None</span>
+                        )}
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-48 p-1" align="start">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className={cn("w-full justify-start text-xs", !defaultReviewerAgentId && "bg-accent")}
+                        onClick={() => {
+                          commitField("review_bundle_default_reviewer", updateReviewBundlePolicy({ defaultReviewerAgentId: null })!);
+                          setReviewerOpen(false);
+                        }}
+                      >
+                        None
+                      </Button>
+                      {(allAgents ?? []).map((a: Agent) => (
+                        <Button
+                          key={a.id}
+                          variant="ghost"
+                          size="sm"
+                          className={cn("w-full justify-start gap-1.5 text-xs", a.id === defaultReviewerAgentId && "bg-accent")}
+                          onClick={() => {
+                            commitField("review_bundle_default_reviewer", updateReviewBundlePolicy({ defaultReviewerAgentId: a.id })!);
+                            setReviewerOpen(false);
+                          }}
+                        >
+                          {a.icon && <span>{a.icon}</span>}
+                          {a.name}
+                        </Button>
+                      ))}
+                    </PopoverContent>
+                  </Popover>
+                </div>
+
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-2 text-sm">
+                    <span>Default approver</span>
+                    <SaveIndicator state={fieldState("review_bundle_default_approver")} />
+                  </div>
+                  <div className="text-[11px] text-muted-foreground">
+                    Auto-assigned as approver on new issues in this project.
+                  </div>
+                  <Popover open={approverOpen} onOpenChange={setApproverOpen}>
+                    <PopoverTrigger asChild>
+                      <button
+                        type="button"
+                        className="mt-1 flex items-center gap-1.5 rounded border border-border px-2 py-1 text-xs hover:bg-accent"
+                      >
+                        {defaultApprover ? (
+                          <>
+                            {defaultApprover.icon && <span>{defaultApprover.icon}</span>}
+                            <span>{defaultApprover.name}</span>
+                          </>
+                        ) : (
+                          <span className="text-muted-foreground">None</span>
+                        )}
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-48 p-1" align="start">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className={cn("w-full justify-start text-xs", !defaultApproverAgentId && "bg-accent")}
+                        onClick={() => {
+                          commitField("review_bundle_default_approver", updateReviewBundlePolicy({ defaultApproverAgentId: null })!);
+                          setApproverOpen(false);
+                        }}
+                      >
+                        None
+                      </Button>
+                      {(allAgents ?? []).map((a: Agent) => (
+                        <Button
+                          key={a.id}
+                          variant="ghost"
+                          size="sm"
+                          className={cn("w-full justify-start gap-1.5 text-xs", a.id === defaultApproverAgentId && "bg-accent")}
+                          onClick={() => {
+                            commitField("review_bundle_default_approver", updateReviewBundlePolicy({ defaultApproverAgentId: a.id })!);
+                            setApproverOpen(false);
+                          }}
+                        >
+                          {a.icon && <span>{a.icon}</span>}
+                          {a.name}
+                        </Button>
+                      ))}
+                    </PopoverContent>
+                  </Popover>
+                </div>
+
+                <div className="flex items-center justify-between gap-3">
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-2 text-sm">
+                      <span>Use manager as reviewer</span>
+                      <SaveIndicator state={fieldState("review_bundle_use_manager_as_reviewer")} />
+                    </div>
+                    <div className="text-[11px] text-muted-foreground">
+                      Auto-assign the assignee&apos;s manager (from chain of command) as reviewer when no explicit reviewer is set.
+                    </div>
+                  </div>
+                  <button
+                    className={cn(
+                      "relative inline-flex h-5 w-9 items-center rounded-full transition-colors",
+                      useManagerAsReviewer ? "bg-green-600" : "bg-muted",
+                    )}
+                    type="button"
+                    onClick={() =>
+                      commitField(
+                        "review_bundle_use_manager_as_reviewer",
+                        updateReviewBundlePolicy({ useManagerAsReviewer: !useManagerAsReviewer })!,
+                      )}
+                  >
+                    <span
+                      className={cn(
+                        "inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform",
+                        useManagerAsReviewer ? "translate-x-4.5" : "translate-x-0.5",
                       )}
                     />
                   </button>

@@ -13,10 +13,16 @@ export function parseProjectReviewBundlePolicy(raw: unknown): ProjectReviewBundl
   const enabled = typeof parsed.enabled === "boolean" ? parsed.enabled : false;
   const defaultMode = asString(parsed.defaultMode, "");
   const allowIssueOverride = typeof parsed.allowIssueOverride === "boolean" ? parsed.allowIssueOverride : undefined;
+  const defaultReviewerAgentId = asString(parsed.defaultReviewerAgentId, "") || null;
+  const defaultApproverAgentId = asString(parsed.defaultApproverAgentId, "") || null;
+  const useManagerAsReviewer = typeof parsed.useManagerAsReviewer === "boolean" ? parsed.useManagerAsReviewer : undefined;
   return {
     enabled,
     ...(defaultMode === "optional" || defaultMode === "required" ? { defaultMode } : {}),
     ...(allowIssueOverride !== undefined ? { allowIssueOverride } : {}),
+    ...(defaultReviewerAgentId ? { defaultReviewerAgentId } : {}),
+    ...(defaultApproverAgentId ? { defaultApproverAgentId } : {}),
+    ...(useManagerAsReviewer !== undefined ? { useManagerAsReviewer } : {}),
   };
 }
 

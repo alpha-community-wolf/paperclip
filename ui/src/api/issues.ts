@@ -11,6 +11,8 @@ export const issuesApi = {
       assigneeUserId?: string;
       touchedByUserId?: string;
       unreadForUserId?: string;
+      reviewerAgentId?: string;
+      approverAgentId?: string;
       labelId?: string;
       q?: string;
     },
@@ -22,6 +24,8 @@ export const issuesApi = {
     if (filters?.assigneeUserId) params.set("assigneeUserId", filters.assigneeUserId);
     if (filters?.touchedByUserId) params.set("touchedByUserId", filters.touchedByUserId);
     if (filters?.unreadForUserId) params.set("unreadForUserId", filters.unreadForUserId);
+    if (filters?.reviewerAgentId) params.set("reviewerAgentId", filters.reviewerAgentId);
+    if (filters?.approverAgentId) params.set("approverAgentId", filters.approverAgentId);
     if (filters?.labelId) params.set("labelId", filters.labelId);
     if (filters?.q) params.set("q", filters.q);
     const qs = params.toString();
