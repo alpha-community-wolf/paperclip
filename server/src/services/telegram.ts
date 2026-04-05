@@ -5,9 +5,9 @@ import https from "node:https";
 import path from "node:path";
 import { Bot, InputFile } from "grammy";
 import { run as grammyRun, type RunnerHandle } from "@grammyjs/runner";
-import { and, count, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { agents, agentTelegramConfigs, chatMessages, chatSessions } from "@paperclipai/db";
+import { agents, agentTelegramConfigs, chatMessages, chatSessions, heartbeatRuns } from "@paperclipai/db";
 import type { AgentTelegramConfig, AgentTelegramTestResult, SendTelegramNotificationOptions } from "@paperclipai/shared";
 import { logger } from "../middleware/logger.js";
 import { resolvePaperclipInstanceRoot } from "../home-paths.js";
@@ -415,18 +415,19 @@ export function telegramService(db: Db) {
     if (sessionTitle && sessionTitle !== DEFAULT_TELEGRAM_TITLE) return;
 
     try {
-      // Only trigger on the first user message in the session
-      const [{ total }] = await db
-        .select({ total: count() })
-        .from(chatMessages)
+      // Skip if an auto-title chore is already queued/running for this agent
+      const [pendingChore] = await db
+        .select({ id: heartbeatRuns.id })
+        .from(heartbeatRuns)
         .where(
           and(
-            eq(chatMessages.chatSessionId, sessionId),
-            eq(chatMessages.role, "user"),
+            eq(heartbeatRuns.agentId, agentId),
+            eq(heartbeatRuns.type, "chore"),
+            inArray(heartbeatRuns.status, ["queued", "running"]),
           ),
-        );
-
-      if (Number(total) !== 1) return;
+        )
+        .limit(1);
+      if (pendingChore) return;
 
       // Get the first user message
       const [userMessage] = await db
