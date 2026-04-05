@@ -15,6 +15,7 @@ export const issueReviewBundles = pgTable(
     submittedByAgentId: uuid("submitted_by_agent_id").references(() => agents.id, { onDelete: "set null" }),
     submittedByUserId: text("submitted_by_user_id"),
     decidedByUserId: text("decided_by_user_id"),
+    decidedByAgentId: uuid("decided_by_agent_id").references(() => agents.id, { onDelete: "set null" }),
     summary: text("summary").notNull().default(""),
     deliverable: text("deliverable").notNull().default(""),
     testingNotes: text("testing_notes"),
