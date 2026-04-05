@@ -38,6 +38,8 @@ import {
   Paperclip,
   Loader2,
   Settings2,
+  ListChecks,
+  Map,
 } from "lucide-react";
 import { cn } from "../lib/utils";
 import { extractProviderIdWithFallback } from "../lib/model-utils";
@@ -65,6 +67,7 @@ function getContrastTextColor(hexColor: string): string {
 interface IssueDraft {
   title: string;
   description: string;
+  type: "task" | "plan";
   status: string;
   priority: string;
   assigneeId: string;
@@ -175,12 +178,18 @@ const priorities = [
   { value: "low", label: "Low", icon: ArrowDown, color: priorityColor.low ?? priorityColorDefault },
 ];
 
+const issueTypes = [
+  { value: "task", label: "Task", icon: ListChecks },
+  { value: "plan", label: "Plan", icon: Map },
+] as const;
+
 export function NewIssueDialog() {
   const { newIssueOpen, newIssueDefaults, closeNewIssue } = useDialog();
   const { companies, selectedCompanyId, selectedCompany } = useCompany();
   const queryClient = useQueryClient();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [type, setType] = useState<"task" | "plan">("task");
   const [status, setStatus] = useState("todo");
   const [priority, setPriority] = useState("");
   const [assigneeId, setAssigneeId] = useState("");
@@ -210,6 +219,7 @@ export function NewIssueDialog() {
   const dialogCompany = companies.find((c) => c.id === effectiveCompanyId) ?? selectedCompany;
 
   // Popover states
+  const [typeOpen, setTypeOpen] = useState(false);
   const [statusOpen, setStatusOpen] = useState(false);
   const [priorityOpen, setPriorityOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
@@ -344,6 +354,7 @@ export function NewIssueDialog() {
     scheduleSave({
       title,
       description,
+      type,
       status,
       priority,
       assigneeId,
@@ -362,6 +373,7 @@ export function NewIssueDialog() {
   }, [
     title,
     description,
+    type,
     status,
     priority,
     assigneeId,
@@ -390,6 +402,7 @@ export function NewIssueDialog() {
     if (newIssueDefaults.title) {
       setTitle(newIssueDefaults.title);
       setDescription(newIssueDefaults.description ?? "");
+      setType(newIssueDefaults.type === "plan" ? "plan" : "task");
       setStatus(newIssueDefaults.status ?? "todo");
       setPriority(newIssueDefaults.priority ?? "");
       setProjectId(newIssueDefaults.projectId ?? "");
@@ -408,6 +421,7 @@ export function NewIssueDialog() {
     } else if (draft && draft.title.trim()) {
       setTitle(draft.title);
       setDescription(draft.description);
+      setType(draft.type === "plan" ? "plan" : "task");
       setStatus(draft.status || "todo");
       setPriority(draft.priority);
       setAssigneeId(newIssueDefaults.assigneeAgentId ?? draft.assigneeId);
@@ -426,6 +440,7 @@ export function NewIssueDialog() {
     } else {
       setTitle(newIssueDefaults.title ?? "");
       setDescription(newIssueDefaults.description ?? "");
+      setType(newIssueDefaults.type === "plan" ? "plan" : "task");
       setStatus(newIssueDefaults.status ?? "todo");
       setPriority(newIssueDefaults.priority ?? "");
       setProjectId(newIssueDefaults.projectId ?? "");
@@ -475,6 +490,7 @@ export function NewIssueDialog() {
   function reset() {
     setTitle("");
     setDescription("");
+    setType("task");
     setStatus("todo");
     setPriority("");
     setAssigneeId("");
@@ -547,6 +563,7 @@ export function NewIssueDialog() {
       companyId: effectiveCompanyId,
       title: title.trim(),
       description: description.trim() || undefined,
+      type,
       status,
       priority: priority || "medium",
       ...(assigneeId ? { assigneeAgentId: assigneeId } : {}),
@@ -931,6 +948,34 @@ export function NewIssueDialog() {
                 );
               }}
             />
+
+            <Popover open={typeOpen} onOpenChange={setTypeOpen}>
+              <PopoverTrigger asChild>
+                <button className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors">
+                  {type === "plan" ? (
+                    <Map className="h-3 w-3 text-blue-500" />
+                  ) : (
+                    <ListChecks className="h-3 w-3 text-muted-foreground" />
+                  )}
+                  {issueTypes.find((t) => t.value === type)?.label ?? "Task"}
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="w-36 p-1" align="start">
+                {issueTypes.map((t) => (
+                  <button
+                    key={t.value}
+                    className={cn(
+                      "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
+                      t.value === type && "bg-accent"
+                    )}
+                    onClick={() => { setType(t.value); setTypeOpen(false); }}
+                  >
+                    <t.icon className={cn("h-3 w-3", t.value === "plan" ? "text-blue-500" : "text-muted-foreground")} />
+                    {t.label}
+                  </button>
+                ))}
+              </PopoverContent>
+            </Popover>
 
             <Popover open={statusOpen} onOpenChange={setStatusOpen}>
               <PopoverTrigger asChild>
