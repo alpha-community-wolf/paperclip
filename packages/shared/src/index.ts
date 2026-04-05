@@ -367,6 +367,18 @@ export {
   sendTelegramMessageSchema,
   type UpsertTelegramConfig,
   type UpdateTelegramConfig,
+  createSharedMemorySchema,
+  updateSharedMemorySchema,
+  searchSharedMemoryQuerySchema,
+  verifySharedMemorySchema,
+  SHARED_MEMORY_SCOPES,
+  SHARED_MEMORY_CATEGORIES,
+  SHARED_MEMORY_STATUSES,
+  SHARED_MEMORY_SOURCE_TYPES,
+  type CreateSharedMemory,
+  type UpdateSharedMemory,
+  type SearchSharedMemoryQuery,
+  type VerifySharedMemory,
 } from "./validators/index.js";
 
 export { sanitizeCommentBody } from "./sanitize-comment.js";

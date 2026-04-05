@@ -238,3 +238,18 @@ export {
   type UpdateTelegramConfig,
   type SendTelegramMessage,
 } from "./telegram.js";
+
+export {
+  createSharedMemorySchema,
+  updateSharedMemorySchema,
+  searchSharedMemoryQuerySchema,
+  verifySharedMemorySchema,
+  SHARED_MEMORY_SCOPES,
+  SHARED_MEMORY_CATEGORIES,
+  SHARED_MEMORY_STATUSES,
+  SHARED_MEMORY_SOURCE_TYPES,
+  type CreateSharedMemory,
+  type UpdateSharedMemory,
+  type SearchSharedMemoryQuery,
+  type VerifySharedMemory,
+} from "./shared-memory.js";

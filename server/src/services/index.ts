@@ -35,3 +35,4 @@ export { reconcilePersistedRuntimeServicesOnStartup, stopAllRuntimeServices } fr
 export { createStorageServiceFromConfig, getStorageService } from "../storage/index.js";
 export { telegramService } from "./telegram.js";
 export { timelineService } from "./timeline.js";
+export { sharedMemoryService } from "./shared-memories.js";

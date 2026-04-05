@@ -36,6 +36,7 @@ import { workspaceFileRoutes } from "./routes/workspace-files.js";
 import { memorySearchRoutes } from "./routes/memory-search.js";
 import { mcpServerRoutes } from "./routes/mcp-servers.js";
 import { telegramRoutes } from "./routes/telegram.js";
+import { sharedMemoryRoutes } from "./routes/shared-memories.js";
 import { applyUiBranding } from "./ui-branding.js";
 import type { BetterAuthSessionResult } from "./auth/better-auth.js";
 import { eventRoutingService } from "./services/event-routing.js";
@@ -147,6 +148,7 @@ export async function createApp(
   api.use(memorySearchRoutes(db));
   api.use(mcpServerRoutes(db));
   api.use(telegramRoutes(db));
+  api.use(sharedMemoryRoutes(db));
   api.use(
     accessRoutes(db, {
       deploymentMode: opts.deploymentMode,
