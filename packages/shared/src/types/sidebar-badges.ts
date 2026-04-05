@@ -10,4 +10,6 @@ export interface SidebarBadges {
   unreadChatByAgent: Record<string, number>;
   /** Issues with a submitted (pending) review bundle where the current user/agent is the reviewer or approver. */
   pendingReviews: number;
+  /** Count of items on the My Work page: assigned issues + in-review issues. */
+  myWork: number;
 }

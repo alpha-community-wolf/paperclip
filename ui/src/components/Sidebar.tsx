@@ -117,7 +117,7 @@ export function Sidebar() {
             badgeTone={inboxBadge.failedRuns > 0 ? "danger" : "default"}
             alert={inboxBadge.failedRuns > 0}
           />
-          <SidebarNavItem to="/my-work" label="My Work" icon={Briefcase} />
+          <SidebarNavItem to="/my-work" label="My Work" icon={Briefcase} badge={inboxBadge.myWork} />
           <SidebarNavItem to="/issues" label="Issues" icon={CircleDot} />
           <SidebarNavItem to="/reviews" label="Reviews" icon={ClipboardCheck} badge={inboxBadge.pendingReviews} />
           <SidebarNavItem to="/runs" label="Runs" icon={Play} />
