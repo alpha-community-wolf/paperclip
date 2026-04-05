@@ -178,7 +178,7 @@ async function withAgentStartLock<T>(agentId: string, fn: () => Promise<T>) {
 
 interface WakeupOptions {
   source?: "timer" | "assignment" | "on_demand" | "automation";
-  triggerDetail?: "manual" | "ping" | "callback" | "system" | "task_cron" | "event_router" | "dependency_trigger" | "approval" | "comment" | "comment_mention" | "board_comment" | "chat";
+  triggerDetail?: "manual" | "ping" | "callback" | "system" | "task_cron" | "event_router" | "dependency_trigger" | "approval" | "comment" | "comment_mention" | "board_comment" | "chat" | "review_bundle";
   reason?: string | null;
   payload?: Record<string, unknown> | null;
   idempotencyKey?: string | null;
