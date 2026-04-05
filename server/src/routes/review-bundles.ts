@@ -104,14 +104,21 @@ export function reviewBundleRoutes(db: Db) {
     const id = req.params.id as string;
     const issue = await requireIssue(req, res, id);
     if (!issue) return;
-    if (req.actor.type !== "board") {
-      res.status(403).json({ error: "Only board users can approve review bundles" });
+
+    const isDesignatedReviewer =
+      req.actor.type === "agent" &&
+      !!req.actor.agentId &&
+      (issue.reviewerAgentId === req.actor.agentId || issue.approverAgentId === req.actor.agentId);
+
+    if (req.actor.type !== "board" && !isDesignatedReviewer) {
+      res.status(403).json({ error: "Only board users or designated reviewer/approver agents can approve review bundles" });
       return;
     }
 
     const actor = getActorInfo(req);
     const bundle = await reviewBundlesSvc.approve(issue.id, {
-      decidedByUserId: req.body.decidedByUserId ?? actor.actorId,
+      decidedByUserId: req.body.decidedByUserId ?? (actor.actorType === "user" ? actor.actorId : "agent"),
+      decidedByAgentId: actor.agentId ?? req.body.decidedByAgentId ?? null,
       decisionNote: req.body.decisionNote,
     });
 
@@ -141,14 +148,21 @@ export function reviewBundleRoutes(db: Db) {
       const id = req.params.id as string;
       const issue = await requireIssue(req, res, id);
       if (!issue) return;
-      if (req.actor.type !== "board") {
-        res.status(403).json({ error: "Only board users can request review changes" });
+
+      const isDesignatedReviewer =
+        req.actor.type === "agent" &&
+        !!req.actor.agentId &&
+        (issue.reviewerAgentId === req.actor.agentId || issue.approverAgentId === req.actor.agentId);
+
+      if (req.actor.type !== "board" && !isDesignatedReviewer) {
+        res.status(403).json({ error: "Only board users or designated reviewer/approver agents can request review changes" });
         return;
       }
 
       const actor = getActorInfo(req);
       const bundle = await reviewBundlesSvc.requestChanges(issue.id, {
-        decidedByUserId: req.body.decidedByUserId ?? actor.actorId,
+        decidedByUserId: req.body.decidedByUserId ?? (actor.actorType === "user" ? actor.actorId : "agent"),
+        decidedByAgentId: actor.agentId ?? req.body.decidedByAgentId ?? null,
         decisionNote: req.body.decisionNote,
       });
 

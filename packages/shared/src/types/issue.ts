@@ -80,6 +80,10 @@ export interface Issue {
   executionWorkspaceSettings: IssueExecutionWorkspaceSettings | null;
   metadata: Record<string, unknown> | null;
   reviewBundleMode?: IssueReviewBundleMode;
+  reviewerAgentId: string | null;
+  reviewerUserId: string | null;
+  approverAgentId: string | null;
+  approverUserId: string | null;
   startedAt: Date | null;
   completedAt: Date | null;
   cancelledAt: Date | null;

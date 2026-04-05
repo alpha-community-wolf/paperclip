@@ -67,6 +67,7 @@ export type SubmitIssueReviewBundle = z.infer<typeof submitIssueReviewBundleSche
 export const resolveIssueReviewBundleSchema = z.object({
   decisionNote: z.string().trim().max(4000).optional().nullable(),
   decidedByUserId: z.string().optional().default("board"),
+  decidedByAgentId: z.string().uuid().optional().nullable(),
 });
 
 export type ResolveIssueReviewBundle = z.infer<typeof resolveIssueReviewBundleSchema>;

@@ -31,6 +31,7 @@ export interface IssueReviewBundle {
   submittedByAgentId: string | null;
   submittedByUserId: string | null;
   decidedByUserId: string | null;
+  decidedByAgentId: string | null;
   summary: string;
   deliverable: string;
   testingNotes: string | null;
