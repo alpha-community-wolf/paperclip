@@ -22,6 +22,7 @@ import {
   projectWorkspaces,
 } from "@paperclipai/db";
 import { conflict, notFound } from "../errors.js";
+import { sharedMemoryService } from "./shared-memories.js";
 import { logger } from "../middleware/logger.js";
 import { publishLiveEvent } from "./live-events.js";
 import { getRunLogStore, type RunLogHandle } from "./run-log-store.js";
@@ -642,6 +643,7 @@ async function buildAgentSelfContext(
             priority: issues.priority,
             description: issues.description,
             metadata: issues.metadata,
+            projectId: issues.projectId,
           })
           .from(issues)
           .where(and(eq(issues.id, issueId), eq(issues.companyId, agent.companyId)))
@@ -858,6 +860,67 @@ async function buildAgentSelfContext(
         // Missing memory directory or unreadable — silently skip
       }
     }
+  }
+
+  // Inject shared memories (company-wide + project-scoped)
+  try {
+    const sharedMemSvc = sharedMemoryService(db);
+    const companyMemoryTopK = Math.min(
+      Math.max(0, Number(config.companyMemoryTopK) || 3),
+      10,
+    );
+    const sharedMemoryMaxChars = Math.min(
+      Math.max(0, Number(config.sharedMemoryMaxChars) || 2000),
+      8000,
+    );
+
+    if (sharedMemoryMaxChars > 0) {
+      let totalChars = 0;
+
+      // Project-scoped memories (if working on a project issue)
+      const projectId = currentIssue?.projectId;
+      if (projectId) {
+        const projectMemoryTopK = Math.min(
+          Math.max(0, Number(config.sharedMemoryTopK) || 10),
+          20,
+        );
+        const projectMemories = await sharedMemSvc.getTopForInjection(agent.companyId, {
+          scope: "project",
+          projectId,
+          limit: projectMemoryTopK,
+        });
+        if (projectMemories.length > 0) {
+          lines.push("");
+          lines.push("## Project Knowledge");
+          for (const mem of projectMemories) {
+            const entry = `- [${mem.category}] ${mem.content}`;
+            if (totalChars + entry.length > sharedMemoryMaxChars) break;
+            lines.push(entry);
+            totalChars += entry.length;
+          }
+        }
+      }
+
+      // Company-wide memories
+      if (companyMemoryTopK > 0) {
+        const companyMemories = await sharedMemSvc.getTopForInjection(agent.companyId, {
+          scope: "company",
+          limit: companyMemoryTopK,
+        });
+        if (companyMemories.length > 0) {
+          lines.push("");
+          lines.push("## Company Knowledge");
+          for (const mem of companyMemories) {
+            const entry = `- [${mem.category}] ${mem.content}`;
+            if (totalChars + entry.length > sharedMemoryMaxChars) break;
+            lines.push(entry);
+            totalChars += entry.length;
+          }
+        }
+      }
+    }
+  } catch {
+    // Shared memory injection is best-effort — don't fail the heartbeat
   }
 
   return lines.join("\n");
