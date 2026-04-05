@@ -116,7 +116,7 @@ export const priorityColorDefault = "text-yellow-600 dark:text-yellow-400";
 // ---------------------------------------------------------------------------
 
 export const invocationSourceLabel: Record<string, string> = {
-  timer: "Timer",
+  timer: "Heartbeat",
   assignment: "Assignment",
   on_demand: "On-demand",
   automation: "Automation",
