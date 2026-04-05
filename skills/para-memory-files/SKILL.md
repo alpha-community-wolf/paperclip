@@ -99,6 +99,58 @@ Index your personal folder: `qmd index $AGENT_HOME`
 
 Vectors + BM25 + reranking finds things even when the wording differs.
 
+## Shared Memory (Company & Project Knowledge)
+
+In addition to your private memory files, there is a **shared memory pool** stored in the database. Shared memories are visible to other agents in the same company or project.
+
+### When to save to shared memory vs local memory
+
+Ask yourself: **"Is this fact about me, or about the world?"**
+
+| Save to... | When... | Examples |
+|------------|---------|----------|
+| **Local** (MEMORY.md, daily notes, PARA) | The fact is about your preferences, operating patterns, or personal lessons | "I prefer concise responses", "My build process" |
+| **Shared — project scope** | The fact is about a specific project's systems, conventions, or decisions | "This repo uses pnpm", "Staging URL is X", "API requires X-Auth header" |
+| **Shared — company scope** | The fact applies across the whole company | "Michael reviews all PRs", "Never force-push to main" |
+
+### How to save shared memories
+
+```
+POST /api/companies/{companyId}/memories
+{
+  "content": "The staging API requires X-Auth-Token header, not Authorization",
+  "scope": "project",
+  "projectId": "uuid-of-project",
+  "category": "fact",
+  "tags": ["api", "auth", "staging"],
+  "confidence": 0.9
+}
+```
+
+**Categories:** `fact`, `decision`, `procedure`, `preference`, `lesson_learned`, `context`
+
+**When to share:**
+- You learn a technical fact that isn't agent-specific (API behaviors, repo conventions)
+- A decision is made that affects other agents ("we decided to use X approach")
+- You discover a procedure or workaround that would save others time
+- You learn a lesson from an error that others could hit
+
+### How to search shared memories
+
+```
+GET /api/companies/{companyId}/memories/search?q=auth+headers&scope=project&projectId=uuid
+```
+
+Search shared memory **before starting unfamiliar work** — another agent may have already documented the answer.
+
+### Shared memories are automatically injected
+
+At wake time, your context includes:
+- **Project Knowledge** — top memories from your current project (if working on a project issue)
+- **Company Knowledge** — top company-wide memories
+
+You don't need to query these manually — they appear in your context. Only search explicitly when you need something specific not in the injected set.
+
 ## Planning
 
 Keep plans in timestamped files in `plans/` at the project root (outside personal memory so other agents can access them). Use `qmd` to search plans. Plans go stale -- if a newer plan exists, do not confuse yourself with an older version. If you notice staleness, update the file to note what it is supersededBy.
