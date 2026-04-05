@@ -1,6 +1,6 @@
 import { Router } from "express";
 import type { Db } from "@paperclipai/db";
-import { and, eq, or, sql } from "drizzle-orm";
+import { and, eq, or, not, inArray, isNull, sql } from "drizzle-orm";
 import { issues as issuesTable, issueReviewBundles, joinRequests } from "@paperclipai/db";
 import {
   computeSidebarAlertsCount,
@@ -91,6 +91,30 @@ export function sidebarBadgeRoutes(db: Db) {
           .then((rows) => Number(rows[0]?.count ?? 0))
       : 0;
 
+    // My Work badge: issues assigned to board user (active) + all in_review issues
+    const MY_WORK_EXCLUDED_STATUSES = ["done", "cancelled", "in_review"];
+    const myWorkCount = boardUserId
+      ? await db
+          .select({ count: sql<number>`count(*)` })
+          .from(issuesTable)
+          .where(
+            and(
+              eq(issuesTable.companyId, companyId),
+              isNull(issuesTable.hiddenAt),
+              or(
+                // Issues assigned to me in active statuses
+                and(
+                  eq(issuesTable.assigneeUserId, boardUserId),
+                  not(inArray(issuesTable.status, MY_WORK_EXCLUDED_STATUSES)),
+                ),
+                // All issues in review (need human eyes)
+                eq(issuesTable.status, "in_review"),
+              ),
+            ),
+          )
+          .then((rows) => Number(rows[0]?.count ?? 0))
+      : 0;
+
     const badges = await svc.get(companyId, {
       joinRequests: joinRequestCount,
       unreadTouchedIssues,
@@ -98,6 +122,7 @@ export function sidebarBadgeRoutes(db: Db) {
       unreadChatSessions,
       unreadChatByAgent,
       pendingReviews,
+      myWork: myWorkCount,
     });
 
     const summary = await dashboard.summary(companyId);
