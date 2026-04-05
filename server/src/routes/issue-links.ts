@@ -11,6 +11,22 @@ export function issueLinkRoutes(db: Db) {
   const svc = issueLinkService(db);
   const issueSvc = issueService(db);
 
+  // Resolve issue identifiers (e.g. "COM-42") to UUIDs so link
+  // endpoints work when the frontend navigates by identifier.
+  router.param("issueId", async (req, _res, next, rawId) => {
+    try {
+      if (/^[A-Z]+-\d+$/i.test(rawId)) {
+        const issue = await issueSvc.getByIdentifier(rawId);
+        if (issue) {
+          req.params.issueId = issue.id;
+        }
+      }
+      next();
+    } catch (err) {
+      next(err);
+    }
+  });
+
   // GET /api/issues/:issueId/links — List all links for an issue
   router.get("/issues/:issueId/links", async (req, res) => {
     const { issueId } = req.params;
@@ -20,7 +36,7 @@ export function issueLinkRoutes(db: Db) {
       return;
     }
     assertCompanyAccess(req, issue.companyId);
-    const links = await svc.listForIssue(issueId as string);
+    const links = await svc.listForIssue(issue.id);
     res.json(links);
   });
 
@@ -39,7 +55,7 @@ export function issueLinkRoutes(db: Db) {
 
       const actor = getActorInfo(req);
       const link = await svc.create(
-        issueId as string,
+        issue.id,
         req.body,
         { agentId: actor.agentId, userId: actor.actorType === "user" ? actor.actorId : null },
       );
