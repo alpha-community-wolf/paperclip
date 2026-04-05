@@ -3,6 +3,7 @@ import { createContext, useCallback, useContext, useMemo, useState, type ReactNo
 interface NewIssueDefaults {
   status?: string;
   priority?: string;
+  type?: "task" | "plan";
   projectId?: string;
   assigneeAgentId?: string;
   title?: string;
