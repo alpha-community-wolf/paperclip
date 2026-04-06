@@ -18,7 +18,7 @@ import { timeAgo } from "../lib/timeAgo";
 import { resolveEffectiveReviewBundleMode } from "../lib/review-bundles";
 import { Separator } from "@/components/ui/separator";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { User, Hexagon, ArrowUpRight, Tag, Plus, Trash2 } from "lucide-react";
+import { User, Hexagon, ArrowUpRight, Tag, Plus, Trash2, ListChecks, Map } from "lucide-react";
 import { AgentIcon } from "./AgentIconPicker";
 
 // TODO(issue-worktree-support): re-enable this UI once the workflow is ready to ship.
@@ -497,6 +497,25 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
             onChange={(priority) => onUpdate({ priority })}
             showLabel
           />
+        </PropertyRow>
+
+        <PropertyRow label="Type">
+          <button
+            onClick={() => onUpdate({ type: issue.type === "plan" ? "task" : "plan" })}
+            className="flex items-center gap-1.5 text-xs text-foreground hover:text-foreground/80 transition-colors"
+          >
+            {issue.type === "plan" ? (
+              <>
+                <Map className="h-3.5 w-3.5 text-violet-500" />
+                <span>Plan</span>
+              </>
+            ) : (
+              <>
+                <ListChecks className="h-3.5 w-3.5 text-muted-foreground" />
+                <span>Task</span>
+              </>
+            )}
+          </button>
         </PropertyRow>
 
         <PropertyPicker
