@@ -18,6 +18,7 @@ import {
   Play,
   MessageSquare,
   ClipboardCheck,
+  Brain,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { SidebarSection } from "./SidebarSection";
@@ -133,6 +134,7 @@ export function Sidebar() {
         </SidebarSection>
 
         <SidebarSection label="Company" defaultOpen={false}>
+          <SidebarNavItem to="/knowledge" label="Knowledge" icon={Brain} />
           <SidebarNavItem to="/org" label="Org" icon={Network} />
           <SidebarNavItem to="/costs" label="Costs" icon={DollarSign} />
           <SidebarNavItem to="/activity" label="Activity" icon={History} />
