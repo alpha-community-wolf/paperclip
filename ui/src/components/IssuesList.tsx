@@ -600,7 +600,7 @@ export function IssuesList({
       to={`/issues/${issue.identifier ?? issue.id}`}
       state={issueLinkState}
       className={cn(
-        "group/row flex items-start gap-2 py-2.5 pl-3 pr-3 text-sm last:border-b-0 cursor-pointer hover:bg-accent/50 transition-colors no-underline text-inherit sm:grid sm:grid-cols-[auto_auto_1fr_auto_auto_auto] sm:items-center sm:py-2",
+        "group/row flex items-start gap-2 py-2.5 pl-3 pr-3 text-sm last:border-b-0 cursor-pointer hover:bg-accent/50 transition-colors no-underline text-inherit sm:grid sm:grid-cols-[auto_auto_minmax(0,1fr)_auto_auto_auto] sm:items-center sm:py-2 sm:min-w-[800px]",
         isKbSelected && "ring-2 ring-inset ring-primary bg-accent/60",
         isChecked && "bg-primary/5",
       )}
@@ -1793,7 +1793,7 @@ function IssueSection({
         </div>
       )}
       <CollapsibleContent>
-        <div className="border border-border rounded-lg divide-y divide-border mb-4">
+        <div className="border border-border rounded-lg divide-y divide-border mb-4 overflow-x-auto">
           {items.map(renderRow)}
         </div>
       </CollapsibleContent>
