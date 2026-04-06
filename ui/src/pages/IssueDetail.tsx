@@ -22,6 +22,7 @@ import { resolveEffectiveReviewBundleMode } from "../lib/review-bundles";
 import { InlineEditor } from "../components/InlineEditor";
 import { CommentThread } from "../components/CommentThread";
 import { IssueProperties } from "../components/IssueProperties";
+import { IssueMemorySidebar } from "../components/IssueMemorySidebar";
 import { LiveRunWidget } from "../components/LiveRunWidget";
 import type { MentionOption } from "../components/MarkdownEditor";
 import { ScrollToBottom } from "../components/ScrollToBottom";
@@ -1657,8 +1658,9 @@ export function IssueDetail() {
     </div>
     {/* Desktop inline properties panel */}
     <aside className="hidden md:block w-72 shrink-0">
-      <div className="sticky top-6">
+      <div className="sticky top-6 space-y-6">
         <IssueProperties issue={issue} onUpdate={(data) => updateIssue.mutate(data)} />
+        <IssueMemorySidebar issue={issue} />
       </div>
     </aside>
     </div>

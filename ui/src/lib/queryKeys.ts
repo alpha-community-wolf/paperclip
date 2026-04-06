@@ -124,6 +124,16 @@ export const queryKeys = {
   telegram: (agentId: string) => ["telegram", agentId] as const,
   mcpInstructions: (agentId: string, serverName: string) =>
     ["mcp-instructions", agentId, serverName] as const,
+  memories: {
+    list: (companyId: string, filters?: Record<string, string | undefined>) =>
+      ["memories", companyId, "list", filters] as const,
+    search: (companyId: string, q: string) => ["memories", companyId, "search", q] as const,
+    detail: (id: string) => ["memories", "detail", id] as const,
+    conflicts: (companyId: string) => ["memories", companyId, "conflicts"] as const,
+    duplicates: (id: string) => ["memories", "duplicates", id] as const,
+    forIssue: (companyId: string, projectId: string, tags: string) =>
+      ["memories", companyId, "for-issue", projectId, tags] as const,
+  },
   inboxDismissals: (companyId: string) => ["inbox-dismissals", companyId] as const,
   inboxFeed: (companyId: string) => ["inbox-feed", companyId] as const,
   org: (companyId: string) => ["org", companyId] as const,

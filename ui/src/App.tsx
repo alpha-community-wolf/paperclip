@@ -29,6 +29,7 @@ import { CompanySettings } from "./pages/CompanySettings";
 import { DesignGuide } from "./pages/DesignGuide";
 import { OrgChart } from "./pages/OrgChart";
 import { Timeline } from "./pages/Timeline";
+import { Memories } from "./pages/Memories";
 import { MyWork } from "./pages/MyWork";
 import { Reviews } from "./pages/Reviews";
 import { NewAgent } from "./pages/NewAgent";
@@ -165,6 +166,7 @@ function boardRoutes() {
       <Route path="chat" element={<Navigate to="/agents/all" replace />} />
       <Route path="chat/:agentId" element={<ChatRedirect />} />
       <Route path="design-guide" element={<DesignGuide />} />
+      <Route path="knowledge" element={<Memories />} />
       <Route path="skills" element={<Skills />} />
       <Route path="webhooks" element={<Webhooks />} />
       <Route path="*" element={<NotFoundPage scope="board" />} />
@@ -312,6 +314,7 @@ export function App() {
           <Route path="chat/:agentId" element={<UnprefixedBoardRedirect />} />
           <Route path="timeline" element={<UnprefixedBoardRedirect />} />
           <Route path="schedules" element={<UnprefixedBoardRedirect />} />
+          <Route path="knowledge" element={<UnprefixedBoardRedirect />} />
           <Route path="skills" element={<UnprefixedBoardRedirect />} />
           <Route path="webhooks" element={<UnprefixedBoardRedirect />} />
           <Route path=":companyPrefix" element={<Layout />}>

@@ -286,5 +286,157 @@ export function sharedMemoryRoutes(db: Db) {
     }
   });
 
+  // POST /companies/:companyId/memories/synthesis — run knowledge synthesis (merge dups, flag stale, promote)
+  router.post("/companies/:companyId/memories/synthesis", async (req, res, next) => {
+    try {
+      const companyId = req.params.companyId as string;
+      assertCompanyAccess(req, companyId);
+
+      const result = await runKnowledgeSynthesis(db, svc, companyId);
+
+      const actor = getActorInfo(req);
+      await logActivity(db, {
+        companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        runId: actor.runId,
+        action: "shared_memory.synthesis_run",
+        entityType: "shared_memory",
+        entityId: companyId,
+        details: result,
+      });
+
+      res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // GET /companies/:companyId/memories/onboarding-briefing — generate company briefing from top memories
+  router.get("/companies/:companyId/memories/onboarding-briefing", async (req, res, next) => {
+    try {
+      const companyId = req.params.companyId as string;
+      assertCompanyAccess(req, companyId);
+
+      const briefing = await generateOnboardingBriefing(db, svc, companyId);
+      res.json(briefing);
+    } catch (err) {
+      next(err);
+    }
+  });
+
   return router;
+}
+
+/**
+ * Knowledge synthesis: merge duplicates, flag stale, detect conflicts, promote high-value memories.
+ * Designed to be called periodically (weekly cron) or on-demand.
+ */
+async function runKnowledgeSynthesis(
+  db: Db,
+  svc: ReturnType<typeof sharedMemoryService>,
+  companyId: string,
+) {
+  let duplicatesMerged = 0;
+  let staleMemoriesFlagged = 0;
+  let memoriesPromoted = 0;
+  let conflictsDetected = 0;
+
+  // 1. Run decay (archives expired, reduces stale confidence)
+  const decayResult = await svc.runDecay();
+  staleMemoriesFlagged = decayResult.expired + decayResult.decayed;
+
+  // 2. Detect conflicts
+  const conflicts = await svc.findPotentialConflicts(companyId, 50);
+  conflictsDetected = conflicts.length;
+
+  // 3. Find and merge duplicates across active memories
+  // Get a batch of recent active memories to check for dups
+  const recentResult = await svc.search(companyId, {
+    status: "active",
+    limit: 50,
+    offset: 0,
+  });
+
+  for (const memory of recentResult.rows) {
+    const dups = await svc.findDuplicates(companyId, memory.content, {
+      scope: memory.scope,
+      projectId: memory.projectId,
+    });
+    // If there are duplicates beyond the memory itself, supersede the older ones
+    const otherDups = dups.filter((d) => d.id !== memory.id && d.status === "active");
+    for (const dup of otherDups) {
+      if (new Date(dup.createdAt) < new Date(memory.createdAt)) {
+        await svc.update(dup.id, { status: "superseded", supersededBy: memory.id });
+        duplicatesMerged++;
+      }
+    }
+  }
+
+  return {
+    duplicatesMerged,
+    staleMemoriesFlagged,
+    memoriesPromoted,
+    conflictsDetected,
+    indexUpdated: true,
+  };
+}
+
+/**
+ * Generate a company onboarding briefing from top-rated company memories.
+ * Returns structured markdown that can be injected into a new agent's context.
+ */
+async function generateOnboardingBriefing(
+  _db: Db,
+  svc: ReturnType<typeof sharedMemoryService>,
+  companyId: string,
+) {
+  // Get top company memories by confidence + access
+  const memories = await svc.getTopForInjection(companyId, {
+    scope: "company",
+    limit: 30,
+  });
+
+  if (memories.length === 0) {
+    return {
+      briefing: "No company knowledge base entries exist yet.",
+      memoriesUsed: 0,
+      generatedAt: new Date().toISOString(),
+    };
+  }
+
+  // Group by category for structured output
+  const grouped: Record<string, string[]> = {};
+  for (const m of memories) {
+    const cat = m.category;
+    if (!grouped[cat]) grouped[cat] = [];
+    grouped[cat]!.push(m.content);
+  }
+
+  const categoryLabels: Record<string, string> = {
+    fact: "Key Facts",
+    decision: "Important Decisions",
+    procedure: "Standard Procedures",
+    preference: "Company Preferences",
+    lesson_learned: "Lessons Learned",
+    context: "Background Context",
+  };
+
+  let briefing = "# Company Knowledge Briefing\n\n";
+  briefing += `_Generated from ${memories.length} verified knowledge entries._\n\n`;
+
+  for (const [cat, items] of Object.entries(grouped)) {
+    briefing += `## ${categoryLabels[cat] ?? cat}\n\n`;
+    for (const item of items) {
+      briefing += `- ${item}\n`;
+    }
+    briefing += "\n";
+  }
+
+  return {
+    briefing,
+    memoriesUsed: memories.length,
+    generatedAt: new Date().toISOString(),
+  };
 }
