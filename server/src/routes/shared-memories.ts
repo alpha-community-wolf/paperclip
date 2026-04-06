@@ -90,6 +90,84 @@ export function sharedMemoryRoutes(db: Db) {
     }
   });
 
+  // POST /companies/:companyId/memories/decay — trigger memory decay (for scheduled jobs)
+  router.post("/companies/:companyId/memories/decay", async (req, res, next) => {
+    try {
+      const companyId = req.params.companyId as string;
+      assertCompanyAccess(req, companyId);
+
+      const result = await svc.runDecay();
+
+      const actor = getActorInfo(req);
+      await logActivity(db, {
+        companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        runId: actor.runId,
+        action: "shared_memory.decay_run",
+        entityType: "shared_memory",
+        entityId: companyId,
+        details: result,
+      });
+
+      res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // GET /companies/:companyId/memories/conflicts — find potential conflicting memories
+  router.get("/companies/:companyId/memories/conflicts", async (req, res, next) => {
+    try {
+      const companyId = req.params.companyId as string;
+      assertCompanyAccess(req, companyId);
+
+      const limit = Math.min(Math.max(1, Number(req.query.limit) || 20), 50);
+      const conflicts = await svc.findPotentialConflicts(companyId, limit);
+      res.json({ conflicts, total: conflicts.length });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // POST /companies/:companyId/memories/conflicts/dispute — mark a pair of memories as disputed
+  router.post("/companies/:companyId/memories/conflicts/dispute", async (req, res, next) => {
+    try {
+      const companyId = req.params.companyId as string;
+      assertCompanyAccess(req, companyId);
+
+      const { memoryIdA, memoryIdB } = req.body as { memoryIdA: string; memoryIdB: string };
+      if (!memoryIdA || !memoryIdB) {
+        throw badRequest("memoryIdA and memoryIdB are required");
+      }
+
+      // Verify both memories exist and belong to this company
+      const [a, b] = await Promise.all([svc.getById(memoryIdA), svc.getById(memoryIdB)]);
+      if (!a || a.companyId !== companyId) throw notFound("Memory A not found");
+      if (!b || b.companyId !== companyId) throw notFound("Memory B not found");
+
+      const result = await svc.markDisputed(memoryIdA, memoryIdB);
+
+      const actor = getActorInfo(req);
+      await logActivity(db, {
+        companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        runId: actor.runId,
+        action: "shared_memory.disputed",
+        entityType: "shared_memory",
+        entityId: memoryIdA,
+        details: { memoryIdA, memoryIdB },
+      });
+
+      res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  });
+
   // GET /memories/:id — get a single memory
   router.get("/memories/:id", async (req, res, next) => {
     try {
@@ -97,6 +175,26 @@ export function sharedMemoryRoutes(db: Db) {
       if (!memory) throw notFound("Shared memory not found");
       assertCompanyAccess(req, memory.companyId);
       res.json(memory);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // GET /memories/:id/duplicates — find potential duplicates for a memory
+  router.get("/memories/:id/duplicates", async (req, res, next) => {
+    try {
+      const memory = await svc.getById(req.params.id as string);
+      if (!memory) throw notFound("Shared memory not found");
+      assertCompanyAccess(req, memory.companyId);
+
+      const duplicates = await svc.findDuplicates(memory.companyId, memory.content, {
+        scope: memory.scope,
+        projectId: memory.projectId,
+      });
+
+      // Exclude the memory itself from results
+      const filtered = duplicates.filter((d) => d.id !== memory.id);
+      res.json({ duplicates: filtered, total: filtered.length });
     } catch (err) {
       next(err);
     }
@@ -153,6 +251,20 @@ export function sharedMemoryRoutes(db: Db) {
         }
 
         const updated = await svc.verify(existing.id, agentId);
+
+        const actor = getActorInfo(req);
+        await logActivity(db, {
+          companyId: existing.companyId,
+          actorType: actor.actorType,
+          actorId: actor.actorId,
+          agentId: actor.agentId,
+          runId: actor.runId,
+          action: "shared_memory.verified",
+          entityType: "shared_memory",
+          entityId: existing.id,
+          details: { verifiedByAgentId: agentId },
+        });
+
         res.json(updated);
       } catch (err) {
         next(err);

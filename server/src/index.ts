@@ -29,6 +29,7 @@ import {
   heartbeatService,
   reconcilePersistedRuntimeServicesOnStartup,
   seedBuiltInSkillsForAllCompanies,
+  sharedMemoryService,
   stopAllRuntimeServices,
   taskCronService,
   telegramService,
@@ -579,7 +580,24 @@ export async function startServer(): Promise<StartedServer> {
         });
     }, config.heartbeatSchedulerIntervalMs);
   }
-  
+
+  // Memory decay job — runs every 24 hours to decay stale memories and archive expired ones
+  {
+    const MEMORY_DECAY_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
+    const sharedMemSvc = sharedMemoryService(db as any);
+    setInterval(() => {
+      void sharedMemSvc.runDecay()
+        .then((result) => {
+          if (result.expired > 0 || result.decayed > 0) {
+            logger.info({ ...result }, "shared memory decay job completed");
+          }
+        })
+        .catch((err) => {
+          logger.error({ err }, "shared memory decay job failed");
+        });
+    }, MEMORY_DECAY_INTERVAL_MS);
+  }
+
   if (config.databaseBackupEnabled) {
     const backupIntervalMs = config.databaseBackupIntervalMinutes * 60 * 1000;
     let backupInFlight = false;
