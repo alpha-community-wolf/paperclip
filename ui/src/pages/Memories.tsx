@@ -49,10 +49,10 @@ const PAGE_SIZE = 20;
 export function Memories() {
   const { selectedCompanyId } = useCompany();
   const [scope, setScope] = useState<"company" | "project">("company");
-  const [selectedProjectId, setSelectedProjectId] = useState<string>("");
+  const [selectedProjectId, setSelectedProjectId] = useState<string>("__all__");
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState<string>("");
+  const [selectedCategory, setSelectedCategory] = useState<string>("__all__");
   const [selectedStatus, setSelectedStatus] = useState<string>("active");
   const [page, setPage] = useState(0);
 
@@ -74,9 +74,9 @@ export function Memories() {
     () => ({
       q: debouncedQuery || undefined,
       scope,
-      projectId: scope === "project" && selectedProjectId ? selectedProjectId : undefined,
-      category: selectedCategory || undefined,
-      status: selectedStatus || undefined,
+      projectId: scope === "project" && selectedProjectId !== "__all__" ? selectedProjectId : undefined,
+      category: selectedCategory !== "__all__" ? selectedCategory : undefined,
+      status: selectedStatus !== "__all__" ? selectedStatus : undefined,
       limit: PAGE_SIZE,
       offset: page * PAGE_SIZE,
     }),
@@ -129,7 +129,7 @@ export function Memories() {
   const memories = data?.memories ?? [];
   const total = data?.total ?? 0;
   const totalPages = Math.ceil(total / PAGE_SIZE);
-  const hasActiveFilters = selectedCategory || selectedStatus !== "active" || debouncedQuery;
+  const hasActiveFilters = selectedCategory !== "__all__" || selectedStatus !== "active" || debouncedQuery;
   const conflictCount = conflictsData?.total ?? 0;
 
   if (!selectedCompanyId) return null;
@@ -213,7 +213,7 @@ export function Memories() {
               <SelectValue placeholder="All projects" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">All projects</SelectItem>
+              <SelectItem value="__all__">All projects</SelectItem>
               {projects.map((p) => (
                 <SelectItem key={p.id} value={p.id}>
                   {p.name}
@@ -229,7 +229,7 @@ export function Memories() {
             <SelectValue placeholder="Category" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">All categories</SelectItem>
+            <SelectItem value="__all__">All categories</SelectItem>
             {CATEGORIES.map((c) => (
               <SelectItem key={c.value} value={c.value}>
                 {c.label}
@@ -243,7 +243,7 @@ export function Memories() {
             <SelectValue placeholder="Status" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">All statuses</SelectItem>
+            <SelectItem value="__all__">All statuses</SelectItem>
             {STATUSES.map((s) => (
               <SelectItem key={s.value} value={s.value}>
                 {s.label}
@@ -260,7 +260,7 @@ export function Memories() {
             onClick={() => {
               setSearchQuery("");
               setDebouncedQuery("");
-              setSelectedCategory("");
+              setSelectedCategory("__all__");
               setSelectedStatus("active");
               setPage(0);
             }}
