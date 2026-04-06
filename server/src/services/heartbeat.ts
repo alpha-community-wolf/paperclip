@@ -49,6 +49,42 @@ import {
 } from "./execution-workspace-policy.js";
 import { readConfigFile } from "../config-file.js";
 import { resolvePaperclipConfigPath } from "../paths.js";
+import { resolveStdoutParser } from "./chat-transcript.js";
+
+/**
+ * Extract assistant text from a chore run's stdout excerpt.
+ * Reuses the adapter-specific stdout parser to find assistant-kind output.
+ */
+function extractTextFromChoreStdout(stdoutExcerpt: string, adapterType: string): string | null {
+  if (!stdoutExcerpt.trim()) return null;
+
+  const parser = resolveStdoutParser(adapterType);
+  const ts = new Date().toISOString();
+  const lines = stdoutExcerpt.split(/\r?\n/);
+
+  const assistantParts: string[] = [];
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      for (const entry of parser(trimmed, ts)) {
+        if (entry.kind === "assistant" && entry.text.trim()) {
+          assistantParts.push(entry.text.trim());
+        }
+      }
+    } catch {
+      // Skip unparseable lines
+    }
+  }
+
+  if (assistantParts.length > 0) {
+    return assistantParts.join(" ").trim();
+  }
+
+  // Fallback: treat as plain text
+  const firstNonEmpty = lines.map((l) => l.trim()).find((l) => l.length > 0);
+  return firstNonEmpty ?? null;
+}
 
 /** Resolve the current HEAD commit hash in a directory, or null if not a git repo. */
 function captureGitHead(cwd: string): Promise<string | null> {
@@ -2492,6 +2528,26 @@ export function heartbeatService(db: Db) {
         }
       }
 
+      // Auto-capture shared memories from successful non-chore runs (fire-and-forget)
+      if (outcome === "succeeded" && run.type !== "chore" && issueId) {
+        const currentIssueForMemo = await db
+          .select({ projectId: issues.projectId })
+          .from(issues)
+          .where(eq(issues.id, issueId))
+          .then((rows) => rows[0] ?? null);
+
+        svc.maybeAutoCaptureMemos({
+          runId: run.id,
+          agentId: agent.id,
+          companyId: agent.companyId,
+          issueId,
+          projectId: currentIssueForMemo?.projectId,
+          adapterType: agent.adapterType,
+        }).catch((err) => {
+          logger.warn({ err, runId: run.id }, "auto-capture: fire-and-forget failed (non-fatal)");
+        });
+      }
+
       await finalizeAgentStatus(agent.id, outcome);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown adapter failure";
@@ -3270,7 +3326,7 @@ export function heartbeatService(db: Db) {
     contextSnapshot: sql<Record<string, unknown> | null>`NULL`.as("contextSnapshot"),
   } as const;
 
-  return {
+  const svc = {
     list: async (companyId: string, agentId?: string, limit?: number, projectId?: string, includeChores = false): Promise<{ runs: (typeof heartbeatRuns.$inferSelect)[]; degraded: boolean }> => {
       const conditions = [eq(heartbeatRuns.companyId, companyId)];
       if (agentId) conditions.push(eq(heartbeatRuns.agentId, agentId));
@@ -3742,6 +3798,148 @@ export function heartbeatService(db: Db) {
     },
 
     /**
+     * After a non-chore heartbeat run completes successfully, fire a lightweight
+     * chore to extract share-worthy memories from the run's issue comments.
+     * Extracted memories are saved to the shared_memories table with
+     * source_type='auto_capture' and confidence 0.6.
+     *
+     * Fire-and-forget — errors are logged but never propagated.
+     */
+    maybeAutoCaptureMemos: async (opts: {
+      runId: string;
+      agentId: string;
+      companyId: string;
+      issueId: string;
+      projectId?: string | null;
+      adapterType: string;
+    }): Promise<void> => {
+      try {
+        // Fetch recent comments on the issue (last 20)
+        const comments = await db
+          .select({
+            body: issueComments.body,
+          })
+          .from(issueComments)
+          .where(eq(issueComments.issueId, opts.issueId))
+          .orderBy(desc(issueComments.createdAt))
+          .limit(20);
+
+        if (comments.length === 0) return;
+
+        // Build a compact transcript of the issue comments (most recent first → reverse for chronological)
+        const commentText = comments
+          .reverse()
+          .map((c) => (c.body ?? "").trim())
+          .filter(Boolean)
+          .join("\n---\n");
+
+        // Skip if there's too little content to extract from
+        if (commentText.length < 100) return;
+
+        // Truncate to keep the chore prompt within budget
+        const truncated = commentText.length > 4000
+          ? commentText.slice(0, 4000) + "\n…(truncated)"
+          : commentText;
+
+        const chorePrompt = [
+          "You are a memory extraction system. Read the issue comments below from a completed agent run.",
+          "Extract 0-3 share-worthy memories that would be useful to OTHER agents in this company.",
+          "",
+          "Categories (pick one per memory):",
+          '- fact: verifiable truth about a system, API, repo, or process (e.g. "pnpm-lock.yaml must be committed")',
+          '- decision: a choice made by humans or agents (e.g. "We chose React over Svelte for the dashboard")',
+          '- lesson_learned: a mistake or fix pattern others should know (e.g. "secretService not secretsService")',
+          '- procedure: how to do something (e.g. "Run PORT=3200 pnpm dev:once to test worktrees")',
+          "",
+          "Rules:",
+          "- Only extract facts useful to OTHER agents, not agent-specific preferences.",
+          "- Skip status updates, progress reports, and routine operational comments.",
+          "- Each memory must be a single concise sentence (under 200 chars).",
+          "- If nothing is share-worthy, return an empty array.",
+          "- Return ONLY valid JSON — no markdown, no explanation.",
+          "",
+          "Output format (JSON array):",
+          '[{"content":"...","category":"fact|decision|lesson_learned|procedure","tags":["tag1","tag2"]}]',
+          "",
+          "--- ISSUE COMMENTS ---",
+          truncated,
+        ].join("\n");
+
+        const sharedMemSvc = sharedMemoryService(db);
+
+        await svc.triggerChore(opts.agentId, {
+          prompt: chorePrompt,
+          metadata: { purpose: "auto-capture-memories", issueId: opts.issueId, sourceRunId: opts.runId },
+          actor: { actorType: "system" },
+          onComplete: async (info) => {
+            if (info.outcome !== "succeeded") return;
+
+            // Extract assistant text from stdout using adapter-specific parser
+            const assistantText = extractTextFromChoreStdout(info.stdoutExcerpt, info.agentAdapterType);
+            if (!assistantText) return;
+
+            // Parse JSON array from the assistant's response
+            let memories: Array<{ content: string; category: string; tags?: string[] }>;
+            try {
+              // Find JSON array in the response (may be surrounded by text)
+              const jsonMatch = assistantText.match(/\[[\s\S]*\]/);
+              if (!jsonMatch) return;
+              memories = JSON.parse(jsonMatch[0]);
+              if (!Array.isArray(memories) || memories.length === 0) return;
+            } catch {
+              return; // Malformed JSON — skip silently
+            }
+
+            const validCategories = new Set(["fact", "decision", "procedure", "lesson_learned"]);
+
+            for (const mem of memories.slice(0, 3)) {
+              if (
+                !mem.content ||
+                typeof mem.content !== "string" ||
+                mem.content.length > 300 ||
+                !validCategories.has(mem.category)
+              ) {
+                continue;
+              }
+
+              try {
+                await sharedMemSvc.create(opts.companyId, {
+                  content: mem.content.trim(),
+                  category: mem.category as "fact" | "decision" | "procedure" | "lesson_learned",
+                  scope: opts.projectId ? "project" : "company",
+                  projectId: opts.projectId ?? undefined,
+                  tags: Array.isArray(mem.tags)
+                    ? mem.tags.filter((t): t is string => typeof t === "string").slice(0, 5)
+                    : [],
+                  confidence: 0.6,
+                  sourceType: "auto_capture",
+                  sourceAgentId: opts.agentId,
+                  sourceIssueId: opts.issueId,
+                  sourceRunId: opts.runId,
+                });
+              } catch (saveErr) {
+                logger.warn(
+                  { err: saveErr, agentId: opts.agentId, runId: opts.runId },
+                  "auto-capture: failed to save extracted memory (non-fatal)",
+                );
+              }
+            }
+
+            logger.info(
+              { agentId: opts.agentId, runId: opts.runId, count: memories.length },
+              "auto-capture: extracted memories from run",
+            );
+          },
+        });
+      } catch (err) {
+        logger.warn(
+          { err, agentId: opts.agentId, runId: opts.runId },
+          "auto-capture: failed to trigger memory extraction chore (non-fatal)",
+        );
+      }
+    },
+
+    /**
      * Trigger a lightweight chore run for an agent.
      * Chore runs use the agent's choreModel (falling back to primary model)
      * and are tagged with type='chore' so they don't clutter the main run list.
@@ -3830,4 +4028,6 @@ export function heartbeatService(db: Db) {
       return newRun;
     },
   };
+
+  return svc;
 }
