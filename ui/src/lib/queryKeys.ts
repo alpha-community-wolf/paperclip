@@ -134,6 +134,11 @@ export const queryKeys = {
     forIssue: (companyId: string, projectId: string, tags: string) =>
       ["memories", companyId, "for-issue", projectId, tags] as const,
   },
+  systemChores: {
+    list: (companyId: string) => ["system-chores", companyId] as const,
+    runs: (companyId: string, choreKey?: string) =>
+      ["system-chore-runs", companyId, choreKey ?? "__all__"] as const,
+  },
   inboxDismissals: (companyId: string) => ["inbox-dismissals", companyId] as const,
   inboxFeed: (companyId: string) => ["inbox-feed", companyId] as const,
   org: (companyId: string) => ["org", companyId] as const,

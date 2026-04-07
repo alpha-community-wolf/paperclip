@@ -31,6 +31,7 @@ import {
   seedBuiltInSkillsForAllCompanies,
   sharedMemoryService,
   stopAllRuntimeServices,
+  systemChoreRunnerService,
   taskCronService,
   telegramService,
 } from "./services/index.js";
@@ -543,7 +544,17 @@ export async function startServer(): Promise<StartedServer> {
   if (config.heartbeatSchedulerEnabled) {
     const heartbeat = heartbeatService(db as any);
     const taskCron = taskCronService(db as any);
-  
+    const systemChores = systemChoreRunnerService(db as any);
+
+    // Seed system chore configs for all companies on startup
+    void systemChores.seedAllCompanies().then((result) => {
+      if (result.seeded > 0) {
+        logger.info({ seeded: result.seeded }, "system chores: seeded config rows on startup");
+      }
+    }).catch((err) => {
+      logger.error({ err }, "system chores: failed to seed on startup");
+    });
+
     // Reap orphaned runs at startup (no threshold -- runningProcesses is empty)
     void heartbeat.reapOrphanedRuns().catch((err) => {
       logger.error({ err }, "startup reap of orphaned heartbeat runs failed");
@@ -572,6 +583,17 @@ export async function startServer(): Promise<StartedServer> {
           logger.error({ err }, "task cron tick failed");
         });
   
+      void systemChores
+        .tickSystemChores(new Date())
+        .then((result) => {
+          if (result.executed > 0 || result.failed > 0) {
+            logger.info({ ...result }, "system chore tick completed");
+          }
+        })
+        .catch((err) => {
+          logger.error({ err }, "system chore tick failed");
+        });
+
       // Periodically reap orphaned runs (5-min staleness threshold)
       void heartbeat
         .reapOrphanedRuns({ staleThresholdMs: 5 * 60 * 1000 })

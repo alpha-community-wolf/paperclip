@@ -146,6 +146,12 @@ export function resolveRunTypeBadge(
   invocationSource: string,
   type?: string,
 ): RunTypeBadgeInfo {
+  if (type === "system_chore") {
+    return {
+      label: "System Chore",
+      badge: "bg-teal-100 text-teal-700 dark:bg-teal-900/50 dark:text-teal-300",
+    };
+  }
   if (invocationSource === "automation") {
     return {
       label: "Automation",

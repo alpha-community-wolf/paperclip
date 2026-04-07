@@ -19,6 +19,7 @@ import {
   MessageSquare,
   ClipboardCheck,
   Brain,
+  Cog,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { SidebarSection } from "./SidebarSection";
@@ -140,6 +141,7 @@ export function Sidebar() {
           <SidebarNavItem to="/activity" label="Activity" icon={History} />
           <SidebarNavItem to="/skills" label="Skills" icon={Blocks} />
           <SidebarNavItem to="/webhooks" label="Webhooks" icon={Webhook} />
+          <SidebarNavItem to="/system-chores" label="System Chores" icon={Cog} />
           <SidebarNavItem to="/company/settings" label="Settings" icon={Settings} />
         </SidebarSection>
       </nav>

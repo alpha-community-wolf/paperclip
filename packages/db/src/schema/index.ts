@@ -46,3 +46,4 @@ export { webhookEvents } from "./webhook_events.js";
 export { cronSchedules } from "./cron_schedules.js";
 export { agentTelegramConfigs } from "./agent_telegram_configs.js";
 export { sharedMemories } from "./shared_memories.js";
+export { systemChoreConfigs } from "./system_chore_configs.js";
