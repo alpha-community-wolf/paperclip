@@ -27,17 +27,81 @@ import {
 } from "./ApiCallRenderer";
 import { useTimelineSteps, TimelineWrapper } from "./TranscriptTimeline";
 import { CommentGutterButton, InlineCommentThread } from "./InlineTranscriptComment";
+import { MarkdownBody } from "./MarkdownBody";
 
-const GRID = "grid grid-cols-[auto_auto_1fr] gap-x-2 sm:gap-x-3 items-baseline";
-const TS_CELL = "text-neutral-400 dark:text-neutral-600 select-none w-12 sm:w-16 text-[10px] sm:text-xs tabular-nums";
-const LBL_CELL = "w-14 sm:w-20 text-[10px] sm:text-xs";
+const GRID = "grid grid-cols-[auto_1fr] gap-x-2 sm:gap-x-3 items-baseline";
 const CONTENT_CELL = "min-w-0 whitespace-pre-wrap break-words overflow-hidden";
-const EXPAND_CELL = "col-span-full md:col-start-3 md:col-span-1";
+const EXPAND_CELL = "col-span-full md:col-start-2 md:col-span-1";
 
 const COLLAPSE_HEIGHT = 144; // ~6 lines at 11px font + padding
+const MD_COLLAPSE_HEIGHT = 200; // ~8 lines for markdown content
 
 function fmtTime(ts: string): string {
   return new Date(ts).toLocaleTimeString("en-US", { hour12: false });
+}
+
+/** Combined type + time cell — type label on top, timestamp below */
+function TypeTimeCell({
+  label,
+  time,
+  className,
+  children,
+}: {
+  label: string;
+  time: string;
+  className?: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className={cn("flex flex-col items-start select-none w-14 sm:w-16 shrink-0", className)}>
+      <span className="flex items-center gap-0.5 text-[10px] sm:text-xs leading-tight">
+        {label}
+        {children}
+      </span>
+      <span className="text-[9px] text-neutral-400 dark:text-neutral-600 tabular-nums leading-tight">
+        {time}
+      </span>
+    </div>
+  );
+}
+
+/** Collapsible wrapper for MarkdownBody content — shows a defined max-height with expand/collapse */
+function CollapsibleMarkdownBlock({ content, className }: { content: string; className?: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [overflows, setOverflows] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    if (ref.current) {
+      setOverflows(ref.current.scrollHeight > MD_COLLAPSE_HEIGHT);
+    }
+  }, [content]);
+
+  const toggle = useCallback(() => setExpanded((v) => !v), []);
+
+  return (
+    <div className="relative">
+      <div
+        ref={ref}
+        className={cn(className, !expanded && overflows && "overflow-hidden")}
+        style={!expanded && overflows ? { maxHeight: MD_COLLAPSE_HEIGHT } : undefined}
+      >
+        <MarkdownBody className="text-sm [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">{content}</MarkdownBody>
+      </div>
+      {!expanded && overflows && (
+        <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-neutral-100 dark:from-neutral-900 to-transparent pointer-events-none" />
+      )}
+      {overflows && (
+        <button
+          type="button"
+          onClick={toggle}
+          className="text-[10px] text-primary hover:underline mt-0.5 cursor-pointer"
+        >
+          {expanded ? "Show less" : "Show more"}
+        </button>
+      )}
+    </div>
+  );
 }
 
 /** Syntax-highlighted JSON rendering */
@@ -79,9 +143,9 @@ function JsonHighlight({ value }: { value: string }) {
   return <>{parts}</>;
 }
 
-/** Check if content contains fenced code blocks */
-function hasFencedCodeBlocks(content: string): boolean {
-  return /^```[\w-]*/m.test(content);
+/** Check if content looks like markdown (has headings, lists, code blocks, or links) */
+function looksLikeMarkdown(content: string): boolean {
+  return /^(#{1,6}\s|```[\w-]*|[-*]\s|\d+\.\s|\[.+\]\(.+\))/m.test(content);
 }
 
 /** Format and optionally highlight content that might be JSON */
@@ -198,13 +262,15 @@ function ThinkingGroup({
           "w-full text-left cursor-pointer group hover:bg-neutral-100/50 dark:hover:bg-neutral-800/30 rounded transition-colors",
         )}
       >
-        <span className={TS_CELL}>{firstTime}</span>
-        <span className={cn(LBL_CELL, "text-violet-500/70 dark:text-violet-400/70 flex items-center")}>
-          thinking
+        <TypeTimeCell
+          label="thinking"
+          time={firstTime}
+          className="text-violet-500/70 dark:text-violet-400/70"
+        >
           {stepFeedback && onStepFeedback && (
             <StepFeedbackButtons stepIndex={group.startIndex} feedback={stepFeedback} onVote={onStepFeedback} />
           )}
-        </span>
+        </TypeTimeCell>
         <span className="min-w-0 flex items-center gap-2 text-[11px] text-neutral-400 dark:text-neutral-500">
           <svg
             className={cn(
@@ -232,10 +298,11 @@ function ThinkingGroup({
               key={`thinking-group-${group.startIndex}-${i}`}
               className={cn(GRID, "py-0.5")}
             >
-              <span className={TS_CELL}>{fmtTime(entry.ts)}</span>
-              <span className={cn(LBL_CELL, "text-violet-500/50 dark:text-violet-400/50 text-[9px]")}>
-                {i + 1}/{entryCount}
-              </span>
+              <TypeTimeCell
+                label={`${i + 1}/${entryCount}`}
+                time={fmtTime(entry.ts)}
+                className="text-violet-500/50 dark:text-violet-400/50"
+              />
               <div className={cn(
                 CONTENT_CELL,
                 "text-neutral-600/80 dark:text-neutral-400/80 italic prose prose-sm dark:prose-invert max-w-none opacity-70",
@@ -401,6 +468,16 @@ function AccordionResultContent({
     if (specialized) return specialized;
   }
 
+  // Markdown-rich content: use MarkdownBody with collapsible wrapper
+  if (!entry.isError && looksLikeMarkdown(entry.content)) {
+    return (
+      <CollapsibleMarkdownBlock
+        content={entry.content}
+        className="bg-neutral-50 dark:bg-neutral-900 rounded-md border border-neutral-200/40 dark:border-neutral-700/30 p-3"
+      />
+    );
+  }
+
   // Default: JSON-highlighted or plain text
   return (
     <CollapsiblePre className={cn(
@@ -476,13 +553,11 @@ export function TranscriptRenderer({
     if (entry.kind === "assistant") {
       return (
         <div key={`${entry.ts}-assistant-${idx}`} className={cn(GRID, "py-0.5 group/step")}>
-          <span className={TS_CELL}>{time}</span>
-          <span className={cn(LBL_CELL, "text-green-700 dark:text-green-300 flex items-center")}>
-            assistant
+          <TypeTimeCell label="assistant" time={time} className="text-green-700 dark:text-green-300">
             {stepFeedback && onStepFeedback && (
               <StepFeedbackButtons stepIndex={idx} feedback={stepFeedback} onVote={onStepFeedback} />
             )}
-          </span>
+          </TypeTimeCell>
           <div className={cn(CONTENT_CELL, "text-green-900 dark:text-green-100 prose prose-sm dark:prose-invert prose-green max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0")}>
             <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>{entry.text}</ReactMarkdown>
           </div>
@@ -505,8 +580,7 @@ export function TranscriptRenderer({
       }
       return (
         <div key={`${entry.ts}-thinking-${idx}`} className={cn(GRID, "py-0.5")}>
-          <span className={TS_CELL}>{time}</span>
-          <span className={cn(LBL_CELL, "text-violet-500/70 dark:text-violet-400/70")}>thinking</span>
+          <TypeTimeCell label="thinking" time={time} className="text-violet-500/70 dark:text-violet-400/70" />
           <div className={cn(CONTENT_CELL, "text-neutral-600/80 dark:text-neutral-400/80 italic prose prose-sm dark:prose-invert max-w-none opacity-70 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0")}>
             <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>{entry.text}</ReactMarkdown>
           </div>
@@ -517,10 +591,12 @@ export function TranscriptRenderer({
     if (entry.kind === "user") {
       return (
         <div key={`${entry.ts}-user-${idx}`} className={cn(GRID, "py-0.5")}>
-          <span className={TS_CELL}>{time}</span>
-          <span className={cn(LBL_CELL, "text-neutral-500 dark:text-neutral-400")}>user</span>
-          <div className={cn(CONTENT_CELL, "text-neutral-700 dark:text-neutral-300 prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0")}>
-            <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>{entry.text}</ReactMarkdown>
+          <TypeTimeCell label="user" time={time} className="text-neutral-500 dark:text-neutral-400" />
+          <div className={cn(CONTENT_CELL, "text-neutral-700 dark:text-neutral-300")}>
+            <CollapsibleMarkdownBlock
+              content={entry.text}
+              className="prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
+            />
           </div>
         </div>
       );
@@ -534,10 +610,11 @@ export function TranscriptRenderer({
 
         return (
           <div key={`${entry.ts}-tool-${idx}`} className={cn(GRID, "py-0.5")}>
-            <span className={TS_CELL}>{time}</span>
-            <span className={cn(LBL_CELL, apiCall ? "text-blue-500 dark:text-blue-400" : isBash ? "text-green-500 dark:text-green-400" : "text-yellow-700 dark:text-yellow-300")}>
-              {apiCall ? "api" : isBash ? "bash" : "tool"}
-            </span>
+            <TypeTimeCell
+              label={apiCall ? "api" : isBash ? "bash" : "tool"}
+              time={time}
+              className={apiCall ? "text-blue-500 dark:text-blue-400" : isBash ? "text-green-500 dark:text-green-400" : "text-yellow-700 dark:text-yellow-300"}
+            />
             <span className={cn("min-w-0 truncate")}>
               {apiCall ? (
                 <ApiCallCompactBadge parsed={apiCall} />
@@ -561,13 +638,15 @@ export function TranscriptRenderer({
 
         return (
           <div key={`${entry.ts}-toolpair-${idx}`} className={cn(GRID, "py-0.5 group/step")}>
-            <span className={TS_CELL}>{time}</span>
-            <span className={cn(LBL_CELL, apiCall ? "text-blue-500 dark:text-blue-400 text-[10px] flex items-center" : "text-yellow-700 dark:text-yellow-300 text-[10px] flex items-center")}>
-              {apiCall ? "api" : "tool"}
+            <TypeTimeCell
+              label={apiCall ? "api" : "tool"}
+              time={time}
+              className={apiCall ? "text-blue-500 dark:text-blue-400" : "text-yellow-700 dark:text-yellow-300"}
+            >
               {stepFeedback && onStepFeedback && (
                 <StepFeedbackButtons stepIndex={idx} feedback={stepFeedback} onVote={onStepFeedback} />
               )}
-            </span>
+            </TypeTimeCell>
             <div className={cn(CONTENT_CELL)}>
               <ToolCallAccordion
                 pair={pair}
@@ -595,8 +674,7 @@ export function TranscriptRenderer({
       if (isBash && bashInput) {
         return (
           <div key={`${entry.ts}-tool-${idx}`} className={cn(GRID, "gap-y-1 py-0.5")}>
-            <span className={TS_CELL}>{time}</span>
-            <span className={cn(LBL_CELL, "text-green-500 dark:text-green-400 font-mono")}>bash</span>
+            <TypeTimeCell label="bash" time={time} className="text-green-500 dark:text-green-400 font-mono" />
             <span className="text-neutral-500 dark:text-neutral-400 min-w-0 text-[11px] truncate">
               {bashInput.description || ""}
             </span>
@@ -614,8 +692,7 @@ export function TranscriptRenderer({
 
       return (
         <div key={`${entry.ts}-tool-${idx}`} className={cn(GRID, "gap-y-1 py-0.5")}>
-          <span className={TS_CELL}>{time}</span>
-          <span className={cn(LBL_CELL, "text-yellow-700 dark:text-yellow-300")}>tool_call</span>
+          <TypeTimeCell label="tool_call" time={time} className="text-yellow-700 dark:text-yellow-300" />
           <span className="text-yellow-900 dark:text-yellow-100 min-w-0">{entry.name}</span>
           <CollapsiblePre className={cn(EXPAND_CELL, "bg-neutral-200 dark:bg-neutral-900 rounded p-2 text-[11px] overflow-x-auto whitespace-pre-wrap text-neutral-800 dark:text-neutral-200")}>
             <JsonHighlight value={JSON.stringify(entry.input, null, 2)} />
@@ -635,10 +712,11 @@ export function TranscriptRenderer({
       if (compact) {
         return (
           <div key={`${entry.ts}-toolres-${idx}`} className={cn(GRID, "py-0.5")}>
-            <span className={TS_CELL}>{time}</span>
-            <span className={cn(LBL_CELL, entry.isError ? "text-red-600 dark:text-red-300" : isBashResult ? "text-green-500 dark:text-green-400" : "text-purple-600 dark:text-purple-300")}>
-              {isBashResult ? "output" : "result"}
-            </span>
+            <TypeTimeCell
+              label={isBashResult ? "output" : "result"}
+              time={time}
+              className={entry.isError ? "text-red-600 dark:text-red-300" : isBashResult ? "text-green-500 dark:text-green-400" : "text-purple-600 dark:text-purple-300"}
+            />
             <span className={cn(CONTENT_CELL, entry.isError ? "text-red-600 dark:text-red-400" : "text-neutral-500", "truncate")}>
               {entry.isError ? "error" : entry.content.slice(0, 80)}
             </span>
@@ -649,8 +727,7 @@ export function TranscriptRenderer({
       if (isBashResult) {
         return (
           <div key={`${entry.ts}-toolres-${idx}`} className={cn(GRID, "gap-y-1 py-0.5")}>
-            <span className={TS_CELL}>{time}</span>
-            <span className={cn(LBL_CELL, "text-green-500 dark:text-green-400 font-mono")}>output</span>
+            <TypeTimeCell label="output" time={time} className="text-green-500 dark:text-green-400 font-mono" />
             <span className="min-w-0 flex items-center gap-1.5">
               {entry.isError ? (
                 <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-red-900/30 text-red-400 border border-red-700/30">
@@ -692,29 +769,37 @@ export function TranscriptRenderer({
       if (specializedResult) {
         return (
           <div key={`${entry.ts}-toolres-${idx}`} className={cn(GRID, "gap-y-1 py-0.5")}>
-            <span className={TS_CELL}>{time}</span>
-            <span className={cn(LBL_CELL, "text-purple-600 dark:text-purple-300")}>tool_result</span>
+            <TypeTimeCell label="tool_result" time={time} className="text-purple-600 dark:text-purple-300" />
             <span />
             {specializedResult}
           </div>
         );
       }
 
-      const hasCode = hasFencedCodeBlocks(entry.content);
+      // Markdown-rich content: use MarkdownBody with collapsible wrapper
+      if (!entry.isError && looksLikeMarkdown(entry.content)) {
+        return (
+          <div key={`${entry.ts}-toolres-${idx}`} className={cn(GRID, "gap-y-1 py-0.5")}>
+            <TypeTimeCell label="tool_result" time={time} className="text-purple-600 dark:text-purple-300" />
+            {entry.isError ? <span className="text-red-600 dark:text-red-400 min-w-0">error</span> : <span />}
+            <div className={cn(EXPAND_CELL, "bg-neutral-50 dark:bg-neutral-900 rounded-md border border-neutral-200/40 dark:border-neutral-700/30 p-3")}>
+              <CollapsibleMarkdownBlock content={entry.content} />
+            </div>
+          </div>
+        );
+      }
+
       return (
         <div key={`${entry.ts}-toolres-${idx}`} className={cn(GRID, "gap-y-1 py-0.5")}>
-          <span className={TS_CELL}>{time}</span>
-          <span className={cn(LBL_CELL, entry.isError ? "text-red-600 dark:text-red-300" : "text-purple-600 dark:text-purple-300")}>tool_result</span>
+          <TypeTimeCell
+            label="tool_result"
+            time={time}
+            className={entry.isError ? "text-red-600 dark:text-red-300" : "text-purple-600 dark:text-purple-300"}
+          />
           {entry.isError ? <span className="text-red-600 dark:text-red-400 min-w-0">error</span> : <span />}
-          {hasCode ? (
-            <CollapsiblePre className={cn(EXPAND_CELL, "bg-neutral-100 dark:bg-neutral-900 rounded p-2 text-[11px] overflow-x-auto text-neutral-700 dark:text-neutral-300 prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0")}>
-              <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>{entry.content}</ReactMarkdown>
-            </CollapsiblePre>
-          ) : (
-            <CollapsiblePre className={cn(EXPAND_CELL, "bg-neutral-100 dark:bg-neutral-900 rounded p-2 text-[11px] overflow-x-auto whitespace-pre-wrap text-neutral-700 dark:text-neutral-300")}>
-              {formatContent(entry.content)}
-            </CollapsiblePre>
-          )}
+          <CollapsiblePre className={cn(EXPAND_CELL, "bg-neutral-100 dark:bg-neutral-900 rounded p-2 text-[11px] overflow-x-auto whitespace-pre-wrap text-neutral-700 dark:text-neutral-300")}>
+            {formatContent(entry.content)}
+          </CollapsiblePre>
         </div>
       );
     }
@@ -722,8 +807,7 @@ export function TranscriptRenderer({
     if (entry.kind === "init") {
       return (
         <div key={`${entry.ts}-init-${idx}`} className={GRID}>
-          <span className={TS_CELL}>{time}</span>
-          <span className={cn(LBL_CELL, "text-blue-700 dark:text-blue-300")}>init</span>
+          <TypeTimeCell label="init" time={time} className="text-blue-700 dark:text-blue-300" />
           <span className={cn(CONTENT_CELL, "text-blue-900 dark:text-blue-100")}>model: {entry.model}{entry.sessionId ? `, session: ${entry.sessionId}` : ""}</span>
         </div>
       );
@@ -732,8 +816,7 @@ export function TranscriptRenderer({
     if (entry.kind === "result") {
       return (
         <div key={`${entry.ts}-result-${idx}`} className={cn(GRID, "gap-y-1 py-0.5")}>
-          <span className={TS_CELL}>{time}</span>
-          <span className={cn(LBL_CELL, "text-cyan-700 dark:text-cyan-300")}>result</span>
+          <TypeTimeCell label="result" time={time} className="text-cyan-700 dark:text-cyan-300" />
           <span className={cn(CONTENT_CELL, "text-cyan-900 dark:text-cyan-100 flex flex-wrap items-center gap-2")}>
             <span className="flex items-center gap-1.5 text-[11px] font-mono">
               <span className="text-neutral-400 dark:text-neutral-500">in</span>
@@ -766,8 +849,11 @@ export function TranscriptRenderer({
       const isErr = entry.kind === "stderr";
       return (
         <div key={`${entry.ts}-${entry.kind}-${idx}`} className={cn(GRID, "py-0.5")}>
-          <span className={TS_CELL}>{time}</span>
-          <span className={cn(LBL_CELL, isErr ? "text-red-600 dark:text-red-300" : "text-neutral-500")}>{entry.kind}</span>
+          <TypeTimeCell
+            label={entry.kind}
+            time={time}
+            className={isErr ? "text-red-600 dark:text-red-300" : "text-neutral-500"}
+          />
           <pre className={cn(
             CONTENT_CELL,
             "rounded px-2 py-1 text-[11px] font-mono",
@@ -784,8 +870,11 @@ export function TranscriptRenderer({
     const isSystem = entry.kind === "system";
     return (
       <div key={`${entry.ts}-raw-${idx}`} className={GRID}>
-        <span className={TS_CELL}>{time}</span>
-        <span className={cn(LBL_CELL, isSystem ? "text-blue-600 dark:text-blue-300" : "text-neutral-500")}>{isSystem ? "system" : "stdout"}</span>
+        <TypeTimeCell
+          label={isSystem ? "system" : "stdout"}
+          time={time}
+          className={isSystem ? "text-blue-600 dark:text-blue-300" : "text-neutral-500"}
+        />
         <span className={cn(CONTENT_CELL, isSystem ? "text-blue-600 dark:text-blue-300" : "text-neutral-500")}>{entry.text}</span>
       </div>
     );
