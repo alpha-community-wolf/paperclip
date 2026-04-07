@@ -3330,7 +3330,7 @@ export function heartbeatService(db: Db) {
     list: async (companyId: string, agentId?: string, limit?: number, projectId?: string, includeChores = false): Promise<{ runs: (typeof heartbeatRuns.$inferSelect)[]; degraded: boolean }> => {
       const conditions = [eq(heartbeatRuns.companyId, companyId)];
       if (agentId) conditions.push(eq(heartbeatRuns.agentId, agentId));
-      if (!includeChores) conditions.push(sql`${heartbeatRuns.type} != 'chore'`);
+      if (!includeChores) conditions.push(sql`${heartbeatRuns.type} NOT IN ('chore', 'system_chore')`);
 
       const issueIdExpr = sql`${heartbeatRuns.contextSnapshot} ->> 'issueId'`;
       const needsJoin = !!projectId;

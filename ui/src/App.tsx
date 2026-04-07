@@ -30,6 +30,7 @@ import { DesignGuide } from "./pages/DesignGuide";
 import { OrgChart } from "./pages/OrgChart";
 import { Timeline } from "./pages/Timeline";
 import { Memories } from "./pages/Memories";
+import { SystemChores } from "./pages/SystemChores";
 import { MyWork } from "./pages/MyWork";
 import { Reviews } from "./pages/Reviews";
 import { NewAgent } from "./pages/NewAgent";
@@ -167,6 +168,7 @@ function boardRoutes() {
       <Route path="chat/:agentId" element={<ChatRedirect />} />
       <Route path="design-guide" element={<DesignGuide />} />
       <Route path="knowledge" element={<Memories />} />
+      <Route path="system-chores" element={<SystemChores />} />
       <Route path="skills" element={<Skills />} />
       <Route path="webhooks" element={<Webhooks />} />
       <Route path="*" element={<NotFoundPage scope="board" />} />
