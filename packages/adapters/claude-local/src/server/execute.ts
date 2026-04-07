@@ -89,6 +89,7 @@ interface ClaudeExecutionInput {
 interface ClaudeRuntimeConfig {
   command: string;
   cwd: string;
+  workspaceCwd: string;
   workspaceId: string | null;
   workspaceRepoUrl: string | null;
   workspaceRepoRef: string | null;
@@ -152,9 +153,8 @@ async function buildClaudeRuntimeConfig(input: ClaudeExecutionInput): Promise<Cl
     : [];
   const runtimePrimaryUrl = asString(context.paperclipRuntimePrimaryUrl, "");
   const configuredCwd = asString(config.cwd, "");
-  const useConfiguredInsteadOfAgentHome = workspaceSource === "agent_home" && configuredCwd.length > 0;
-  const effectiveWorkspaceCwd = useConfiguredInsteadOfAgentHome ? "" : workspaceCwd;
-  const cwd = effectiveWorkspaceCwd || configuredCwd || process.cwd();
+  // Agent home is always the process cwd — workspace is passed as context, not cwd
+  const cwd = configuredCwd || process.cwd();
   await ensureAbsoluteDirectory(cwd, { createIfMissing: true });
 
   const injectedEnv: Record<string, string> = { ...buildPaperclipEnv(agent) };
@@ -230,8 +230,8 @@ async function buildClaudeRuntimeConfig(input: ClaudeExecutionInput): Promise<Cl
   if (linkedIssueIds.length > 0) {
     injectedEnv.PAPERCLIP_LINKED_ISSUE_IDS = linkedIssueIds.join(",");
   }
-  if (effectiveWorkspaceCwd) {
-    injectedEnv.PAPERCLIP_WORKSPACE_CWD = effectiveWorkspaceCwd;
+  if (workspaceCwd) {
+    injectedEnv.PAPERCLIP_WORKSPACE_CWD = workspaceCwd;
   }
   if (workspaceSource) {
     injectedEnv.PAPERCLIP_WORKSPACE_SOURCE = workspaceSource;
@@ -287,6 +287,7 @@ async function buildClaudeRuntimeConfig(input: ClaudeExecutionInput): Promise<Cl
   return {
     command,
     cwd,
+    workspaceCwd,
     workspaceId,
     workspaceRepoUrl,
     workspaceRepoRef,
@@ -365,6 +366,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const {
     command,
     cwd,
+    workspaceCwd,
     workspaceId,
     workspaceRepoUrl,
     workspaceRepoRef,
@@ -431,6 +433,10 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       args.push("--append-system-prompt-file", effectiveInstructionsFilePath);
     }
     args.push("--add-dir", skillsDir);
+    // Add workspace as additional working directory if different from agent home
+    if (workspaceCwd && workspaceCwd !== cwd) {
+      args.push("--add-dir", workspaceCwd);
+    }
     if (extraArgs.length > 0) args.push(...extraArgs);
     return args;
   };
