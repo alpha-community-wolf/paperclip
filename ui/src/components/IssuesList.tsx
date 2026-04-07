@@ -62,9 +62,11 @@ import {
   ArrowUp,
   ArrowDown,
   Link2,
+  GripVertical,
 } from "lucide-react";
 import { KanbanBoard } from "./KanbanBoard";
 import { useIssueTriageKeyboard } from "../hooks/useIssueTriageKeyboard";
+import { useColumnResize, type ColumnConfig } from "../hooks/useColumnResize";
 import type { Issue } from "@paperclipai/shared";
 import type { TaskCronSchedule } from "@paperclipai/shared";
 
@@ -90,6 +92,32 @@ const priorityOrder = ["critical", "high", "medium", "low"];
 function statusLabel(status: string): string {
   return status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
+
+const ISSUE_COLUMNS: ColumnConfig[] = [
+  { key: "checkbox", defaultWidth: 32, minWidth: 32, resizable: false },
+  { key: "priority", defaultWidth: 28, minWidth: 28, resizable: false },
+  { key: "status", defaultWidth: 110, minWidth: 80, resizable: true },
+  { key: "identifier", defaultWidth: 72, minWidth: 50, resizable: true },
+  { key: "title", defaultWidth: 300, minWidth: 200, resizable: true, flex: true },
+  { key: "type", defaultWidth: 80, minWidth: 60, resizable: true },
+  { key: "runState", defaultWidth: 80, minWidth: 60, resizable: true },
+  { key: "assignee", defaultWidth: 180, minWidth: 100, resizable: true },
+  { key: "project", defaultWidth: 150, minWidth: 100, resizable: true },
+  { key: "date", defaultWidth: 140, minWidth: 100, resizable: true },
+];
+
+const COLUMN_HEADERS: Record<string, string> = {
+  checkbox: "",
+  priority: "",
+  status: "Status",
+  identifier: "ID",
+  title: "Title",
+  type: "Type",
+  runState: "State",
+  assignee: "Assignee",
+  project: "Project",
+  date: "Updated",
+};
 
 /* ── View state ── */
 
@@ -299,6 +327,8 @@ export function IssuesList({
 
   const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
   const hasSelection = selectedIds.size > 0;
+
+  const { gridTemplateColumns, onResizeStart, resizingCol, resetColumn } = useColumnResize(ISSUE_COLUMNS);
 
   const [assigneePickerIssueId, setAssigneePickerIssueId] = useState<string | null>(null);
   const [projectPickerIssueId, setProjectPickerIssueId] = useState<string | null>(null);
@@ -600,14 +630,17 @@ export function IssuesList({
       to={`/issues/${issue.identifier ?? issue.id}`}
       state={issueLinkState}
       className={cn(
-        "group/row flex items-start gap-2 py-2.5 pl-3 pr-3 text-sm last:border-b-0 cursor-pointer hover:bg-accent/50 transition-colors no-underline text-inherit sm:grid sm:grid-cols-[auto_auto_minmax(0,1fr)_auto_auto_auto] sm:items-center sm:py-2 sm:min-w-[800px]",
+        "group/row flex items-start gap-2 py-2.5 pl-3 pr-3 text-sm last:border-b-0 cursor-pointer hover:bg-accent/50 transition-colors no-underline text-inherit sm:grid sm:items-center sm:py-2 sm:min-w-[1000px]",
         isKbSelected && "ring-2 ring-inset ring-primary bg-accent/60",
         isChecked && "bg-primary/5",
+        resizingCol && "select-none",
       )}
+      style={{ gridTemplateColumns } as React.CSSProperties}
     >
+      {/* Col 1: Checkbox */}
       <span
         className={cn(
-          "shrink-0 flex items-center justify-center w-5 h-5 mt-px",
+          "shrink-0 flex items-center justify-center w-5 h-5 mt-px sm:mt-0",
           hasSelection ? "visible" : "invisible group-hover/row:visible",
         )}
         onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
@@ -618,6 +651,8 @@ export function IssuesList({
           className="h-4 w-4"
         />
       </span>
+
+      {/* Mobile-only status (before title on mobile) */}
       <span className="shrink-0 pt-px sm:hidden" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
         <StatusIcon
           status={issue.status}
@@ -627,8 +662,31 @@ export function IssuesList({
         />
       </span>
 
+      {/* Mobile wrapper - stacked column on mobile, sm:contents to flatten into grid on desktop */}
       <span className="flex min-w-0 flex-1 flex-col gap-0.5 sm:contents">
-        <span className="sm:order-2 sm:min-w-0 sm:overflow-hidden">
+
+        {/* Col 2: Priority (desktop only) */}
+        <span className="hidden sm:inline-flex sm:items-center sm:justify-center" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
+          <PriorityIcon priority={issue.priority} onChange={(p) => onUpdateIssue(issue.id, { priority: p })} />
+        </span>
+
+        {/* Col 3: Status (desktop only) */}
+        <span className="hidden sm:inline-flex sm:items-center sm:justify-start" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
+          <StatusIcon
+            status={issue.status}
+            onChange={(s) => onUpdateIssue(issue.id, { status: s })}
+            showLabel
+            linkSummary={issue.linkSummary}
+          />
+        </span>
+
+        {/* Col 4: Identifier */}
+        <span className="hidden sm:flex sm:items-center text-xs text-muted-foreground font-mono">
+          {issue.identifier ?? issue.id.slice(0, 8)}
+        </span>
+
+        {/* Col 5: Title + description */}
+        <span className="sm:min-w-0 sm:overflow-hidden">
           <span className="line-clamp-2 text-sm sm:line-clamp-1 sm:truncate block">
             {issue.title}
           </span>
@@ -637,26 +695,40 @@ export function IssuesList({
               {issue.description.replace(/[\n\r]+/g, " ").slice(0, 120)}
             </span>
           )}
+          {/* Desktop: inline labels & deps after title */}
+          {(issue.labels ?? []).length > 0 && (
+            <span className="hidden sm:inline-flex items-center gap-1 ml-2 align-middle">
+              {(issue.labels ?? []).slice(0, 3).map((label) => (
+                <span
+                  key={label.id}
+                  className="inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium"
+                  style={{
+                    borderColor: label.color,
+                    color: label.color,
+                    backgroundColor: `${label.color}1f`,
+                  }}
+                >
+                  {label.name}
+                </span>
+              ))}
+              {(issue.labels ?? []).length > 3 && (
+                <span className="text-[10px] text-muted-foreground">+{(issue.labels ?? []).length - 3}</span>
+              )}
+            </span>
+          )}
+          {issue.linkSummary && (
+            <span className="hidden sm:inline-flex ml-2 align-middle" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
+              <DependencyPills issueId={issue.id} linkSummary={issue.linkSummary} />
+            </span>
+          )}
         </span>
 
-        <span className="flex items-center gap-2 sm:order-1 sm:shrink-0">
-          <span className="w-3.5 shrink-0 hidden sm:block" />
-          <span className="hidden sm:inline-flex" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
-            <PriorityIcon priority={issue.priority} onChange={(p) => onUpdateIssue(issue.id, { priority: p })} />
-          </span>
-          <span className="hidden shrink-0 sm:inline-flex sm:w-[105px]" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
-            <StatusIcon
-              status={issue.status}
-              onChange={(s) => onUpdateIssue(issue.id, { status: s })}
-              showLabel
-              linkSummary={issue.linkSummary}
-            />
-          </span>
-          <span className="text-xs text-muted-foreground font-mono shrink-0 sm:w-[68px]">
+        {/* Mobile-only meta row */}
+        <span className="flex items-center gap-2 sm:hidden">
+          <span className="text-xs text-muted-foreground font-mono shrink-0">
             {issue.identifier ?? issue.id.slice(0, 8)}
           </span>
-          {/* Mobile-only type & run state badges */}
-          <span className="inline-flex items-center gap-1 sm:hidden">
+          <span className="inline-flex items-center gap-1">
             {issue.type === "plan" && (
               <span className="inline-flex items-center gap-1 rounded-full border border-violet-500/40 bg-violet-500/10 px-1.5 py-0.5 text-[10px] text-violet-600 dark:text-violet-400">
                 Plan
@@ -694,20 +766,20 @@ export function IssuesList({
             )}
           </span>
           {issue.linkSummary && (
-            <span className="sm:hidden" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
+            <span onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
               <DependencyPills issueId={issue.id} linkSummary={issue.linkSummary} />
             </span>
           )}
-          <span className="text-xs text-muted-foreground sm:hidden">&middot;</span>
-          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground sm:hidden">
+          <span className="text-xs text-muted-foreground">&middot;</span>
+          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
             <ActivityDot date={issue.updatedAt} />
             {timeAgo(issue.updatedAt)}
           </span>
         </span>
       </span>
 
-      {/* Type column */}
-      <span className="hidden sm:flex sm:order-3 items-center gap-1 shrink-0 sm:w-[80px]">
+      {/* Col 6: Type (desktop) */}
+      <span className="hidden sm:flex items-center gap-1 overflow-hidden">
           {issue.type === "plan" && (
             <span className="inline-flex items-center gap-1 rounded-full border border-violet-500/40 bg-violet-500/10 px-1.5 py-0.5 text-[10px] text-violet-600 dark:text-violet-400">
               Plan
@@ -732,8 +804,8 @@ export function IssuesList({
           )}
       </span>
 
-      {/* Run state column */}
-      <span className="hidden sm:flex sm:order-4 items-center gap-1 shrink-0 sm:w-[80px]">
+      {/* Col 7: Run state (desktop) */}
+      <span className="hidden sm:flex items-center gap-1 overflow-hidden">
           {liveIssueIds?.has(issue.id) && (
             <span className="inline-flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2 py-0.5 rounded-full bg-blue-500/10">
               <span className="relative flex h-2 w-2">
@@ -776,39 +848,79 @@ export function IssuesList({
           })()}
       </span>
 
-      <span className="hidden sm:flex sm:order-5 items-center gap-2 sm:gap-3 shrink-0 sm:justify-end">
+      {/* Col 8: Assignee (desktop) */}
+      <span className="hidden sm:inline-flex sm:items-center sm:gap-1 sm:overflow-hidden" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
         {(() => {
           const issueSchedules = recurringByIssueId.get(issue.id) ?? [];
-          if (issueSchedules.length === 0) return null;
-          const enabledCount = issueSchedules.filter((schedule) => schedule.enabled).length;
-          return (
-            <Popover
-              open={recurringPickerIssueId === issue.id}
-              onOpenChange={(open) => setRecurringPickerIssueId(open ? issue.id : null)}
-            >
-              <PopoverTrigger asChild>
-                <button
-                  className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-accent/50 transition-colors"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                  }}
-                >
-                  <Clock3 className="h-3.5 w-3.5" />
-                  {enabledCount}/{issueSchedules.length}
-                </button>
-              </PopoverTrigger>
-              <PopoverContent
-                className="w-80 p-2"
-                align="end"
-                onClick={(e) => e.stopPropagation()}
+          if (issueSchedules.length > 0) {
+            const enabledCount = issueSchedules.filter((schedule) => schedule.enabled).length;
+            return (
+              <Popover
+                open={recurringPickerIssueId === issue.id}
+                onOpenChange={(open) => setRecurringPickerIssueId(open ? issue.id : null)}
               >
-                <div className="space-y-2">
-                  {issueSchedules.map((schedule) => (
-                    <div key={schedule.id} className="rounded border border-border p-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-medium truncate">{schedule.name}</span>
-                        <span className="ml-auto">
+                <PopoverTrigger asChild>
+                  <button
+                    className="inline-flex items-center gap-1 rounded-md border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground hover:bg-accent/50 transition-colors shrink-0"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
+                  >
+                    <Clock3 className="h-3 w-3" />
+                    {enabledCount}/{issueSchedules.length}
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent
+                  className="w-80 p-2"
+                  align="end"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="space-y-2">
+                    {issueSchedules.map((schedule) => (
+                      <div key={schedule.id} className="rounded border border-border p-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-medium truncate">{schedule.name}</span>
+                          <span className="ml-auto">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-6 px-2 text-[10px]"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                updateSchedule.mutate({
+                                  scheduleId: schedule.id,
+                                  patch: { enabled: !schedule.enabled },
+                                });
+                              }}
+                              disabled={updateSchedule.isPending}
+                            >
+                              {schedule.enabled ? (
+                                <>
+                                  <Pause className="h-3 w-3 mr-1" />
+                                  Stop
+                                </>
+                              ) : (
+                                <>
+                                  <Play className="h-3 w-3 mr-1" />
+                                  Start
+                                </>
+                              )}
+                            </Button>
+                          </span>
+                        </div>
+                        <div className="mt-2 flex items-center gap-1.5">
+                          <input
+                            className="w-full rounded-md border border-border bg-transparent px-2 py-1 text-[11px] font-mono"
+                            value={scheduleDraftValue(schedule)}
+                            onChange={(e) =>
+                              setRecurringDrafts((prev) => ({
+                                ...prev,
+                                [schedule.id]: e.target.value,
+                              }))
+                            }
+                          />
                           <Button
                             variant="outline"
                             size="sm"
@@ -818,94 +930,31 @@ export function IssuesList({
                               e.stopPropagation();
                               updateSchedule.mutate({
                                 scheduleId: schedule.id,
-                                patch: { enabled: !schedule.enabled },
+                                patch: { expression: scheduleDraftValue(schedule).trim() },
                               });
                             }}
-                            disabled={updateSchedule.isPending}
+                            disabled={
+                              updateSchedule.isPending ||
+                              scheduleDraftValue(schedule).trim().length === 0
+                            }
                           >
-                            {schedule.enabled ? (
-                              <>
-                                <Pause className="h-3 w-3 mr-1" />
-                                Stop
-                              </>
-                            ) : (
-                              <>
-                                <Play className="h-3 w-3 mr-1" />
-                                Start
-                              </>
-                            )}
+                            <Save className="h-3 w-3 mr-1" />
+                            Save
                           </Button>
-                        </span>
+                        </div>
+                        <div className="mt-1 text-[10px] text-muted-foreground">
+                          {schedule.timezone} - {schedule.enabled ? "enabled" : "disabled"} - next{" "}
+                          {schedule.nextTriggerAt ? timeAgo(schedule.nextTriggerAt) : "not scheduled"}
+                        </div>
                       </div>
-                      <div className="mt-2 flex items-center gap-1.5">
-                        <input
-                          className="w-full rounded-md border border-border bg-transparent px-2 py-1 text-[11px] font-mono"
-                          value={scheduleDraftValue(schedule)}
-                          onChange={(e) =>
-                            setRecurringDrafts((prev) => ({
-                              ...prev,
-                              [schedule.id]: e.target.value,
-                            }))
-                          }
-                        />
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-6 px-2 text-[10px]"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            updateSchedule.mutate({
-                              scheduleId: schedule.id,
-                              patch: { expression: scheduleDraftValue(schedule).trim() },
-                            });
-                          }}
-                          disabled={
-                            updateSchedule.isPending ||
-                            scheduleDraftValue(schedule).trim().length === 0
-                          }
-                        >
-                          <Save className="h-3 w-3 mr-1" />
-                          Save
-                        </Button>
-                      </div>
-                      <div className="mt-1 text-[10px] text-muted-foreground">
-                        {schedule.timezone} - {schedule.enabled ? "enabled" : "disabled"} - next{" "}
-                        {schedule.nextTriggerAt ? timeAgo(schedule.nextTriggerAt) : "not scheduled"}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </PopoverContent>
-            </Popover>
-          );
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
+            );
+          }
+          return null;
         })()}
-        {(issue.labels ?? []).length > 0 && (
-          <span className="hidden md:flex items-center gap-1 max-w-[240px] overflow-hidden">
-            {(issue.labels ?? []).slice(0, 3).map((label) => (
-              <span
-                key={label.id}
-                className="inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium"
-                style={{
-                  borderColor: label.color,
-                  color: label.color,
-                  backgroundColor: `${label.color}1f`,
-                }}
-              >
-                {label.name}
-              </span>
-            ))}
-            {(issue.labels ?? []).length > 3 && (
-              <span className="text-[10px] text-muted-foreground">+{(issue.labels ?? []).length - 3}</span>
-            )}
-          </span>
-        )}
-        {issue.linkSummary && (
-          <span className="hidden sm:inline-flex" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
-            <DependencyPills issueId={issue.id} linkSummary={issue.linkSummary} />
-          </span>
-        )}
-        <span className="hidden sm:inline-flex" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
         <Popover
           open={assigneePickerIssueId === issue.id}
           onOpenChange={(open) => {
@@ -915,7 +964,7 @@ export function IssuesList({
         >
           <PopoverTrigger asChild>
             <button
-              className="flex w-[180px] shrink-0 items-center rounded-md px-2 py-1 hover:bg-accent/50 transition-colors"
+              className="flex items-center rounded-md px-2 py-1 hover:bg-accent/50 transition-colors min-w-0"
             >
               {issue.assigneeAgentId && agentName(issue.assigneeAgentId) ? (
                 <Identity name={agentName(issue.assigneeAgentId)!} size="sm" />
@@ -980,8 +1029,10 @@ export function IssuesList({
             </div>
           </PopoverContent>
         </Popover>
-        </span>
-        <span className="hidden sm:inline-flex" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
+      </span>
+
+      {/* Col 9: Project (desktop) */}
+      <span className="hidden sm:inline-flex sm:items-center sm:overflow-hidden" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
         <Popover
           open={projectPickerIssueId === issue.id}
           onOpenChange={(open) => {
@@ -991,7 +1042,7 @@ export function IssuesList({
         >
           <PopoverTrigger asChild>
             <button
-              className="flex w-[150px] shrink-0 items-center rounded-md px-2 py-1 hover:bg-accent/50 transition-colors"
+              className="flex items-center rounded-md px-2 py-1 hover:bg-accent/50 transition-colors min-w-0"
             >
               {issue.projectId && issue.project ? (
                 <span className="inline-flex items-center gap-1.5 text-xs min-w-0">
@@ -1068,14 +1119,15 @@ export function IssuesList({
             </div>
           </PopoverContent>
         </Popover>
-        </span>
-        <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground tabular-nums whitespace-nowrap">
-          <ActivityDot date={issue.updatedAt} />
-          {formatDateTime(issue.updatedAt)}
-        </span>
+      </span>
+
+      {/* Col 10: Date (desktop) */}
+      <span className="hidden sm:inline-flex items-center gap-1.5 text-xs text-muted-foreground tabular-nums whitespace-nowrap">
+        <ActivityDot date={issue.updatedAt} />
+        {formatDateTime(issue.updatedAt)}
       </span>
     </Link>
-  ); }, [issueLinkState, onUpdateIssue, recurringIssueIds, templateIssueIds, spawnedFromTemplateIds, liveIssueIds, recurringByIssueId, recurringPickerIssueId, updateSchedule, scheduleDraftValue, recurringDrafts, assigneePickerIssueId, assigneeSearch, agentName, agents, projectPickerIssueId, projectSearch, allProjects, flatVisibleIssues, selectedIndex, selectedIds, hasSelection, toggleSelect]); // eslint-disable-line react-hooks/exhaustive-deps
+  ); }, [issueLinkState, onUpdateIssue, recurringIssueIds, templateIssueIds, spawnedFromTemplateIds, liveIssueIds, recurringByIssueId, recurringPickerIssueId, updateSchedule, scheduleDraftValue, recurringDrafts, assigneePickerIssueId, assigneeSearch, agentName, agents, projectPickerIssueId, projectSearch, allProjects, flatVisibleIssues, selectedIndex, selectedIds, hasSelection, toggleSelect, gridTemplateColumns, resizingCol]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="space-y-4">
@@ -1515,6 +1567,11 @@ export function IssuesList({
                       : [...viewState.collapsedGroups, key],
                   })}
                   renderRow={renderIssueRow}
+                  columns={ISSUE_COLUMNS}
+                  gridTemplateColumns={gridTemplateColumns}
+                  onResizeStart={onResizeStart}
+                  resizingCol={resizingCol}
+                  resetColumn={resetColumn}
                 />
               )}
               {pastIssues.length > 0 && (
@@ -1531,6 +1588,11 @@ export function IssuesList({
                       : viewState.collapsedGroups.filter((k) => k !== key),
                   })}
                   renderRow={renderIssueRow}
+                  columns={ISSUE_COLUMNS}
+                  gridTemplateColumns={gridTemplateColumns}
+                  onResizeStart={onResizeStart}
+                  resizingCol={resizingCol}
+                  resetColumn={resetColumn}
                 />
               )}
             </>
@@ -1550,6 +1612,11 @@ export function IssuesList({
                 })}
                 renderRow={renderIssueRow}
                 onAdd={() => openNewIssue(newIssueDefaults(group.key))}
+                columns={ISSUE_COLUMNS}
+                gridTemplateColumns={gridTemplateColumns}
+                onResizeStart={onResizeStart}
+                resizingCol={resizingCol}
+                resetColumn={resetColumn}
               />
             ))
           )}
@@ -1739,6 +1806,53 @@ export function IssuesList({
 
 /* ── Reusable collapsible section for issue groups ── */
 
+function ColumnHeaderRow({
+  columns,
+  gridTemplateColumns,
+  onResizeStart,
+  resizingCol,
+  resetColumn,
+}: {
+  columns: ColumnConfig[];
+  gridTemplateColumns: string;
+  onResizeStart: (colKey: string, startX: number) => void;
+  resizingCol: string | null;
+  resetColumn: (colKey: string) => void;
+}) {
+  return (
+    <div
+      className="hidden sm:grid sm:items-center sm:min-w-[1000px] border-b border-border bg-muted/30 px-3 py-1.5 text-[11px] font-medium text-muted-foreground uppercase tracking-wider select-none"
+      style={{ gridTemplateColumns } as React.CSSProperties}
+    >
+      {columns.map((col, i) => (
+        <span key={col.key} className="relative flex items-center min-w-0 overflow-hidden">
+          <span className="truncate">{COLUMN_HEADERS[col.key] ?? ""}</span>
+          {col.resizable && (
+            <span
+              className={cn(
+                "absolute right-0 top-0 bottom-0 flex items-center justify-center w-4 cursor-col-resize z-10 group/handle hover:bg-primary/10",
+                resizingCol === col.key && "bg-primary/20",
+              )}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onResizeStart(col.key, e.clientX);
+              }}
+              onDoubleClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                resetColumn(col.key);
+              }}
+            >
+              <GripVertical className="h-3 w-3 text-muted-foreground/50 group-hover/handle:text-muted-foreground" />
+            </span>
+          )}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function IssueSection({
   sectionKey,
   label,
@@ -1749,6 +1863,11 @@ function IssueSection({
   onToggle,
   renderRow,
   onAdd,
+  columns,
+  gridTemplateColumns,
+  onResizeStart,
+  resizingCol,
+  resetColumn,
 }: {
   sectionKey: string;
   label: string | null;
@@ -1759,6 +1878,11 @@ function IssueSection({
   onToggle: (key: string, open: boolean) => void;
   renderRow: (issue: Issue) => React.ReactNode;
   onAdd?: () => void;
+  columns: ColumnConfig[];
+  gridTemplateColumns: string;
+  onResizeStart: (colKey: string, startX: number) => void;
+  resizingCol: string | null;
+  resetColumn: (colKey: string) => void;
 }) {
   const inCollapsed = collapsedGroups.includes(sectionKey);
   const effectiveOpen = defaultOpen ? !inCollapsed : inCollapsed;
@@ -1794,6 +1918,13 @@ function IssueSection({
       )}
       <CollapsibleContent>
         <div className="border border-border rounded-lg divide-y divide-border mb-4 overflow-x-auto">
+          <ColumnHeaderRow
+            columns={columns}
+            gridTemplateColumns={gridTemplateColumns}
+            onResizeStart={onResizeStart}
+            resizingCol={resizingCol}
+            resetColumn={resetColumn}
+          />
           {items.map(renderRow)}
         </div>
       </CollapsibleContent>
