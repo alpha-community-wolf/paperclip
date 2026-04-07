@@ -319,6 +319,7 @@ export function App() {
           <Route path="knowledge" element={<UnprefixedBoardRedirect />} />
           <Route path="skills" element={<UnprefixedBoardRedirect />} />
           <Route path="webhooks" element={<UnprefixedBoardRedirect />} />
+          <Route path="system-chores" element={<UnprefixedBoardRedirect />} />
           <Route path=":companyPrefix" element={<Layout />}>
             {boardRoutes()}
           </Route>
