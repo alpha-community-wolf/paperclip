@@ -133,7 +133,7 @@ export function Sidebar() {
           <SidebarNavItem to="/schedules" label="Schedules" icon={CalendarClock} />
         </SidebarSection>
 
-        <SidebarSection label="Company" defaultOpen={false}>
+        <SidebarSection label="Company">
           <SidebarNavItem to="/knowledge" label="Knowledge" icon={Brain} />
           <SidebarNavItem to="/org" label="Org" icon={Network} />
           <SidebarNavItem to="/costs" label="Costs" icon={DollarSign} />
