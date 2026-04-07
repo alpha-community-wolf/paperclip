@@ -7,6 +7,7 @@ import { useCompany } from "../context/CompanyContext";
 import { useDialog } from "../context/DialogContext";
 import { queryKeys } from "../lib/queryKeys";
 import { MarkdownBody } from "./MarkdownBody";
+import { FileTree } from "./FileTree";
 import { cn } from "../lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -29,6 +30,7 @@ import {
   FilePlus,
   Loader2,
   Download,
+  PanelLeft,
 } from "lucide-react";
 
 interface AgentWorkspaceTabProps {
@@ -647,6 +649,7 @@ export function AgentWorkspaceTab({ agentId, agentRouteId, hasCwd }: AgentWorksp
   const [currentPath, setCurrentPath] = useState("");
   const [openFile, setOpenFile] = useState<string | null>(null);
   const [newFileName, setNewFileName] = useState<string | null>(null);
+  const [showTree, setShowTree] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const newFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -705,13 +708,35 @@ export function AgentWorkspaceTab({ agentId, agentRouteId, hasCwd }: AgentWorksp
     }
   }
 
+  function handleTreeSelectFile(path: string) {
+    setOpenFile(path);
+    // On mobile, close the tree overlay when a file is selected
+    setShowTree(false);
+  }
+
   if (!hasCwd) {
     return <NoWorkspaceState agentRouteId={agentRouteId} />;
   }
 
-  if (openFile) {
-    return (
-      <div className="animate-page-enter">
+  const parentPath = currentPath.includes("/")
+    ? currentPath.slice(0, currentPath.lastIndexOf("/"))
+    : "";
+
+  // --- Toolbar (shared between file view and directory view) ---
+  const toolbar = (
+    <div className="flex items-center gap-2">
+      {/* Mobile tree toggle */}
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => setShowTree((v) => !v)}
+        className="md:hidden gap-1.5 shrink-0 text-muted-foreground hover:text-foreground"
+        title="Toggle file tree"
+      >
+        <PanelLeft className="h-3.5 w-3.5" />
+      </Button>
+
+      {openFile ? (
         <Breadcrumbs
           currentPath={openFile}
           onNavigate={(p) => {
@@ -719,72 +744,61 @@ export function AgentWorkspaceTab({ agentId, agentRouteId, hasCwd }: AgentWorksp
             setCurrentPath(p);
           }}
         />
-        <div className="mt-3">
-          <FileViewer
-            agentId={agentId}
-            agentRouteId={agentRouteId}
-            filePath={openFile}
-            companyId={selectedCompanyId ?? undefined}
-            onBack={() => setOpenFile(null)}
-          />
-        </div>
+      ) : (
+        <>
+          {currentPath && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setCurrentPath(parentPath)}
+              className="gap-1.5 shrink-0 md:hidden"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" />
+              Back
+            </Button>
+          )}
+          <Breadcrumbs currentPath={currentPath} onNavigate={setCurrentPath} />
+        </>
+      )}
+
+      <div className="ml-auto flex items-center gap-1.5 shrink-0">
+        <input
+          ref={fileInputRef}
+          type="file"
+          className="hidden"
+          onChange={handleFileUpload}
+        />
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={uploadMutation.isPending}
+          className="gap-1.5 text-muted-foreground hover:text-foreground"
+        >
+          {uploadMutation.isPending ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Upload className="h-3.5 w-3.5" />
+          )}
+          <span className="hidden sm:inline">Upload</span>
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setNewFileName("")}
+          disabled={newFileName !== null}
+          className="gap-1.5 text-muted-foreground hover:text-foreground"
+        >
+          <FilePlus className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">New File</span>
+        </Button>
       </div>
-    );
-  }
+    </div>
+  );
 
-  const parentPath = currentPath.includes("/")
-    ? currentPath.slice(0, currentPath.lastIndexOf("/"))
-    : "";
-
-  return (
-    <div className="space-y-3 animate-page-enter">
-      <div className="flex items-center gap-2">
-        {currentPath && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setCurrentPath(parentPath)}
-            className="gap-1.5 shrink-0"
-          >
-            <ArrowLeft className="h-3.5 w-3.5" />
-            Back
-          </Button>
-        )}
-        <Breadcrumbs currentPath={currentPath} onNavigate={setCurrentPath} />
-        <div className="ml-auto flex items-center gap-1.5 shrink-0">
-          <input
-            ref={fileInputRef}
-            type="file"
-            className="hidden"
-            onChange={handleFileUpload}
-          />
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploadMutation.isPending}
-            className="gap-1.5 text-muted-foreground hover:text-foreground"
-          >
-            {uploadMutation.isPending ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Upload className="h-3.5 w-3.5" />
-            )}
-            <span className="hidden sm:inline">Upload</span>
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setNewFileName("")}
-            disabled={newFileName !== null}
-            className="gap-1.5 text-muted-foreground hover:text-foreground"
-          >
-            <FilePlus className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">New File</span>
-          </Button>
-        </div>
-      </div>
-
+  // --- Content panel (right side on desktop, full width on mobile) ---
+  const contentPanel = (
+    <div className="space-y-3 min-w-0 flex-1">
       {newFileName !== null && (
         <div className="flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-4 py-2">
           <FilePlus className="h-4 w-4 text-primary/70 shrink-0" />
@@ -831,14 +845,80 @@ export function AgentWorkspaceTab({ agentId, agentRouteId, hasCwd }: AgentWorksp
         </div>
       )}
 
-      <DirectoryListing
-        agentId={agentId}
-        agentRouteId={agentRouteId}
-        currentPath={currentPath}
-        companyId={selectedCompanyId ?? undefined}
-        onNavigate={setCurrentPath}
-        onOpenFile={setOpenFile}
-      />
+      {openFile ? (
+        <FileViewer
+          agentId={agentId}
+          agentRouteId={agentRouteId}
+          filePath={openFile}
+          companyId={selectedCompanyId ?? undefined}
+          onBack={() => setOpenFile(null)}
+        />
+      ) : (
+        <>
+          {/* Mobile: show flat directory listing as fallback */}
+          <div className="md:hidden">
+            <DirectoryListing
+              agentId={agentId}
+              agentRouteId={agentRouteId}
+              currentPath={currentPath}
+              companyId={selectedCompanyId ?? undefined}
+              onNavigate={setCurrentPath}
+              onOpenFile={setOpenFile}
+            />
+          </div>
+          {/* Desktop: show welcome state when no file selected (tree is the navigator) */}
+          <div className="hidden md:block">
+            <div className="rounded-lg border border-dashed border-border p-12 text-center">
+              <FolderOpen className="h-8 w-8 text-muted-foreground/30 mx-auto mb-3" />
+              <p className="text-sm text-muted-foreground">
+                Select a file from the tree to view it
+              </p>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="space-y-3 animate-page-enter">
+      {toolbar}
+
+      <div className="flex flex-row gap-4">
+        {/* Tree sidebar — visible on md+ always, on mobile as overlay when toggled */}
+        <aside
+          className={cn(
+            "shrink-0 w-64 overflow-y-auto overflow-x-hidden rounded-lg border border-border bg-card p-2",
+            // Desktop: always visible
+            "hidden md:block",
+            // Mobile: shown as overlay when toggled
+            showTree && "!block fixed inset-0 z-50 w-full h-full md:relative md:w-64 md:h-auto md:inset-auto md:z-auto",
+          )}
+        >
+          {/* Mobile overlay header */}
+          {showTree && (
+            <div className="flex items-center justify-between mb-2 md:hidden">
+              <span className="text-sm font-medium">Files</span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowTree(false)}
+              >
+                Close
+              </Button>
+            </div>
+          )}
+          <FileTree
+            agentId={agentId}
+            companyId={selectedCompanyId ?? undefined}
+            selectedPath={openFile}
+            onSelectFile={handleTreeSelectFile}
+            initialExpandPath={openFile || fileParam}
+          />
+        </aside>
+
+        {contentPanel}
+      </div>
     </div>
   );
 }
