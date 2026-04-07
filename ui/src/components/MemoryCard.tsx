@@ -7,9 +7,11 @@ import {
   Clock,
   MoreHorizontal,
   Bot,
+  Pencil,
   ShieldCheck,
   Tag,
   TrendingDown,
+  User,
 } from "lucide-react";
 import type { SharedMemory } from "../api/memories";
 import { memoriesApi } from "../api/memories";
@@ -49,9 +51,10 @@ interface Props {
   memory: SharedMemory;
   agentMap?: Map<string, { name: string }>;
   compact?: boolean;
+  onEdit?: (memory: SharedMemory) => void;
 }
 
-export function MemoryCard({ memory, agentMap, compact }: Props) {
+export function MemoryCard({ memory, agentMap, compact, onEdit }: Props) {
   const { selectedCompanyId } = useCompany();
   const queryClient = useQueryClient();
   const [expanded, setExpanded] = useState(false);
@@ -160,6 +163,12 @@ export function MemoryCard({ memory, agentMap, compact }: Props) {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-40">
+              {memory.status === "active" && onEdit && (
+                <DropdownMenuItem onClick={() => onEdit(memory)}>
+                  <Pencil className="h-3.5 w-3.5 mr-2" />
+                  Edit
+                </DropdownMenuItem>
+              )}
               {memory.status === "active" && (
                 <DropdownMenuItem onClick={() => archiveMutation.mutate()}>
                   <Archive className="h-3.5 w-3.5 mr-2" />
@@ -227,6 +236,12 @@ export function MemoryCard({ memory, agentMap, compact }: Props) {
             <span className="flex items-center gap-1">
               <Bot className="h-3 w-3" />
               {sourceAgent.name}
+            </span>
+          )}
+          {memory.sourceType === "manual" && (
+            <span className="flex items-center gap-1 italic">
+              <User className="h-3 w-3" />
+              added manually
             </span>
           )}
           {memory.sourceType === "auto_capture" && (

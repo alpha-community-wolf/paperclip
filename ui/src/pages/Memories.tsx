@@ -7,13 +7,15 @@ import {
   FolderOpen,
   Filter,
   AlertTriangle,
+  Plus,
   X,
 } from "lucide-react";
 import { memoriesApi } from "../api/memories";
-import type { MemoryFilters } from "../api/memories";
+import type { MemoryFilters, SharedMemory } from "../api/memories";
 import { agentsApi } from "../api/agents";
 import { projectsApi } from "../api/projects";
 import { MemoryCard } from "../components/MemoryCard";
+import { AddEditMemoryDialog } from "../components/AddEditMemoryDialog";
 import { useCompany } from "../context/CompanyContext";
 import { queryKeys } from "../lib/queryKeys";
 import { cn } from "../lib/utils";
@@ -55,6 +57,13 @@ export function Memories() {
   const [selectedCategory, setSelectedCategory] = useState<string>("__all__");
   const [selectedStatus, setSelectedStatus] = useState<string>("active");
   const [page, setPage] = useState(0);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingMemory, setEditingMemory] = useState<SharedMemory | null>(null);
+
+  const handleEdit = useCallback((memory: SharedMemory) => {
+    setEditingMemory(memory);
+    setDialogOpen(true);
+  }, []);
 
   // Debounce search
   const debounceRef = useMemo(() => ({ timer: null as ReturnType<typeof setTimeout> | null }), []);
@@ -151,12 +160,21 @@ export function Memories() {
           </div>
         </div>
 
-        {conflictCount > 0 && (
-          <div className="flex items-center gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-700 dark:text-amber-300">
-            <AlertTriangle className="h-3.5 w-3.5" />
-            {conflictCount} potential conflict{conflictCount !== 1 ? "s" : ""}
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          {conflictCount > 0 && (
+            <div className="flex items-center gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-700 dark:text-amber-300">
+              <AlertTriangle className="h-3.5 w-3.5" />
+              {conflictCount} potential conflict{conflictCount !== 1 ? "s" : ""}
+            </div>
+          )}
+          <Button
+            size="sm"
+            onClick={() => { setEditingMemory(null); setDialogOpen(true); }}
+          >
+            <Plus className="h-4 w-4 mr-1.5" />
+            Add Knowledge
+          </Button>
+        </div>
       </div>
 
       {/* Scope tabs */}
@@ -311,6 +329,7 @@ export function Memories() {
               key={memory.id}
               memory={memory}
               agentMap={agentMap}
+              onEdit={handleEdit}
             />
           ))}
         </div>
@@ -342,6 +361,12 @@ export function Memories() {
           </div>
         </div>
       )}
+
+      <AddEditMemoryDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        memory={editingMemory}
+      />
     </div>
   );
 }

@@ -100,6 +100,17 @@ export const memoriesApi = {
     return api.get<MemorySearchResponse>(`/companies/${companyId}/memories/search?${params}`);
   },
 
+  create: (companyId: string, data: {
+    content: string;
+    scope: "company" | "project";
+    projectId?: string | null;
+    category: SharedMemory["category"];
+    tags?: string[];
+    confidence?: number;
+    sourceType?: "manual";
+    expiresAt?: string | null;
+  }) => api.post<SharedMemory>(`/companies/${companyId}/memories`, data),
+
   get: (id: string) => api.get<SharedMemory>(`/memories/${id}`),
 
   update: (id: string, data: Partial<Pick<SharedMemory, "content" | "category" | "tags" | "confidence" | "status" | "supersededBy" | "expiresAt">>) =>
