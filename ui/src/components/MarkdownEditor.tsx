@@ -9,6 +9,7 @@ import {
   type CSSProperties,
   type DragEvent,
 } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   CodeMirrorEditor,
   MDXEditor,
@@ -27,8 +28,12 @@ import {
   thematicBreakPlugin,
   type RealmPlugin,
 } from "@mdxeditor/editor";
-import { buildProjectMentionHref, parseProjectMentionHref } from "@paperclipai/shared";
+import { buildProjectMentionHref, parseProjectMentionHref, type Command } from "@paperclipai/shared";
 import { cn } from "../lib/utils";
+import { commandsApi } from "../api/commands";
+import { useCompany } from "../context/CompanyContext";
+import { queryKeys } from "../lib/queryKeys";
+import { SlashCommandPicker } from "./SlashCommandPicker";
 
 /* ---- Mention types ---- */
 
@@ -69,6 +74,15 @@ interface MentionState {
   left: number;
   textNode: Text;
   atPos: number;
+  endPos: number;
+}
+
+interface SlashState {
+  query: string;
+  top: number;
+  left: number;
+  textNode: Text;
+  slashPos: number;
   endPos: number;
 }
 
@@ -162,6 +176,51 @@ function applyMention(markdown: string, query: string, option: MentionOption): s
   return markdown.slice(0, idx) + replacement + markdown.slice(idx + search.length);
 }
 
+function detectSlash(container: HTMLElement): SlashState | null {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) return null;
+
+  const range = sel.getRangeAt(0);
+  const textNode = range.startContainer;
+  if (textNode.nodeType !== Node.TEXT_NODE) return null;
+  if (!container.contains(textNode)) return null;
+
+  const text = textNode.textContent ?? "";
+  const offset = range.startOffset;
+
+  let slashPos = -1;
+  for (let i = offset - 1; i >= 0; i--) {
+    const ch = text[i];
+    if (ch === "/") {
+      if (i === 0 || /\s/.test(text[i - 1])) {
+        slashPos = i;
+      }
+      break;
+    }
+    if (/\s/.test(ch)) break;
+  }
+
+  if (slashPos === -1) return null;
+
+  const query = text.slice(slashPos + 1, offset);
+  if (!/^[a-z0-9-]*$/i.test(query)) return null;
+
+  const tempRange = document.createRange();
+  tempRange.setStart(textNode, slashPos);
+  tempRange.setEnd(textNode, slashPos + 1);
+  const rect = tempRange.getBoundingClientRect();
+  const containerRect = container.getBoundingClientRect();
+
+  return {
+    query,
+    top: rect.bottom - containerRect.top,
+    left: rect.left - containerRect.left,
+    textNode: textNode as Text,
+    slashPos,
+    endPos: offset,
+  };
+}
+
 function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
   const trimmed = hex.trim();
   const match = /^#([0-9a-f]{6})$/i.exec(trimmed);
@@ -201,6 +260,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
   mentions,
   onSubmit,
 }: MarkdownEditorProps, forwardedRef) {
+  const { selectedCompanyId } = useCompany();
   const containerRef = useRef<HTMLDivElement>(null);
   const ref = useRef<MDXEditorMethods>(null);
   const latestValueRef = useRef(value);
@@ -217,6 +277,17 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
   const mentionStateRef = useRef<MentionState | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
   const mentionActive = mentionState !== null && mentions && mentions.length > 0;
+  const [slashState, setSlashState] = useState<SlashState | null>(null);
+  const slashStateRef = useRef<SlashState | null>(null);
+  const [slashIndex, setSlashIndex] = useState(0);
+
+  const { data: allCommands } = useQuery({
+    queryKey: queryKeys.commands.list(selectedCompanyId ?? "__none__"),
+    queryFn: () => commandsApi.list(selectedCompanyId!),
+    enabled: Boolean(selectedCompanyId),
+  });
+  const availableCommands = allCommands ?? [];
+  const slashActive = slashState !== null && availableCommands.length > 0;
   const projectColorById = useMemo(() => {
     const map = new Map<string, string | null>();
     for (const mention of mentions ?? []) {
@@ -232,6 +303,20 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
     const q = mentionState.query.toLowerCase();
     return mentions.filter((m) => m.name.toLowerCase().includes(q)).slice(0, 8);
   }, [mentionState?.query, mentions]);
+
+  const filteredSlashCommands = useMemo(() => {
+    if (!slashState) return [];
+    const query = slashState.query.trim().toLowerCase();
+    if (!query) return availableCommands.slice(0, 8);
+    return availableCommands
+      .filter((item) => {
+        return (
+          item.trigger.toLowerCase().includes(query) ||
+          item.label.toLowerCase().includes(query)
+        );
+      })
+      .slice(0, 8);
+  }, [availableCommands, slashState]);
 
   useImperativeHandle(forwardedRef, () => ({
     focus: () => {
@@ -336,21 +421,48 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
     }
   }, [mentions]);
 
+  const checkSlash = useCallback(() => {
+    if (!containerRef.current || availableCommands.length === 0) {
+      slashStateRef.current = null;
+      setSlashState(null);
+      return;
+    }
+
+    const result = detectSlash(containerRef.current);
+    slashStateRef.current = result;
+    if (result) {
+      setSlashState(result);
+      setSlashIndex(0);
+    } else {
+      setSlashState(null);
+    }
+  }, [availableCommands.length]);
+
   useEffect(() => {
-    if (!mentions || mentions.length === 0) return;
+    if ((!mentions || mentions.length === 0) && availableCommands.length === 0) {
+      return;
+    }
 
     const el = containerRef.current;
     // Listen for input events on the container so mention detection
     // also fires after typing (e.g. space to dismiss).
-    const onInput = () => requestAnimationFrame(checkMention);
+    const onInput = () => requestAnimationFrame(() => {
+      checkMention();
+      checkSlash();
+    });
 
-    document.addEventListener("selectionchange", checkMention);
+    const onSelectionChange = () => {
+      checkMention();
+      checkSlash();
+    };
+
+    document.addEventListener("selectionchange", onSelectionChange);
     el?.addEventListener("input", onInput, true);
     return () => {
-      document.removeEventListener("selectionchange", checkMention);
+      document.removeEventListener("selectionchange", onSelectionChange);
       el?.removeEventListener("input", onInput, true);
     };
-  }, [checkMention, mentions]);
+  }, [availableCommands.length, checkMention, checkSlash, mentions]);
 
   useEffect(() => {
     const editable = containerRef.current?.querySelector('[contenteditable="true"]');
@@ -469,6 +581,36 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
     [decorateProjectMentions, onChange],
   );
 
+  const selectSlashCommand = useCallback((command: Command) => {
+    const state = slashStateRef.current;
+    if (!state) return;
+
+    const replacement = command.content.endsWith(" ") ? command.content : `${command.content} `;
+    const sel = window.getSelection();
+
+    if (sel && state.textNode.isConnected) {
+      const range = document.createRange();
+      range.setStart(state.textNode, state.slashPos);
+      range.setEnd(state.textNode, state.endPos);
+      sel.removeAllRanges();
+      sel.addRange(range);
+      document.execCommand("insertText", false, replacement);
+    } else {
+      const current = latestValueRef.current;
+      const token = `/${state.query}`;
+      const index = current.lastIndexOf(token);
+      if (index !== -1) {
+        const next = current.slice(0, index) + replacement + current.slice(index + token.length);
+        latestValueRef.current = next;
+        ref.current?.setMarkdown(next);
+        onChange(next);
+      }
+    }
+
+    slashStateRef.current = null;
+    setSlashState(null);
+  }, [onChange]);
+
   function hasFilePayload(evt: DragEvent<HTMLDivElement>) {
     return Array.from(evt.dataTransfer?.types ?? []).includes("Files");
   }
@@ -528,6 +670,40 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
               e.stopPropagation();
               selectMention(filteredMentions[mentionIndex]);
               return;
+            }
+          }
+        }
+
+        if (!mentionActive && slashActive) {
+          if (e.key === " ") {
+            slashStateRef.current = null;
+            setSlashState(null);
+            return;
+          }
+          if (e.key === "Escape") {
+            e.preventDefault();
+            e.stopPropagation();
+            slashStateRef.current = null;
+            setSlashState(null);
+            return;
+          }
+          if (filteredSlashCommands.length > 0) {
+            if (e.key === "ArrowDown") {
+              e.preventDefault();
+              e.stopPropagation();
+              setSlashIndex((prev) => Math.min(prev + 1, filteredSlashCommands.length - 1));
+              return;
+            }
+            if (e.key === "ArrowUp") {
+              e.preventDefault();
+              e.stopPropagation();
+              setSlashIndex((prev) => Math.max(prev - 1, 0));
+              return;
+            }
+            if (e.key === "Enter" || e.key === "Tab") {
+              e.preventDefault();
+              e.stopPropagation();
+              selectSlashCommand(filteredSlashCommands[slashIndex]);
             }
           }
         }
@@ -605,6 +781,17 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
             </button>
           ))}
         </div>
+      )}
+
+      {slashActive && filteredSlashCommands.length > 0 && slashState && (
+        <SlashCommandPicker
+          commands={filteredSlashCommands}
+          index={slashIndex}
+          top={slashState.top}
+          left={slashState.left}
+          onHover={setSlashIndex}
+          onSelect={selectSlashCommand}
+        />
       )}
 
       {isDragOver && canDropImage && (
