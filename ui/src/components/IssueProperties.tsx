@@ -10,6 +10,7 @@ import { useCompany } from "../context/CompanyContext";
 import { queryKeys } from "../lib/queryKeys";
 import { useProjectOrder } from "../hooks/useProjectOrder";
 import { getRecentAssigneeIds, sortAgentsByRecency, trackRecentAssignee } from "../lib/recent-assignees";
+import { extractProviderIdWithFallback } from "../lib/model-utils";
 import { StatusIcon } from "./StatusIcon";
 import { PriorityIcon } from "./PriorityIcon";
 import { Identity } from "./Identity";
@@ -18,11 +19,49 @@ import { timeAgo } from "../lib/timeAgo";
 import { resolveEffectiveReviewBundleMode } from "../lib/review-bundles";
 import { Separator } from "@/components/ui/separator";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { User, Hexagon, ArrowUpRight, Tag, Plus, Trash2, ListChecks, Map } from "lucide-react";
+import { User, Hexagon, ArrowUpRight, Tag, Plus, Trash2, ListChecks, Map, Settings2 } from "lucide-react";
 import { AgentIcon } from "./AgentIconPicker";
 
 // TODO(issue-worktree-support): re-enable this UI once the workflow is ready to ship.
 const SHOW_EXPERIMENTAL_ISSUE_WORKTREE_UI = false;
+
+const ADAPTER_OVERRIDE_TYPES = new Set(["claude_local", "codex_local", "opencode_local"]);
+
+const ADAPTER_LABELS: Record<string, string> = {
+  claude_local: "Claude",
+  codex_local: "Codex",
+  opencode_local: "OpenCode",
+};
+
+const THINKING_EFFORT_OPTIONS: Record<string, { value: string; label: string }[]> = {
+  claude_local: [
+    { value: "", label: "Default" },
+    { value: "low", label: "Low" },
+    { value: "medium", label: "Medium" },
+    { value: "high", label: "High" },
+  ],
+  codex_local: [
+    { value: "", label: "Default" },
+    { value: "minimal", label: "Minimal" },
+    { value: "low", label: "Low" },
+    { value: "medium", label: "Medium" },
+    { value: "high", label: "High" },
+  ],
+  opencode_local: [
+    { value: "", label: "Default" },
+    { value: "minimal", label: "Minimal" },
+    { value: "low", label: "Low" },
+    { value: "medium", label: "Medium" },
+    { value: "high", label: "High" },
+    { value: "max", label: "Max" },
+  ],
+};
+
+function getThinkingKey(adapterType: string): string {
+  if (adapterType === "codex_local") return "modelReasoningEffort";
+  if (adapterType === "opencode_local") return "variant";
+  return "effort";
+}
 
 interface IssuePropertiesProps {
   issue: Issue;
@@ -118,6 +157,9 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
   const [labelSearch, setLabelSearch] = useState("");
   const [newLabelName, setNewLabelName] = useState("");
   const [newLabelColor, setNewLabelColor] = useState("#6366f1");
+  const [modelOpen, setModelOpen] = useState(false);
+  const [modelSearch, setModelSearch] = useState("");
+  const [thinkingOpen, setThinkingOpen] = useState(false);
 
   const { data: session } = useQuery({
     queryKey: queryKeys.auth.session,
@@ -237,6 +279,52 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
   const reviewerUserLabel = userLabel(issue.reviewerUserId);
   const approver = issue.approverAgentId ? agents?.find((a) => a.id === issue.approverAgentId) : null;
   const approverUserLabel = userLabel(issue.approverUserId);
+
+  // Adapter details
+  const assigneeAdapterType = assignee?.adapterType ?? null;
+  const supportsAdapterOverrides = Boolean(assigneeAdapterType && ADAPTER_OVERRIDE_TYPES.has(assigneeAdapterType));
+  const adapterLabel = assigneeAdapterType ? (ADAPTER_LABELS[assigneeAdapterType] ?? assigneeAdapterType) : null;
+  const overrides = issue.assigneeAdapterOverrides;
+  const currentAdapterConfig = (overrides?.adapterConfig ?? {}) as Record<string, unknown>;
+  const currentModel = (currentAdapterConfig.model as string) ?? "";
+  const currentThinkingKey = assigneeAdapterType ? getThinkingKey(assigneeAdapterType) : "effort";
+  const currentThinking = (currentAdapterConfig[currentThinkingKey] as string) ?? "";
+  const thinkingOptions = assigneeAdapterType ? (THINKING_EFFORT_OPTIONS[assigneeAdapterType] ?? []) : [];
+
+  const { data: adapterModels } = useQuery({
+    queryKey:
+      companyId && assigneeAdapterType
+        ? queryKeys.agents.adapterModels(companyId, assigneeAdapterType)
+        : ["agents", "none", "adapter-models", "none"],
+    queryFn: () => agentsApi.adapterModels(companyId!, assigneeAdapterType!),
+    enabled: Boolean(companyId) && supportsAdapterOverrides,
+  });
+
+  const sortedModels = useMemo(
+    () =>
+      [...(adapterModels ?? [])].sort((a, b) => {
+        const pa = extractProviderIdWithFallback(a.id);
+        const pb = extractProviderIdWithFallback(b.id);
+        const byProvider = pa.localeCompare(pb);
+        if (byProvider !== 0) return byProvider;
+        return a.id.localeCompare(b.id);
+      }),
+    [adapterModels],
+  );
+
+  const updateAdapterOverrides = (patch: Record<string, unknown>) => {
+    const nextConfig = { ...currentAdapterConfig, ...patch };
+    // Remove empty-string values (revert to default)
+    for (const key of Object.keys(nextConfig)) {
+      if (nextConfig[key] === "") delete nextConfig[key];
+    }
+    const nextOverrides = Object.keys(nextConfig).length > 0
+      ? { ...(overrides ?? {}), adapterConfig: nextConfig }
+      : overrides?.useProjectWorkspace != null
+        ? { useProjectWorkspace: overrides.useProjectWorkspace }
+        : null;
+    onUpdate({ assigneeAdapterOverrides: nextOverrides });
+  };
 
   const labelsTrigger = (issue.labels ?? []).length > 0 ? (
     <div className="flex items-center gap-1 flex-wrap">
@@ -570,6 +658,101 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
         >
           {projectContent}
         </PropertyPicker>
+
+        {supportsAdapterOverrides && (
+          <>
+            <PropertyRow label="Adapter">
+              <Settings2 className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="text-sm">{adapterLabel}</span>
+            </PropertyRow>
+
+            <PropertyPicker
+              inline={inline}
+              label="Model"
+              open={modelOpen}
+              onOpenChange={(open) => { setModelOpen(open); if (!open) setModelSearch(""); }}
+              triggerContent={
+                currentModel ? (
+                  <span className="text-sm truncate">{currentModel}</span>
+                ) : (
+                  <span className="text-sm text-muted-foreground">Default</span>
+                )
+              }
+              triggerClassName="min-w-0 max-w-full"
+              popoverClassName="w-72"
+            >
+              <>
+                <input
+                  className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-muted-foreground/50"
+                  placeholder="Search models..."
+                  value={modelSearch}
+                  onChange={(e) => setModelSearch(e.target.value)}
+                  autoFocus={!inline}
+                />
+                <div className="max-h-48 overflow-y-auto overscroll-contain">
+                  <button
+                    className={cn(
+                      "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
+                      !currentModel && "bg-accent"
+                    )}
+                    onClick={() => { updateAdapterOverrides({ model: "" }); setModelOpen(false); }}
+                  >
+                    Default model
+                  </button>
+                  {sortedModels
+                    .filter((m) => {
+                      if (!modelSearch.trim()) return true;
+                      const q = modelSearch.toLowerCase();
+                      return m.id.toLowerCase().includes(q) || m.label.toLowerCase().includes(q);
+                    })
+                    .map((m) => (
+                      <button
+                        key={m.id}
+                        className={cn(
+                          "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 text-left",
+                          m.id === currentModel && "bg-accent"
+                        )}
+                        onClick={() => { updateAdapterOverrides({ model: m.id }); setModelOpen(false); }}
+                      >
+                        <span className="truncate">{m.label}</span>
+                      </button>
+                    ))}
+                </div>
+              </>
+            </PropertyPicker>
+
+            <PropertyPicker
+              inline={inline}
+              label="Thinking"
+              open={thinkingOpen}
+              onOpenChange={setThinkingOpen}
+              triggerContent={
+                <span className="text-sm">
+                  {thinkingOptions.find((o) => o.value === currentThinking)?.label ?? "Default"}
+                </span>
+              }
+              popoverClassName="w-44"
+            >
+              <div className="space-y-0.5">
+                {thinkingOptions.map((option) => (
+                  <button
+                    key={option.value || "default"}
+                    className={cn(
+                      "flex items-center w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
+                      currentThinking === option.value && "bg-accent"
+                    )}
+                    onClick={() => {
+                      updateAdapterOverrides({ [currentThinkingKey]: option.value });
+                      setThinkingOpen(false);
+                    }}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </PropertyPicker>
+          </>
+        )}
 
         {currentProjectSupportsExecutionWorkspace && (
           <PropertyRow label="Workspace">
