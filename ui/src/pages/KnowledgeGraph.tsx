@@ -273,59 +273,59 @@ function DetailPanel({
   };
 
   return (
-    <div className="absolute right-4 top-4 bottom-4 w-80 bg-slate-900/95 backdrop-blur-md border border-slate-700/60 rounded-xl shadow-2xl flex flex-col overflow-hidden z-20 animate-in slide-in-from-right-4 duration-200">
+    <div className="absolute right-4 top-4 bottom-4 w-80 bg-popover/95 backdrop-blur-md border border-border rounded-xl shadow-2xl flex flex-col overflow-hidden z-20 animate-in slide-in-from-right-4 duration-200">
       {/* Header */}
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-700/40">
+      <div className="flex items-center gap-2 px-4 py-3 border-b border-border/60">
         <div className="w-3 h-3 rounded-full" style={{ backgroundColor: color }} />
-        <span className="text-xs font-medium uppercase tracking-wider text-slate-400">
+        <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
           {node.type}
         </span>
-        <button onClick={onClose} className="ml-auto text-slate-500 hover:text-slate-300">
+        <button onClick={onClose} className="ml-auto text-muted-foreground hover:text-foreground">
           <X className="h-4 w-4" />
         </button>
       </div>
 
       {/* Body */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 text-sm">
-        <h3 className="font-semibold text-slate-100 leading-snug">{node.label}</h3>
+        <h3 className="font-semibold text-foreground leading-snug">{node.label}</h3>
 
         {node.type === "memory" && meta.content && (
-          <p className="text-slate-300 text-[13px] leading-relaxed whitespace-pre-wrap">
+          <p className="text-foreground/80 text-[13px] leading-relaxed whitespace-pre-wrap">
             {meta.content}
           </p>
         )}
 
-        <div className="space-y-2 text-xs text-slate-400">
+        <div className="space-y-2 text-xs text-muted-foreground">
           {meta.category && (
             <div className="flex justify-between">
               <span>Category</span>
-              <span className="text-slate-200 capitalize">{meta.category.replace("_", " ")}</span>
+              <span className="text-foreground capitalize">{meta.category.replace("_", " ")}</span>
             </div>
           )}
           {meta.confidence !== undefined && (
             <div className="flex justify-between items-center">
               <span>Confidence</span>
               <div className="flex items-center gap-2">
-                <div className="w-16 h-1.5 rounded-full bg-slate-700">
+                <div className="w-16 h-1.5 rounded-full bg-muted">
                   <div
-                    className="h-full rounded-full bg-blue-400"
+                    className="h-full rounded-full bg-primary"
                     style={{ width: `${meta.confidence * 100}%` }}
                   />
                 </div>
-                <span className="text-slate-200 tabular-nums">{(meta.confidence * 100).toFixed(0)}%</span>
+                <span className="text-foreground tabular-nums">{(meta.confidence * 100).toFixed(0)}%</span>
               </div>
             </div>
           )}
           {meta.status && (
             <div className="flex justify-between">
               <span>Status</span>
-              <span className="text-slate-200 capitalize">{meta.status}</span>
+              <span className="text-foreground capitalize">{meta.status}</span>
             </div>
           )}
           {meta.sourceAgentId && (
             <div className="flex justify-between">
               <span>Source agent</span>
-              <span className="text-slate-200">
+              <span className="text-foreground">
                 {agentMap.get(meta.sourceAgentId)?.name ?? "Unknown"}
               </span>
             </div>
@@ -333,13 +333,13 @@ function DetailPanel({
           {meta.accessCount !== undefined && (
             <div className="flex justify-between">
               <span>Access count</span>
-              <span className="text-slate-200 tabular-nums">{meta.accessCount}</span>
+              <span className="text-foreground tabular-nums">{meta.accessCount}</span>
             </div>
           )}
           {meta.createdAt && (
             <div className="flex justify-between">
               <span>Created</span>
-              <span className="text-slate-200">{new Date(meta.createdAt).toLocaleDateString()}</span>
+              <span className="text-foreground">{new Date(meta.createdAt).toLocaleDateString()}</span>
             </div>
           )}
           {meta.tags && meta.tags.length > 0 && (
@@ -349,7 +349,7 @@ function DetailPanel({
                 {meta.tags.map((t) => (
                   <span
                     key={t}
-                    className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 text-[11px]"
+                    className="px-1.5 py-0.5 rounded bg-muted text-muted-foreground text-[11px]"
                   >
                     {t}
                   </span>
@@ -359,7 +359,7 @@ function DetailPanel({
           )}
         </div>
 
-        <div className="text-[11px] text-slate-500 pt-2 border-t border-slate-700/30 tabular-nums">
+        <div className="text-[11px] text-muted-foreground pt-2 border-t border-border/30 tabular-nums">
           {node.weight} connection{node.weight !== 1 ? "s" : ""}
         </div>
       </div>
@@ -464,7 +464,7 @@ export function KnowledgeGraph() {
   if (memoriesLoading) return <PageSkeleton variant="list" />;
 
   return (
-    <div className="flex flex-col h-[calc(100vh-64px)] animate-page-enter">
+    <div className="flex flex-col h-[calc(100vh-6rem)] animate-page-enter">
       {/* Header bar */}
       <div className="flex items-center justify-between px-1 pb-4 shrink-0">
         <div className="flex items-center gap-3">
@@ -590,18 +590,18 @@ export function KnowledgeGraph() {
         />
 
         {/* Legend overlay */}
-        <div className="absolute left-4 bottom-4 bg-slate-900/90 backdrop-blur-sm border border-slate-700/50 rounded-lg px-3 py-2.5 z-10">
-          <div className="text-[10px] font-medium uppercase tracking-wider text-slate-500 mb-2">
+        <div className="absolute left-4 bottom-4 bg-popover/90 backdrop-blur-sm border border-border/50 rounded-lg px-3 py-2.5 z-10">
+          <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground mb-2">
             Node types
           </div>
           <div className="space-y-1.5">
             {LEGEND.map((item) => {
               const Icon = LEGEND_ICON[item.type];
               return (
-                <div key={item.type} className="flex items-center gap-2 text-xs text-slate-300">
+                <div key={item.type} className="flex items-center gap-2 text-xs text-foreground/80">
                   <Icon className="h-3 w-3" style={{ color: item.color }} />
                   <span>{item.label}</span>
-                  <span className="text-slate-600 tabular-nums ml-auto">
+                  <span className="text-muted-foreground tabular-nums ml-auto">
                     {nodes.filter((n) => n.type === item.type).length}
                   </span>
                 </div>
@@ -611,7 +611,7 @@ export function KnowledgeGraph() {
         </div>
 
         {/* Zoom hint */}
-        <div className="absolute left-4 top-4 flex items-center gap-2 text-[10px] text-slate-600 z-10">
+        <div className="absolute left-4 top-4 flex items-center gap-2 text-[10px] text-muted-foreground/60 z-10">
           <ZoomIn className="h-3 w-3" />
           <span>Scroll to zoom &middot; Drag to pan &middot; Click node for details</span>
         </div>

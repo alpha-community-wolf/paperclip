@@ -148,7 +148,7 @@ export function KnowledgeGraphCanvas({
       .selectAll("line")
       .data(edgeData)
       .join("line")
-      .attr("stroke", "#334155")
+      .attr("stroke", "var(--color-border)")
       .attr("stroke-opacity", 0.35)
       .attr("stroke-width", 0.8);
 
@@ -186,7 +186,7 @@ export function KnowledgeGraphCanvas({
       .text((d) => d.label)
       .attr("dy", (d) => nodeRadius(d) + 14)
       .attr("text-anchor", "middle")
-      .attr("fill", "#e2e8f0")
+      .attr("fill", "var(--color-foreground)")
       .attr("font-size", "11px")
       .attr("font-family", "'JetBrains Mono', ui-monospace, monospace")
       .attr("pointer-events", "none");
@@ -287,12 +287,12 @@ export function KnowledgeGraphCanvas({
   }, [searchTerm, selectedNodeId]);
 
   return (
-    <div className="relative w-full h-full overflow-hidden rounded-xl bg-[#0c0f1a] border border-slate-800/60">
+    <div className="relative w-full h-full overflow-hidden rounded-xl bg-background border border-border">
       {/* Subtle radial gradient background */}
       <div
         className="absolute inset-0 pointer-events-none"
         style={{
-          background: "radial-gradient(ellipse at 50% 40%, rgba(99,102,241,0.06) 0%, transparent 70%)",
+          background: "radial-gradient(ellipse at 50% 40%, color-mix(in oklab, var(--primary) 6%, transparent) 0%, transparent 70%)",
         }}
       />
       <svg
@@ -303,7 +303,7 @@ export function KnowledgeGraphCanvas({
         style={{ display: "block" }}
       />
       {nodes.length === 0 && (
-        <div className="absolute inset-0 flex items-center justify-center text-sm text-slate-500">
+        <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
           No graph data to display
         </div>
       )}
