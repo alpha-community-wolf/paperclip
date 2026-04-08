@@ -18,6 +18,7 @@ const BOARD_ROUTE_ROOTS = new Set([
   "timeline",
   "schedules",
   "skills",
+  "commands",
   "webhooks",
   "design-guide",
 ]);

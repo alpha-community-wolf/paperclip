@@ -13,5 +13,6 @@ export { activityApi } from "./activity";
 export { dashboardApi } from "./dashboard";
 export { heartbeatsApi } from "./heartbeats";
 export { sidebarBadgesApi } from "./sidebarBadges";
+export { commandsApi } from "./commands";
 export { webhooksApi } from "./webhooks";
 export { taskCronsApi } from "./taskCrons";
