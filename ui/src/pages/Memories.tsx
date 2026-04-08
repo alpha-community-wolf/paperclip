@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "@/lib/router";
 import {
   Brain,
   Search,
@@ -9,6 +10,7 @@ import {
   AlertTriangle,
   Plus,
   X,
+  List,
 } from "lucide-react";
 import { memoriesApi } from "../api/memories";
 import type { MemoryFilters, SharedMemory } from "../api/memories";
@@ -49,7 +51,7 @@ const STATUSES = [
 const PAGE_SIZE = 20;
 
 export function Memories() {
-  const { selectedCompanyId } = useCompany();
+  const { selectedCompanyId, selectedCompany } = useCompany();
   const [scope, setScope] = useState<"company" | "project">("company");
   const [selectedProjectId, setSelectedProjectId] = useState<string>("__all__");
   const [searchQuery, setSearchQuery] = useState("");
@@ -167,6 +169,19 @@ export function Memories() {
               {conflictCount} potential conflict{conflictCount !== 1 ? "s" : ""}
             </div>
           )}
+          <div className="flex items-center gap-1 p-0.5 rounded-lg bg-muted/50">
+            <div className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium bg-background shadow-sm text-foreground">
+              <List className="h-3.5 w-3.5" />
+              List
+            </div>
+            <Link
+              to={selectedCompanyId ? `/${selectedCompany?.issuePrefix ?? ""}/knowledge/graph` : "/knowledge/graph"}
+              className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground hover:text-foreground transition-all"
+            >
+              <Brain className="h-3.5 w-3.5" />
+              Graph
+            </Link>
+          </div>
           <Button
             size="sm"
             onClick={() => { setEditingMemory(null); setDialogOpen(true); }}

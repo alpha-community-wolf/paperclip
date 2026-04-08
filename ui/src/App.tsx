@@ -30,6 +30,7 @@ import { DesignGuide } from "./pages/DesignGuide";
 import { OrgChart } from "./pages/OrgChart";
 import { Timeline } from "./pages/Timeline";
 import { Memories } from "./pages/Memories";
+import { KnowledgeGraph } from "./pages/KnowledgeGraph";
 import { SystemChores } from "./pages/SystemChores";
 import { MyWork } from "./pages/MyWork";
 import { Reviews } from "./pages/Reviews";
@@ -168,6 +169,7 @@ function boardRoutes() {
       <Route path="chat/:agentId" element={<ChatRedirect />} />
       <Route path="design-guide" element={<DesignGuide />} />
       <Route path="knowledge" element={<Memories />} />
+      <Route path="knowledge/graph" element={<KnowledgeGraph />} />
       <Route path="system-chores" element={<SystemChores />} />
       <Route path="skills" element={<Skills />} />
       <Route path="webhooks" element={<Webhooks />} />
@@ -317,6 +319,7 @@ export function App() {
           <Route path="timeline" element={<UnprefixedBoardRedirect />} />
           <Route path="schedules" element={<UnprefixedBoardRedirect />} />
           <Route path="knowledge" element={<UnprefixedBoardRedirect />} />
+          <Route path="knowledge/graph" element={<UnprefixedBoardRedirect />} />
           <Route path="skills" element={<UnprefixedBoardRedirect />} />
           <Route path="webhooks" element={<UnprefixedBoardRedirect />} />
           <Route path="system-chores" element={<UnprefixedBoardRedirect />} />
