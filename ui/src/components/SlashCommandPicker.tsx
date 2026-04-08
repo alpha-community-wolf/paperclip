@@ -53,13 +53,14 @@ export function SlashCommandPicker({
 }: SlashCommandPickerProps) {
   const pickerRef = useRef<HTMLDivElement | null>(null);
   const [pickerPos, setPickerPos] = useState({ top, left });
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
 
   useLayoutEffect(() => {
     if (typeof window === "undefined") return;
     const el = pickerRef.current;
     const rect = el?.getBoundingClientRect();
-    const menuWidth = rect?.width ?? 260;
-    const menuHeight = rect?.height ?? 240;
+    const menuWidth = rect?.width ?? 280;
+    const menuHeight = rect?.height ?? 200;
 
     setPickerPos(
       calculateSlashPickerPosition({
@@ -75,34 +76,47 @@ export function SlashCommandPicker({
 
   if (commands.length === 0) return null;
 
+  const showPreview = hoveredIndex !== null && commands[hoveredIndex];
+
   return createPortal(
-    <div
-      ref={pickerRef}
-      className="fixed z-50 min-w-[240px] max-h-[240px] overflow-y-auto rounded-md border border-border bg-popover shadow-md"
-      style={{ top: pickerPos.top, left: pickerPos.left }}
-    >
-      {commands.map((command, i) => (
-        <button
-          key={command.id}
-          className={cn(
-            "flex w-full items-start gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-accent/50",
-            i === index && "bg-accent",
-          )}
-          onMouseDown={(event) => {
-            event.preventDefault();
-            onSelect(command);
-          }}
-          onMouseEnter={() => onHover(i)}
-        >
-          <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
-            /{command.trigger}
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-foreground">{command.label}</span>
-            <span className="block truncate text-xs text-muted-foreground">{command.content}</span>
-          </span>
-        </button>
-      ))}
+    <div className="fixed z-50 flex items-start gap-1.5" style={{ top: pickerPos.top, left: pickerPos.left }}>
+      {/* Command list */}
+      <div
+        ref={pickerRef}
+        className="w-[280px] max-h-[200px] overflow-y-auto rounded-lg border border-border bg-popover shadow-lg py-1"
+      >
+        {commands.map((command, i) => (
+          <button
+            key={command.id}
+            className={cn(
+              "flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[13px] transition-colors hover:bg-accent/50",
+              i === index && "bg-accent",
+            )}
+            onMouseDown={(event) => {
+              event.preventDefault();
+              onSelect(command);
+            }}
+            onMouseEnter={() => {
+              onHover(i);
+              setHoveredIndex(i);
+            }}
+            onMouseLeave={() => setHoveredIndex(null)}
+          >
+            <span className="font-medium text-foreground truncate">/{command.trigger}</span>
+            <span className="truncate text-xs text-muted-foreground">{command.label}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* Hover preview tooltip */}
+      {showPreview && (
+        <div className="w-[240px] rounded-lg border border-border bg-popover shadow-lg p-3 text-[13px] text-foreground/90 leading-relaxed">
+          <p className="font-medium text-foreground mb-1">/{commands[hoveredIndex!].trigger}</p>
+          <p className="text-xs text-muted-foreground whitespace-pre-wrap break-words line-clamp-6">
+            {commands[hoveredIndex!].content}
+          </p>
+        </div>
+      )}
     </div>,
     document.body,
   );
