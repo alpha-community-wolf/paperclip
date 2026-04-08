@@ -39,6 +39,7 @@ export { activityLog } from "./activity_log.js";
 export { companySecrets } from "./company_secrets.js";
 export { companySecretVersions } from "./company_secret_versions.js";
 export { skills } from "./skills.js";
+export { commands } from "./commands.js";
 export { agentSkillAssignments } from "./agent_skill_assignments.js";
 export { webhookEndpoints } from "./webhook_endpoints.js";
 export { eventRoutingRules } from "./event_routing_rules.js";

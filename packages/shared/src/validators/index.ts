@@ -177,6 +177,14 @@ export {
 } from "./skill.js";
 
 export {
+  createCommandSchema,
+  updateCommandSchema,
+  commandTriggerSchema,
+  type CreateCommand,
+  type UpdateCommand,
+} from "./command.js";
+
+export {
   createCompanyInviteSchema,
   createOpenClawInvitePromptSchema,
   acceptInviteSchema,

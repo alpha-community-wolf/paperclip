@@ -103,6 +103,9 @@ export const queryKeys = {
     forAgent: (agentId: string) => ["skills", "agent", agentId] as const,
     assignmentsForAgent: (agentId: string) => ["skills", "assignments", agentId] as const,
   },
+  commands: {
+    list: (companyId: string) => ["commands", companyId] as const,
+  },
   webhooks: {
     endpoints: (companyId: string) => ["webhooks", companyId, "endpoints"] as const,
     rules: (endpointId: string) => ["webhooks", endpointId, "rules"] as const,

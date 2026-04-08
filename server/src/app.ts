@@ -29,6 +29,7 @@ import { llmRoutes } from "./routes/llms.js";
 import { assetRoutes } from "./routes/assets.js";
 import { accessRoutes } from "./routes/access.js";
 import { skillRoutes } from "./routes/skills.js";
+import { commandRoutes } from "./routes/commands.js";
 import { chatRoutes } from "./routes/chat.js";
 import { webhookRoutes } from "./routes/webhooks.js";
 import { taskCronRoutes } from "./routes/task-crons.js";
@@ -142,6 +143,7 @@ export async function createApp(
   api.use(inboxDismissalRoutes(db));
   api.use(inboxFeedRoutes(db));
   api.use(skillRoutes(db));
+  api.use(commandRoutes(db));
   api.use(chatRoutes(db));
   api.use(webhookRoutes(db));
   api.use(taskCronRoutes(db));

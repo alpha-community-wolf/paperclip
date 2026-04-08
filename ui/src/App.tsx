@@ -22,6 +22,7 @@ import { Approvals } from "./pages/Approvals";
 import { ApprovalDetail } from "./pages/ApprovalDetail";
 import { Costs } from "./pages/Costs";
 import { Skills } from "./pages/Skills";
+import { Commands } from "./pages/Commands";
 import { Webhooks } from "./pages/Webhooks";
 import { Activity } from "./pages/Activity";
 import { Inbox } from "./pages/Inbox";
@@ -172,6 +173,7 @@ function boardRoutes() {
       <Route path="knowledge/graph" element={<KnowledgeGraph />} />
       <Route path="system-chores" element={<SystemChores />} />
       <Route path="skills" element={<Skills />} />
+      <Route path="commands" element={<Commands />} />
       <Route path="webhooks" element={<Webhooks />} />
       <Route path="*" element={<NotFoundPage scope="board" />} />
     </>
@@ -321,6 +323,7 @@ export function App() {
           <Route path="knowledge" element={<UnprefixedBoardRedirect />} />
           <Route path="knowledge/graph" element={<UnprefixedBoardRedirect />} />
           <Route path="skills" element={<UnprefixedBoardRedirect />} />
+          <Route path="commands" element={<UnprefixedBoardRedirect />} />
           <Route path="webhooks" element={<UnprefixedBoardRedirect />} />
           <Route path="system-chores" element={<UnprefixedBoardRedirect />} />
           <Route path=":companyPrefix" element={<Layout />}>

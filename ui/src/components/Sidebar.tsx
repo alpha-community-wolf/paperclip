@@ -20,6 +20,7 @@ import {
   ClipboardCheck,
   Brain,
   Cog,
+  Command,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { SidebarSection } from "./SidebarSection";
@@ -140,6 +141,7 @@ export function Sidebar() {
           <SidebarNavItem to="/costs" label="Costs" icon={DollarSign} />
           <SidebarNavItem to="/activity" label="Activity" icon={History} />
           <SidebarNavItem to="/skills" label="Skills" icon={Blocks} />
+          <SidebarNavItem to="/commands" label="Commands" icon={Command} />
           <SidebarNavItem to="/webhooks" label="Webhooks" icon={Webhook} />
           <SidebarNavItem to="/system-chores" label="System Chores" icon={Cog} />
           <SidebarNavItem to="/company/settings" label="Settings" icon={Settings} />
