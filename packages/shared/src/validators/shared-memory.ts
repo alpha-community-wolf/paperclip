@@ -44,7 +44,7 @@ export const searchSharedMemoryQuerySchema = z.object({
   category: z.enum(SHARED_MEMORY_CATEGORIES).optional(),
   status: z.enum(SHARED_MEMORY_STATUSES).optional().default("active"),
   tags: z.string().optional(), // comma-separated
-  limit: z.coerce.number().int().min(1).max(50).optional().default(20),
+  limit: z.coerce.number().int().min(1).max(200).optional().default(20),
   offset: z.coerce.number().int().min(0).optional().default(0),
 });
 
