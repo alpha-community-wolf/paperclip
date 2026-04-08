@@ -382,13 +382,33 @@ export function KnowledgeGraph() {
 
   const prefix = selectedCompany?.issuePrefix ?? "";
 
-  // Fetch all memories (large limit for graph)
+  // Fetch all memories with pagination (API max is 200 per page)
+  const PAGE_SIZE = 200;
   const { data: memoriesData, isLoading: memoriesLoading } = useQuery({
     queryKey: queryKeys.memories.list(selectedCompanyId!, {
       scope: "__graph__",
       status: "active",
     }),
-    queryFn: () => memoriesApi.list(selectedCompanyId!, { status: "active", limit: 500 }),
+    queryFn: async () => {
+      const first = await memoriesApi.list(selectedCompanyId!, { status: "active", limit: PAGE_SIZE, offset: 0 });
+      if (first.total <= PAGE_SIZE) return first;
+
+      // Fetch remaining pages in parallel
+      const remaining = Math.ceil((first.total - PAGE_SIZE) / PAGE_SIZE);
+      const pages = await Promise.all(
+        Array.from({ length: remaining }, (_, i) =>
+          memoriesApi.list(selectedCompanyId!, {
+            status: "active",
+            limit: PAGE_SIZE,
+            offset: PAGE_SIZE * (i + 1),
+          }),
+        ),
+      );
+      return {
+        memories: [first.memories, ...pages.map((p) => p.memories)].flat(),
+        total: first.total,
+      };
+    },
     enabled: !!selectedCompanyId,
   });
 
