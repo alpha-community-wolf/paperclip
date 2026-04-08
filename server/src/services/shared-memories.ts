@@ -360,6 +360,7 @@ export function sharedMemoryService(db: Db) {
    */
   async function runDecay() {
     const now = new Date();
+    const nowIso = now.toISOString();
 
     // 1. Archive expired memories
     const expiredResult = await db
@@ -368,13 +369,14 @@ export function sharedMemoryService(db: Db) {
       .where(
         and(
           eq(sharedMemories.status, "active"),
-          sql`${sharedMemories.expiresAt} IS NOT NULL AND ${sharedMemories.expiresAt} < ${now}`,
+          sql`${sharedMemories.expiresAt} IS NOT NULL AND ${sharedMemories.expiresAt} < ${nowIso}::timestamptz`,
         ),
       )
       .returning({ id: sharedMemories.id });
 
     // 2. Decay confidence on stale memories (no access in 90+ days)
     const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+    const ninetyDaysAgoIso = ninetyDaysAgo.toISOString();
     const decayedResult = await db
       .update(sharedMemories)
       .set({
@@ -385,8 +387,8 @@ export function sharedMemoryService(db: Db) {
         and(
           eq(sharedMemories.status, "active"),
           sql`${sharedMemories.confidence} > 0.0`,
-          sql`(${sharedMemories.lastAccessedAt} IS NULL OR ${sharedMemories.lastAccessedAt} < ${ninetyDaysAgo})`,
-          sql`${sharedMemories.createdAt} < ${ninetyDaysAgo}`,
+          sql`(${sharedMemories.lastAccessedAt} IS NULL OR ${sharedMemories.lastAccessedAt} < ${ninetyDaysAgoIso}::timestamptz)`,
+          sql`${sharedMemories.createdAt} < ${ninetyDaysAgoIso}::timestamptz`,
         ),
       )
       .returning({ id: sharedMemories.id });
