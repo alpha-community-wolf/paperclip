@@ -95,6 +95,7 @@ export type {
   AgentSkillAssignment,
   ResolvedSkill,
 } from "./skill.js";
+export type { Command } from "./command.js";
 export type {
   CompanyPortabilityInclude,
   CompanyPortabilitySecretRequirement,
