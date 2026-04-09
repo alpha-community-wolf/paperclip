@@ -1,6 +1,6 @@
 import { and, eq, sql, inArray, type SQL } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { sharedMemories } from "@paperclipai/db";
+import { sharedMemories, issues, agents } from "@paperclipai/db";
 import type { CreateSharedMemory, UpdateSharedMemory, SearchSharedMemoryQuery } from "@paperclipai/shared";
 import { logger } from "../middleware/logger.js";
 
@@ -200,11 +200,24 @@ export function sharedMemoryService(db: Db) {
   }
 
   async function getById(id: string) {
-    return db
-      .select()
+    const rawRows = await db
+      .select({
+        memory: sharedMemories,
+        sourceIssueIdentifier: issues.identifier,
+        sourceAgentName: agents.name,
+      })
       .from(sharedMemories)
-      .where(eq(sharedMemories.id, id))
-      .then((rows) => rows[0] ?? null);
+      .leftJoin(issues, eq(sharedMemories.sourceIssueId, issues.id))
+      .leftJoin(agents, eq(sharedMemories.sourceAgentId, agents.id))
+      .where(eq(sharedMemories.id, id));
+
+    const row = rawRows[0];
+    if (!row) return null;
+    return {
+      ...row.memory,
+      sourceIssueIdentifier: row.sourceIssueIdentifier ?? null,
+      sourceAgentName: row.sourceAgentName ?? null,
+    };
   }
 
   async function update(id: string, data: UpdateSharedMemory) {
@@ -285,13 +298,25 @@ export function sharedMemoryService(db: Db) {
       ? sql`ts_rank("content_search", to_tsquery('english', ${query.q.trim().split(/\s+/).filter(Boolean).map((w: string) => w.replace(/[^a-zA-Z0-9]/g, "")).filter(Boolean).join(" & ")})) DESC, ${sharedMemories.updatedAt} DESC`
       : sql`${sharedMemories.updatedAt} DESC`;
 
-    const rows = await db
-      .select()
+    const rawRows = await db
+      .select({
+        memory: sharedMemories,
+        sourceIssueIdentifier: issues.identifier,
+        sourceAgentName: agents.name,
+      })
       .from(sharedMemories)
+      .leftJoin(issues, eq(sharedMemories.sourceIssueId, issues.id))
+      .leftJoin(agents, eq(sharedMemories.sourceAgentId, agents.id))
       .where(where)
       .orderBy(orderClause)
       .limit(query.limit ?? 20)
       .offset(query.offset ?? 0);
+
+    const rows = rawRows.map((r) => ({
+      ...r.memory,
+      sourceIssueIdentifier: r.sourceIssueIdentifier ?? null,
+      sourceAgentName: r.sourceAgentName ?? null,
+    }));
 
     // Get total count
     const countResult = await db

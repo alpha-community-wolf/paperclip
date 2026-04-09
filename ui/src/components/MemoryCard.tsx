@@ -12,7 +12,10 @@ import {
   Tag,
   TrendingDown,
   User,
+  FileText,
+  Play,
 } from "lucide-react";
+import { Link } from "@/lib/router";
 import type { SharedMemory } from "../api/memories";
 import { memoriesApi } from "../api/memories";
 import { useCompany } from "../context/CompanyContext";
@@ -231,7 +234,7 @@ export function MemoryCard({ memory, agentMap, compact, onEdit }: Props) {
 
       {/* Footer: source + age */}
       {!compact && (
-        <div className="flex items-center gap-3 mt-3 pt-2 border-t border-border/30 text-[11px] text-muted-foreground">
+        <div className="flex items-center gap-3 mt-3 pt-2 border-t border-border/30 text-[11px] text-muted-foreground flex-wrap">
           {sourceAgent && (
             <span className="flex items-center gap-1">
               <Bot className="h-3 w-3" />
@@ -249,6 +252,36 @@ export function MemoryCard({ memory, agentMap, compact, onEdit }: Props) {
           )}
           {memory.sourceType === "propagated" && (
             <span className="italic">propagated</span>
+          )}
+          {memory.sourceIssueId && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Link
+                  to={`/issues/${memory.sourceIssueIdentifier ?? memory.sourceIssueId}`}
+                  className="flex items-center gap-1 text-primary/70 hover:text-primary transition-colors"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <FileText className="h-3 w-3" />
+                  {memory.sourceIssueIdentifier ?? "issue"}
+                </Link>
+              </TooltipTrigger>
+              <TooltipContent>Source issue</TooltipContent>
+            </Tooltip>
+          )}
+          {memory.sourceRunId && memory.sourceAgentId && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Link
+                  to={`/agents/${memory.sourceAgentId}/runs/${memory.sourceRunId}`}
+                  className="flex items-center gap-1 text-primary/70 hover:text-primary transition-colors"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <Play className="h-3 w-3" />
+                  run
+                </Link>
+              </TooltipTrigger>
+              <TooltipContent>Source run</TooltipContent>
+            </Tooltip>
           )}
           <span className="flex items-center gap-1 ml-auto">
             <Clock className="h-3 w-3" />
