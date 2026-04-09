@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { heartbeatsApi } from "../api/heartbeats";
 import { queryKeys } from "../lib/queryKeys";
 import { cn } from "../lib/utils";
-import { ChevronRight, GitBranch, FileText } from "lucide-react";
+import { ChevronRight, GitBranch, FileText, ExternalLink } from "lucide-react";
 
 interface RunDiffViewerProps {
   runId: string;
@@ -188,6 +188,25 @@ export function RunDiffViewer({ runId }: RunDiffViewerProps) {
       <div className="flex flex-col items-center justify-center py-12 gap-2 text-sm text-muted-foreground">
         <GitBranch className="h-8 w-8 opacity-40" />
         <span>{data?.error ?? "No changes recorded for this run"}</span>
+        {data?.pullRequests && data.pullRequests.length > 0 && (
+          <div className="flex flex-col items-center gap-1 pt-1">
+            <span className="text-xs">Detected pull requests from this run:</span>
+            {data.pullRequests.map((pr) => (
+              <a
+                key={pr.url}
+                href={pr.url}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+              >
+                <span>
+                  {pr.owner}/{pr.repo}#{pr.number}
+                </span>
+                <ExternalLink className="h-3 w-3" />
+              </a>
+            ))}
+          </div>
+        )}
         {data?.preCommit && (
           <span className="font-mono text-xs">
             Pre: {data.preCommit.slice(0, 8)}
