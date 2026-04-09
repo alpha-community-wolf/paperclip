@@ -1,15 +1,13 @@
 import type { Command } from "@paperclipai/shared";
-import { Fragment, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { cn } from "../lib/utils";
 
 const VIEWPORT_MARGIN = 8;
 const PICKER_OFFSET = 4;
+const PICKER_WIDTH = 280;
+const PREVIEW_WIDTH = 240;
+const PREVIEW_GAP = 4;
 
 interface SlashPickerPositionInput {
   anchorTop: number;
@@ -46,8 +44,6 @@ interface SlashCommandPickerProps {
   left: number;
   onHover: (index: number) => void;
   onSelect: (command: Command) => void;
-  /** While true, parent skips slash detection so selectionchange from clicking does not clear state before insert. */
-  onPickerInteractionLockChange?: (locked: boolean) => void;
 }
 
 export function SlashCommandPicker({
@@ -57,58 +53,55 @@ export function SlashCommandPicker({
   left,
   onHover,
   onSelect,
-  onPickerInteractionLockChange,
 }: SlashCommandPickerProps) {
   const pickerRef = useRef<HTMLDivElement | null>(null);
+  const activeRef = useRef<HTMLButtonElement | null>(null);
   const [pickerPos, setPickerPos] = useState({ top, left });
-
-  const armInteractionUnlock = () => {
-    const unlock = () => {
-      onPickerInteractionLockChange?.(false);
-      window.removeEventListener("pointerup", unlock);
-      window.removeEventListener("pointercancel", unlock);
-    };
-    window.addEventListener("pointerup", unlock);
-    window.addEventListener("pointercancel", unlock);
-  };
-
-  const handlePickerPointerDownCapture = () => {
-    onPickerInteractionLockChange?.(true);
-    armInteractionUnlock();
-  };
+  const [previewSide, setPreviewSide] = useState<"right" | "left">("right");
 
   useLayoutEffect(() => {
     if (typeof window === "undefined") return;
     const el = pickerRef.current;
     const rect = el?.getBoundingClientRect();
-    const menuWidth = rect?.width ?? 280;
+    const menuWidth = rect?.width ?? PICKER_WIDTH;
     const menuHeight = rect?.height ?? 200;
 
-    setPickerPos(
-      calculateSlashPickerPosition({
-        anchorTop: top,
-        anchorLeft: left,
-        menuHeight,
-        menuWidth,
-        viewportWidth: window.innerWidth,
-        viewportHeight: window.innerHeight,
-      }),
-    );
+    const pos = calculateSlashPickerPosition({
+      anchorTop: top,
+      anchorLeft: left,
+      menuHeight,
+      menuWidth,
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+    });
+
+    setPickerPos(pos);
+
+    const rightSpace = window.innerWidth - (pos.left + PICKER_WIDTH);
+    setPreviewSide(rightSpace >= PREVIEW_WIDTH + PREVIEW_GAP + VIEWPORT_MARGIN ? "right" : "left");
   }, [top, left, commands.length]);
+
+  useEffect(() => {
+    activeRef.current?.scrollIntoView({ block: "nearest" });
+  }, [index]);
 
   if (commands.length === 0) return null;
 
+  const highlighted = commands[index];
+  const preview = highlighted?.content?.trim();
+
   return createPortal(
-    <div
-      ref={pickerRef}
-      data-slash-command-picker
-      className="fixed z-50 w-[280px] max-h-[200px] overflow-y-auto rounded-lg border border-border bg-popover shadow-lg py-1"
-      style={{ top: pickerPos.top, left: pickerPos.left }}
-      onPointerDownCapture={handlePickerPointerDownCapture}
-    >
-      {commands.map((command, i) => {
-        const rowButton = (
+    <>
+      <div
+        ref={pickerRef}
+        data-slash-command-picker
+        className="fixed z-50 w-[280px] max-h-[200px] overflow-y-auto rounded-lg border border-border bg-popover shadow-lg py-1"
+        style={{ top: pickerPos.top, left: pickerPos.left }}
+      >
+        {commands.map((command, i) => (
           <button
+            key={command.id}
+            ref={i === index ? activeRef : undefined}
             type="button"
             className={cn(
               "flex w-full items-start gap-2 px-2.5 py-1.5 text-left text-[13px] transition-colors hover:bg-accent/50",
@@ -125,28 +118,24 @@ export function SlashCommandPicker({
               {command.label}
             </span>
           </button>
-        );
-
-        const preview = command.content?.trim();
-        if (!preview) {
-          return <Fragment key={command.id}>{rowButton}</Fragment>;
-        }
-
-        return (
-          <Tooltip key={command.id} delayDuration={400}>
-            <TooltipTrigger asChild>{rowButton}</TooltipTrigger>
-            <TooltipContent
-              side="right"
-              align="start"
-              sideOffset={8}
-              className="max-w-sm max-h-48 overflow-y-auto px-3 py-2 text-left text-xs font-normal"
-            >
-              <p className="whitespace-pre-wrap text-balance">{preview}</p>
-            </TooltipContent>
-          </Tooltip>
-        );
-      })}
-    </div>,
+        ))}
+      </div>
+      {preview && (
+        <div
+          className="fixed z-50 w-[240px] max-h-[200px] overflow-y-auto rounded-lg border border-border bg-popover shadow-lg px-3 py-2.5"
+          style={{
+            top: pickerPos.top,
+            left:
+              previewSide === "right"
+                ? pickerPos.left + PICKER_WIDTH + PREVIEW_GAP
+                : pickerPos.left - PREVIEW_WIDTH - PREVIEW_GAP,
+          }}
+        >
+          <p className="text-[11px] font-medium text-foreground mb-1.5">/{highlighted.trigger}</p>
+          <p className="text-xs leading-relaxed text-muted-foreground whitespace-pre-wrap">{preview}</p>
+        </div>
+      )}
+    </>,
     document.body,
   );
 }

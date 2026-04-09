@@ -278,8 +278,6 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
   const [slashState, setSlashState] = useState<SlashState | null>(null);
   const slashStateRef = useRef<SlashState | null>(null);
   const [slashIndex, setSlashIndex] = useState(0);
-  /** True while pointer is down on the slash picker (portal); avoids selectionchange clearing state before click inserts. */
-  const slashPickerInteractionLockRef = useRef(false);
 
   const { data: allCommands } = useQuery({
     queryKey: queryKeys.commands.list(selectedCompanyId ?? "__none__"),
@@ -422,9 +420,6 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
   }, [mentions]);
 
   const checkSlash = useCallback(() => {
-    if (slashPickerInteractionLockRef.current) {
-      return;
-    }
     if (!containerRef.current || availableCommands.length === 0) {
       slashStateRef.current = null;
       setSlashState(null);
@@ -584,10 +579,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
     [decorateProjectMentions, onChange],
   );
 
-  const selectSlashCommand = useCallback((command: Command) => {
-    const state = slashStateRef.current;
-    if (!state) return;
-
+  const selectSlashCommand = useCallback((command: Command, state: SlashState) => {
     const replacement = command.content.endsWith(" ") ? command.content : `${command.content} `;
     const sel = window.getSelection();
 
@@ -706,7 +698,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
             if (e.key === "Enter" || e.key === "Tab") {
               e.preventDefault();
               e.stopPropagation();
-              selectSlashCommand(filteredSlashCommands[slashIndex]);
+              if (slashState) selectSlashCommand(filteredSlashCommands[slashIndex], slashState);
             }
           }
         }
@@ -793,10 +785,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
           top={slashState.top}
           left={slashState.left}
           onHover={setSlashIndex}
-          onSelect={selectSlashCommand}
-          onPickerInteractionLockChange={(locked) => {
-            slashPickerInteractionLockRef.current = locked;
-          }}
+          onSelect={(command) => selectSlashCommand(command, slashState)}
         />
       )}
 
