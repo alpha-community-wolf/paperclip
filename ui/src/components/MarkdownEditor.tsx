@@ -209,10 +209,11 @@ function detectSlash(container: HTMLElement): SlashState | null {
   tempRange.setStart(textNode, slashPos);
   tempRange.setEnd(textNode, slashPos + 1);
   const rect = tempRange.getBoundingClientRect();
+  const containerRect = container.getBoundingClientRect();
   return {
     query,
-    top: rect.bottom,
-    left: rect.left,
+    top: rect.bottom - containerRect.top,
+    left: rect.left - containerRect.left,
     textNode: textNode as Text,
     slashPos,
     endPos: offset,
@@ -805,6 +806,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
           index={slashIndex}
           top={slashState.top}
           left={slashState.left}
+          portal={false}
           onHover={setSlashIndex}
           onSelect={(command) => {
             // Guard: prevent selectionchange from clearing state mid-click.
