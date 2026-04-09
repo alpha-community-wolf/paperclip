@@ -97,6 +97,38 @@ function captureGitHead(cwd: string): Promise<string | null> {
   });
 }
 
+export interface RunPullRequestRef {
+  url: string;
+  owner: string;
+  repo: string;
+  number: number;
+}
+
+export function extractGithubPullRequestsFromRunResult(resultJson: unknown): RunPullRequestRef[] {
+  if (!resultJson || typeof resultJson !== "object") return [];
+  const parsed = parseObject(resultJson as Record<string, unknown>);
+  const candidateTexts = [parsed.result, parsed.summary, parsed.message, parsed.error]
+    .filter((value): value is string => typeof value === "string" && value.length > 0);
+
+  if (candidateTexts.length === 0) return [];
+
+  const matches = new Map<string, RunPullRequestRef>();
+  const prUrlRegex = /https:\/\/github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)\/pull\/(\d+)/g;
+  for (const text of candidateTexts) {
+    let match: RegExpExecArray | null;
+    while ((match = prUrlRegex.exec(text)) !== null) {
+      const owner = match[1] ?? "";
+      const repo = match[2] ?? "";
+      const prNumber = Number.parseInt(match[3] ?? "", 10);
+      if (!owner || !repo || !Number.isFinite(prNumber) || prNumber <= 0) continue;
+      const url = `https://github.com/${owner}/${repo}/pull/${prNumber}`;
+      matches.set(url, { url, owner, repo, number: prNumber });
+    }
+  }
+
+  return [...matches.values()];
+}
+
 const MAX_LIVE_LOG_CHUNK_BYTES = 8 * 1024;
 const HEARTBEAT_MAX_CONCURRENT_RUNS_DEFAULT = 1;
 const HEARTBEAT_MAX_CONCURRENT_RUNS_MAX = 10;
@@ -3461,27 +3493,64 @@ export function heartbeatService(db: Db) {
       };
     },
 
-    getRunDiff: async (runId: string): Promise<{ preCommit: string | null; postCommit: string | null; diff: string | null; error?: string }> => {
+    getRunDiff: async (runId: string): Promise<{
+      preCommit: string | null;
+      postCommit: string | null;
+      diff: string | null;
+      error?: string;
+      pullRequests?: RunPullRequestRef[];
+    }> => {
       const run = await getRun(runId);
       if (!run) throw notFound("Heartbeat run not found");
       const pre = run.preRunCommit;
       const post = run.postRunCommit;
+      const pullRequests = extractGithubPullRequestsFromRunResult(run.resultJson);
       if (!pre || !post) {
+        if (pullRequests.length > 0) {
+          return {
+            preCommit: pre,
+            postCommit: post,
+            diff: null,
+            error: "No git commit range was recorded for this run's primary workspace. Detected pull request changes instead.",
+            pullRequests,
+          };
+        }
         return { preCommit: pre, postCommit: post, diff: null, error: "Git commit hashes not available for this run" };
       }
       if (pre === post) {
+        if (pullRequests.length > 0) {
+          return {
+            preCommit: pre,
+            postCommit: post,
+            diff: null,
+            error: "No git changes were detected in the run's primary workspace. Detected pull request changes instead.",
+            pullRequests,
+          };
+        }
         return { preCommit: pre, postCommit: post, diff: "" };
       }
       const workspace = parseObject(run.contextSnapshot);
       const paperclipWorkspace = parseObject(workspace.paperclipWorkspace);
       const cwd = typeof paperclipWorkspace.cwd === "string" ? paperclipWorkspace.cwd : null;
       if (!cwd) {
-        return { preCommit: pre, postCommit: post, diff: null, error: "Workspace directory not available" };
+        return {
+          preCommit: pre,
+          postCommit: post,
+          diff: null,
+          error: "Workspace directory not available",
+          ...(pullRequests.length > 0 ? { pullRequests } : {}),
+        };
       }
       return new Promise((resolve) => {
         execFile("git", ["diff", `${pre}..${post}`], { cwd, timeout: 15000, maxBuffer: 2 * 1024 * 1024 }, (err, stdout) => {
           if (err) {
-            resolve({ preCommit: pre, postCommit: post, diff: null, error: `git diff failed: ${err.message}` });
+            resolve({
+              preCommit: pre,
+              postCommit: post,
+              diff: null,
+              error: `git diff failed: ${err.message}`,
+              ...(pullRequests.length > 0 ? { pullRequests } : {}),
+            });
           } else {
             resolve({ preCommit: pre, postCommit: post, diff: stdout });
           }

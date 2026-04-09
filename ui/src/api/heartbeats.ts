@@ -74,7 +74,13 @@ export const heartbeatsApi = {
   updateStepFeedback: (runId: string, stepIndex: number, vote: StepFeedbackVote | null) =>
     api.patch<HeartbeatRun>(`/heartbeat-runs/${runId}/feedback`, { stepIndex, vote }),
   diff: (runId: string) =>
-    api.get<{ preCommit: string | null; postCommit: string | null; diff: string | null; error?: string }>(
+    api.get<{
+      preCommit: string | null;
+      postCommit: string | null;
+      diff: string | null;
+      error?: string;
+      pullRequests?: Array<{ url: string; owner: string; repo: string; number: number }>;
+    }>(
       `/heartbeat-runs/${runId}/diff`,
     ),
 };
