@@ -44,6 +44,12 @@ interface SlashCommandPickerProps {
   left: number;
   onHover: (index: number) => void;
   onSelect: (command: Command) => void;
+  /**
+   * When true (default), renders via createPortal to document.body with
+   * fixed positioning.  When false, renders inline with absolute positioning
+   * — coordinates should be relative to the nearest positioned ancestor.
+   */
+  portal?: boolean;
 }
 
 export function SlashCommandPicker({
@@ -53,6 +59,7 @@ export function SlashCommandPicker({
   left,
   onHover,
   onSelect,
+  portal = true,
 }: SlashCommandPickerProps) {
   const pickerRef = useRef<HTMLDivElement | null>(null);
   const activeRef = useRef<HTMLButtonElement | null>(null);
@@ -61,25 +68,41 @@ export function SlashCommandPicker({
 
   useLayoutEffect(() => {
     if (typeof window === "undefined") return;
-    const el = pickerRef.current;
-    const rect = el?.getBoundingClientRect();
-    const menuWidth = rect?.width ?? PICKER_WIDTH;
-    const menuHeight = rect?.height ?? 200;
 
-    const pos = calculateSlashPickerPosition({
-      anchorTop: top,
-      anchorLeft: left,
-      menuHeight,
-      menuWidth,
-      viewportWidth: window.innerWidth,
-      viewportHeight: window.innerHeight,
-    });
+    if (portal) {
+      const el = pickerRef.current;
+      const rect = el?.getBoundingClientRect();
+      const menuWidth = rect?.width ?? PICKER_WIDTH;
+      const menuHeight = rect?.height ?? 200;
 
-    setPickerPos(pos);
+      const pos = calculateSlashPickerPosition({
+        anchorTop: top,
+        anchorLeft: left,
+        menuHeight,
+        menuWidth,
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+      });
 
-    const rightSpace = window.innerWidth - (pos.left + PICKER_WIDTH);
-    setPreviewSide(rightSpace >= PREVIEW_WIDTH + PREVIEW_GAP + VIEWPORT_MARGIN ? "right" : "left");
-  }, [top, left, commands.length]);
+      setPickerPos(pos);
+
+      const rightSpace = window.innerWidth - (pos.left + PICKER_WIDTH);
+      setPreviewSide(rightSpace >= PREVIEW_WIDTH + PREVIEW_GAP + VIEWPORT_MARGIN ? "right" : "left");
+    } else {
+      // Inline mode: use coordinates as-is (container-relative)
+      setPickerPos({ top: top + PICKER_OFFSET, left });
+
+      // For inline, estimate whether preview fits to the right
+      const el = pickerRef.current;
+      if (el) {
+        const pickerRect = el.getBoundingClientRect();
+        const rightSpace = window.innerWidth - (pickerRect.right);
+        setPreviewSide(rightSpace >= PREVIEW_WIDTH + PREVIEW_GAP + VIEWPORT_MARGIN ? "right" : "left");
+      } else {
+        setPreviewSide("right");
+      }
+    }
+  }, [top, left, commands.length, portal]);
 
   useEffect(() => {
     activeRef.current?.scrollIntoView({ block: "nearest" });
@@ -89,13 +112,17 @@ export function SlashCommandPicker({
 
   const highlighted = commands[index];
   const preview = highlighted?.content?.trim();
+  const positionClass = portal ? "fixed" : "absolute";
 
-  return createPortal(
+  const content = (
     <>
       <div
         ref={pickerRef}
         data-slash-command-picker
-        className="fixed z-50 w-[280px] max-h-[200px] overflow-y-auto rounded-lg border border-border bg-popover shadow-lg py-1"
+        className={cn(
+          positionClass,
+          "z-50 w-[280px] max-h-[200px] overflow-y-auto rounded-lg border border-border bg-popover shadow-lg py-1",
+        )}
         style={{ top: pickerPos.top, left: pickerPos.left }}
       >
         {commands.map((command, i) => (
@@ -122,7 +149,10 @@ export function SlashCommandPicker({
       </div>
       {preview && (
         <div
-          className="fixed z-50 w-[240px] max-h-[200px] overflow-y-auto rounded-lg border border-border bg-popover shadow-lg px-3 py-2.5"
+          className={cn(
+            positionClass,
+            "z-50 w-[240px] max-h-[200px] overflow-y-auto rounded-lg border border-border bg-popover shadow-lg px-3 py-2.5",
+          )}
           style={{
             top: pickerPos.top,
             left:
@@ -135,7 +165,8 @@ export function SlashCommandPicker({
           <p className="text-xs leading-relaxed text-muted-foreground whitespace-pre-wrap">{preview}</p>
         </div>
       )}
-    </>,
-    document.body,
+    </>
   );
+
+  return portal ? createPortal(content, document.body) : content;
 }
