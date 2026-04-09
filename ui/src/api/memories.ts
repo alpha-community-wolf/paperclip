@@ -12,6 +12,10 @@ export interface SharedMemory {
   sourceIssueId: string | null;
   sourceRunId: string | null;
   sourceType: "agent_save" | "auto_capture" | "manual" | "propagated";
+  /** Joined: issue identifier (e.g. "COM-123") */
+  sourceIssueIdentifier?: string | null;
+  /** Joined: source agent display name */
+  sourceAgentName?: string | null;
   confidence: number;
   verifiedByAgentId: string | null;
   verifiedAt: string | null;
