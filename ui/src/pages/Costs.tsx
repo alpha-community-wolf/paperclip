@@ -146,13 +146,13 @@ function EfficiencyTable({ agents }: { agents: CostEfficiencyAgent[] }) {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border/50">
-                <th className="text-left font-medium text-muted-foreground pb-2 pr-4">Agent</th>
-                <th className="text-right font-medium text-muted-foreground pb-2 px-2">Total Spend</th>
-                <th className="text-right font-medium text-muted-foreground pb-2 px-2">$/Completed</th>
-                <th className="text-right font-medium text-muted-foreground pb-2 px-2">$/Attempted</th>
-                <th className="text-right font-medium text-muted-foreground pb-2 px-2">$/Run</th>
-                <th className="text-right font-medium text-muted-foreground pb-2 pl-2">Tasks</th>
-                <th className="text-right font-medium text-muted-foreground pb-2 pl-2">Runs</th>
+                <th className="text-left font-medium text-muted-foreground py-2 pr-4">Agent</th>
+                <th className="text-right font-medium text-muted-foreground py-2 px-2">Total Spend</th>
+                <th className="text-right font-medium text-muted-foreground py-2 px-2">$/Completed</th>
+                <th className="text-right font-medium text-muted-foreground py-2 px-2">$/Attempted</th>
+                <th className="text-right font-medium text-muted-foreground py-2 px-2">$/Run</th>
+                <th className="text-right font-medium text-muted-foreground py-2 pl-2">Tasks</th>
+                <th className="text-right font-medium text-muted-foreground py-2 pl-2">Runs</th>
               </tr>
             </thead>
             <tbody>
@@ -433,13 +433,13 @@ function ModelBreakdownCard({ models }: { models: CostByModel[] }) {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border/50">
-                <th className="text-left font-medium text-muted-foreground pb-2 pr-4">Model</th>
-                <th className="text-right font-medium text-muted-foreground pb-2 px-2">Cost</th>
-                <th className="text-left font-medium text-muted-foreground pb-2 px-2 w-24">Share</th>
-                <th className="text-right font-medium text-muted-foreground pb-2 px-2">In Tokens</th>
-                <th className="text-right font-medium text-muted-foreground pb-2 px-2">Out Tokens</th>
-                <th className="text-right font-medium text-muted-foreground pb-2 px-2">$/1K Tok</th>
-                <th className="text-right font-medium text-muted-foreground pb-2 pl-2">Events</th>
+                <th className="text-left font-medium text-muted-foreground py-2 pr-4">Model</th>
+                <th className="text-right font-medium text-muted-foreground py-2 px-2">Cost</th>
+                <th className="text-left font-medium text-muted-foreground py-2 px-2 w-24">Share</th>
+                <th className="text-right font-medium text-muted-foreground py-2 px-2">In Tokens</th>
+                <th className="text-right font-medium text-muted-foreground py-2 px-2">Out Tokens</th>
+                <th className="text-right font-medium text-muted-foreground py-2 px-2">$/1K Tok</th>
+                <th className="text-right font-medium text-muted-foreground py-2 pl-2">Events</th>
               </tr>
             </thead>
             <tbody>
@@ -579,11 +579,11 @@ function ProjectROITable({ projects }: { projects: CostByProjectEnhanced[] }) {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border/50">
-                <th className="text-left font-medium text-muted-foreground pb-2 pr-4">Project</th>
-                <th className="text-right font-medium text-muted-foreground pb-2 px-2">Cost</th>
-                <th className="text-right font-medium text-muted-foreground pb-2 px-2">Tasks Done</th>
-                <th className="text-right font-medium text-muted-foreground pb-2 px-2">$/Task</th>
-                <th className="text-right font-medium text-muted-foreground pb-2 pl-2">Status</th>
+                <th className="text-left font-medium text-muted-foreground py-2 pr-4">Project</th>
+                <th className="text-right font-medium text-muted-foreground py-2 px-2">Cost</th>
+                <th className="text-right font-medium text-muted-foreground py-2 px-2">Tasks Done</th>
+                <th className="text-right font-medium text-muted-foreground py-2 px-2">$/Task</th>
+                <th className="text-right font-medium text-muted-foreground py-2 pl-2">Status</th>
               </tr>
             </thead>
             <tbody>
