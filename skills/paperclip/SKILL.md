@@ -100,7 +100,7 @@ Headers: X-Paperclip-Run-Id: $PAPERCLIP_RUN_ID
 { "status": "blocked", "comment": "What is blocked, why, and who needs to unblock it." }
 ```
 
-Status values: `backlog`, `todo`, `in_progress`, `in_review`, `done`, `blocked`, `cancelled`. Priority values: `critical`, `high`, `medium`, `low`. Type values: `task`, `plan`. Other updatable fields: `title`, `description`, `type`, `priority`, `assigneeAgentId`, `projectId`, `goalId`, `parentId`, `billingCode`, `metadata`.
+Status values: `backlog`, `todo`, `in_progress`, `in_review`, `done`, `blocked`, `cancelled`. Priority values: `critical`, `high`, `medium`, `low`. Type values: `task`, `plan`, `explore`. Other updatable fields: `title`, `description`, `type`, `priority`, `assigneeAgentId`, `projectId`, `goalId`, `parentId`, `billingCode`, `metadata`.
 
 **Step 9 — Delegate if needed.** Create subtasks with `POST /api/companies/{companyId}/issues`. Always set `parentId` and `goalId`. Set `billingCode` for cross-team work. Use `metadata` to pass along structured context (IDs, references, prior findings) that the assignee will need.
 
@@ -276,6 +276,60 @@ Original description text here.
 Use inline plans when the same agent will both plan and execute within the same issue. Use plan-type issues when you want the structured Build → Execute lifecycle.
 
 When using inline plans, _do not mark the issue as done_. Reassign to whomever asked for the plan (or your manager if self-initiated) and leave it in progress.
+
+### Explore Issue Type
+
+Issues can also have `type: "explore"`. Explore issues are pure research/investigation — they gather information and return findings without making changes or creating plans.
+
+**When to use `type: "explore"`:** Use explore-type issues when you want an agent to investigate a topic, gather information, read code, search the web, or compile findings — without making any changes. The output is a structured findings document.
+
+**Explore vs Plan vs Task:**
+
+| Type | Purpose | Agent behavior |
+|------|---------|----------------|
+| `task` | Execute work | Make changes, create PRs, implement features |
+| `plan` | Create an implementation plan | Write a plan document, do NOT execute |
+| `explore` | Research and investigate | Gather findings, do NOT modify code or create plans |
+
+### Explore Lifecycle
+
+1. Create or convert an issue to explore type (`"type": "explore"`)
+2. Agent investigates and creates a findings document at `{workspace}/workspace/docs/{identifier}-explore.md`
+3. Agent sets `metadata.exploreDocumentPath` to the findings file path
+4. Agent marks the issue as done (server enforces `exploreDocumentPath` is set)
+5. UI shows a **"Plan"** button on the completed explore issue
+6. Clicking "Plan" creates a new plan issue with the explore context carried forward
+
+This enables the full chain: **Explore → Plan → Build (Task)**.
+
+### Explore Document Structure
+
+```markdown
+# {identifier}: {title} — Exploration Findings
+
+## Summary
+One-paragraph executive summary of what was found.
+
+## Investigation Scope
+What was explored and what was intentionally excluded.
+
+## Findings
+### Finding 1: {title}
+- Detail...
+- Evidence / code references...
+
+## Open Questions
+- Things that could not be determined and why.
+
+## Recommendations
+- Suggested next steps (directional guidance, not a plan).
+```
+
+### Explore Metadata
+
+| Field | Purpose |
+|-------|---------|
+| `metadata.exploreDocumentPath` | Relative path to the explore findings document (required before marking done) |
 
 ## Issue Metadata
 

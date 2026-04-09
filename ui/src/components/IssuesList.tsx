@@ -734,6 +734,11 @@ export function IssuesList({
                 Plan
               </span>
             )}
+            {issue.type === "explore" && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-blue-500/40 bg-blue-500/10 px-1.5 py-0.5 text-[10px] text-blue-600 dark:text-blue-400">
+                Explore
+              </span>
+            )}
             {templateIssueIds.has(issue.id) ? (
               <span className="inline-flex items-center gap-1 rounded-full border border-teal-500/40 bg-teal-500/10 px-1.5 py-0.5 text-[10px] text-teal-600 dark:text-teal-400">
                 <Repeat className="h-2.5 w-2.5" />
@@ -783,6 +788,11 @@ export function IssuesList({
           {issue.type === "plan" && (
             <span className="inline-flex items-center gap-1 rounded-full border border-violet-500/40 bg-violet-500/10 px-1.5 py-0.5 text-[10px] text-violet-600 dark:text-violet-400">
               Plan
+            </span>
+          )}
+          {issue.type === "explore" && (
+            <span className="inline-flex items-center gap-1 rounded-full border border-blue-500/40 bg-blue-500/10 px-1.5 py-0.5 text-[10px] text-blue-600 dark:text-blue-400">
+              Explore
             </span>
           )}
           {templateIssueIds.has(issue.id) ? (

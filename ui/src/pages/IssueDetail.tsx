@@ -440,6 +440,31 @@ export function IssueDetail() {
     },
   });
 
+  const createPlanFromExplore = useMutation({
+    mutationFn: () => {
+      const meta = issue?.metadata as Record<string, unknown> | null;
+      return issuesApi.create(selectedCompanyId!, {
+        title: `Plan: ${issue?.title ?? ""}`,
+        type: "plan",
+        status: "todo",
+        parentId: issue?.id,
+        assigneeAgentId: issue?.assigneeAgentId,
+        projectId: issue?.projectId,
+        goalId: issue?.goalId,
+        description: `Plan based on exploration findings from ${issue?.identifier ?? issue?.id}.\n\nExplore document: \`${meta?.exploreDocumentPath ?? ""}\``,
+        metadata: {
+          exploreDocumentPath: meta?.exploreDocumentPath,
+          exploreIssueId: issue?.id,
+          exploreIssueIdentifier: issue?.identifier,
+        },
+      });
+    },
+    onSuccess: (newIssue) => {
+      invalidateIssue();
+      navigate(`/issues/${newIssue.identifier ?? newIssue.id}`);
+    },
+  });
+
   const addComment = useMutation({
     mutationFn: ({ body, reopen }: { body: string; reopen?: boolean }) =>
       issuesApi.addComment(issueId!, body, reopen),
@@ -769,6 +794,12 @@ export function IssueDetail() {
               Plan
             </span>
           )}
+          {issue.type === "explore" && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 border border-blue-500/30 px-2 py-0.5 text-[10px] font-medium text-blue-600 dark:text-blue-400 shrink-0">
+              <Search className="h-3 w-3" />
+              Explore
+            </span>
+          )}
 
           {isTemplateIssue && (
             <span className="inline-flex items-center gap-1 rounded-full bg-teal-500/10 border border-teal-500/30 px-2 py-0.5 text-[10px] font-medium text-teal-600 dark:text-teal-400 shrink-0">
@@ -906,6 +937,28 @@ export function IssueDetail() {
           >
             <Play className="h-3.5 w-3.5 mr-1.5" />
             {createBuildIssue.isPending ? "Creating..." : "Build"}
+          </Button>
+        </div>
+      )}
+
+      {issue.type === "explore" && issue.status === "done" && !!(issue.metadata as Record<string, unknown> | null)?.exploreDocumentPath && (
+        <div className="flex items-center gap-3 rounded-lg border border-blue-500/30 bg-blue-500/5 p-3">
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium flex items-center gap-1.5">
+              <Search className="h-3.5 w-3.5 text-blue-500" />
+              Exploration complete
+            </p>
+            <p className="text-xs text-muted-foreground truncate">
+              Ready to plan from findings: <code className="text-[11px]">{String((issue.metadata as Record<string, unknown>).exploreDocumentPath)}</code>
+            </p>
+          </div>
+          <Button
+            size="sm"
+            onClick={() => createPlanFromExplore.mutate()}
+            disabled={createPlanFromExplore.isPending}
+          >
+            <Play className="h-3.5 w-3.5 mr-1.5" />
+            {createPlanFromExplore.isPending ? "Creating..." : "Plan"}
           </Button>
         </div>
       )}
