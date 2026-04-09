@@ -12,8 +12,8 @@ import { useCompany } from "../context/CompanyContext";
 import { displaySessionTitle, filterChatSessions, groupChatSessions } from "../lib/chat-sessions";
 import { MarkdownBody } from "./MarkdownBody";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
+import { SlashCommandTextarea } from "./SlashCommandTextarea";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -936,17 +936,12 @@ export function AgentChatSessionTab({
 
           <div className="border-t border-border bg-background/95 px-6 py-4 backdrop-blur-sm lg:px-12">
             <div className="space-y-2">
-              <Textarea
+              <SlashCommandTextarea
                 value={draft}
-                onChange={(event) => setDraft(event.target.value)}
+                onChange={setDraft}
                 placeholder={selectedSession?.archivedAt ? "Archived conversations are read-only." : "Message this agent..."}
                 rows={3}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && !event.shiftKey && canSend) {
-                    event.preventDefault();
-                    sendMessage.mutate(draft.trim());
-                  }
-                }}
+                onSubmit={() => { if (canSend) sendMessage.mutate(draft.trim()); }}
                 disabled={
                   !selectedSessionId || sendMessage.isPending || streamInProgress || Boolean(selectedSession?.archivedAt)
                 }

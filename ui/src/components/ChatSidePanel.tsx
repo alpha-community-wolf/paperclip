@@ -25,7 +25,7 @@ import { displaySessionTitle } from "../lib/chat-sessions";
 import { MarkdownBody } from "./MarkdownBody";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
+import { SlashCommandTextarea } from "./SlashCommandTextarea";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -703,18 +703,13 @@ export function ChatSidePanel() {
       {/* Input */}
       <div className="border-t border-border bg-background/95 px-3 py-2.5 backdrop-blur-sm">
         <div className="flex items-end gap-2">
-          <Textarea
+          <SlashCommandTextarea
             value={draft}
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={setDraft}
             placeholder={isArchivedSession ? "Archived conversation (read-only)" : "Message..."}
             rows={1}
             className="min-h-[36px] max-h-[120px] resize-none text-xs"
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey && canSend) {
-                e.preventDefault();
-                sendMessage.mutate(draft.trim());
-              }
-            }}
+            onSubmit={() => { if (canSend) sendMessage.mutate(draft.trim()); }}
             disabled={!selectedSessionId || sendMessage.isPending || streaming || isArchivedSession}
           />
           <Button

@@ -278,6 +278,9 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
   const [slashState, setSlashState] = useState<SlashState | null>(null);
   const slashStateRef = useRef<SlashState | null>(null);
   const [slashIndex, setSlashIndex] = useState(0);
+  // Guard: when true, checkSlash skips clearing state so the picker stays
+  // visible while a pointer interaction (click) is in flight.
+  const slashPickerBusyRef = useRef(false);
 
   const { data: allCommands } = useQuery({
     queryKey: queryKeys.commands.list(selectedCompanyId ?? "__none__"),
@@ -420,6 +423,10 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
   }, [mentions]);
 
   const checkSlash = useCallback(() => {
+    // While the picker is handling a pointer event (mousedown → onSelect),
+    // skip detection so selectionchange doesn't clear state mid-click.
+    if (slashPickerBusyRef.current) return;
+
     if (!containerRef.current || availableCommands.length === 0) {
       slashStateRef.current = null;
       setSlashState(null);
@@ -581,16 +588,26 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
 
   const selectSlashCommand = useCallback((command: Command, state: SlashState) => {
     const replacement = command.content.endsWith(" ") ? command.content : `${command.content} `;
-    const sel = window.getSelection();
 
+    // Try DOM-level insertion first (preserves cursor position naturally).
+    // Falls back to markdown-level replacement when execCommand fails —
+    // this happens when focus shifts during portal interactions (picker click).
+    let inserted = false;
+    const sel = window.getSelection();
     if (sel && state.textNode.isConnected) {
-      const range = document.createRange();
-      range.setStart(state.textNode, state.slashPos);
-      range.setEnd(state.textNode, state.endPos);
-      sel.removeAllRanges();
-      sel.addRange(range);
-      document.execCommand("insertText", false, replacement);
-    } else {
+      try {
+        const range = document.createRange();
+        range.setStart(state.textNode, state.slashPos);
+        range.setEnd(state.textNode, state.endPos);
+        sel.removeAllRanges();
+        sel.addRange(range);
+        inserted = document.execCommand("insertText", false, replacement);
+      } catch {
+        // Range may be invalid if Lexical reconciled the DOM; fall through.
+      }
+    }
+
+    if (!inserted) {
       const current = latestValueRef.current;
       const token = `/${state.query}`;
       const index = current.lastIndexOf(token);
@@ -600,8 +617,12 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
         ref.current?.setMarkdown(next);
         onChange(next);
       }
+      requestAnimationFrame(() => {
+        ref.current?.focus(undefined, { defaultSelection: "rootEnd" });
+      });
     }
 
+    slashPickerBusyRef.current = false;
     slashStateRef.current = null;
     setSlashState(null);
   }, [onChange]);
@@ -785,7 +806,11 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
           top={slashState.top}
           left={slashState.left}
           onHover={setSlashIndex}
-          onSelect={(command) => selectSlashCommand(command, slashState)}
+          onSelect={(command) => {
+            // Guard: prevent selectionchange from clearing state mid-click.
+            slashPickerBusyRef.current = true;
+            selectSlashCommand(command, slashState);
+          }}
         />
       )}
 
