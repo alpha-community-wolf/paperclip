@@ -40,6 +40,7 @@ import {
   Settings2,
   ListChecks,
   Map,
+  Search,
 } from "lucide-react";
 import { cn } from "../lib/utils";
 import { extractProviderIdWithFallback } from "../lib/model-utils";
@@ -67,7 +68,7 @@ function getContrastTextColor(hexColor: string): string {
 interface IssueDraft {
   title: string;
   description: string;
-  type: "task" | "plan";
+  type: "task" | "plan" | "explore";
   status: string;
   priority: string;
   assigneeId: string;
@@ -181,6 +182,7 @@ const priorities = [
 const issueTypes = [
   { value: "task", label: "Task", icon: ListChecks },
   { value: "plan", label: "Plan", icon: Map },
+  { value: "explore", label: "Explore", icon: Search },
 ] as const;
 
 export function NewIssueDialog() {
@@ -189,7 +191,7 @@ export function NewIssueDialog() {
   const queryClient = useQueryClient();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [type, setType] = useState<"task" | "plan">("task");
+  const [type, setType] = useState<"task" | "plan" | "explore">("task");
   const [status, setStatus] = useState("todo");
   const [priority, setPriority] = useState("");
   const [assigneeId, setAssigneeId] = useState("");
@@ -402,7 +404,7 @@ export function NewIssueDialog() {
     if (newIssueDefaults.title) {
       setTitle(newIssueDefaults.title);
       setDescription(newIssueDefaults.description ?? "");
-      setType(newIssueDefaults.type === "plan" ? "plan" : "task");
+      setType(newIssueDefaults.type === "plan" ? "plan" : newIssueDefaults.type === "explore" ? "explore" : "task");
       setStatus(newIssueDefaults.status ?? "todo");
       setPriority(newIssueDefaults.priority ?? "");
       setProjectId(newIssueDefaults.projectId ?? "");
@@ -421,7 +423,7 @@ export function NewIssueDialog() {
     } else if (draft && draft.title.trim()) {
       setTitle(draft.title);
       setDescription(draft.description);
-      setType(draft.type === "plan" ? "plan" : "task");
+      setType(draft.type === "plan" ? "plan" : draft.type === "explore" ? "explore" : "task");
       setStatus(draft.status || "todo");
       setPriority(draft.priority);
       setAssigneeId(newIssueDefaults.assigneeAgentId ?? draft.assigneeId);
@@ -440,7 +442,7 @@ export function NewIssueDialog() {
     } else {
       setTitle(newIssueDefaults.title ?? "");
       setDescription(newIssueDefaults.description ?? "");
-      setType(newIssueDefaults.type === "plan" ? "plan" : "task");
+      setType(newIssueDefaults.type === "plan" ? "plan" : newIssueDefaults.type === "explore" ? "explore" : "task");
       setStatus(newIssueDefaults.status ?? "todo");
       setPriority(newIssueDefaults.priority ?? "");
       setProjectId(newIssueDefaults.projectId ?? "");
@@ -953,7 +955,9 @@ export function NewIssueDialog() {
               <PopoverTrigger asChild>
                 <button className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors">
                   {type === "plan" ? (
-                    <Map className="h-3 w-3 text-blue-500" />
+                    <Map className="h-3 w-3 text-violet-500" />
+                  ) : type === "explore" ? (
+                    <Search className="h-3 w-3 text-blue-500" />
                   ) : (
                     <ListChecks className="h-3 w-3 text-muted-foreground" />
                   )}

@@ -844,6 +844,19 @@ export function issueService(db: Db) {
         }
       }
 
+      // Explore issues require metadata.exploreDocumentPath before completion
+      if (issueData.status === "done" && existing.status !== "done" && existing.type === "explore") {
+        const nextMetadata = issueData.metadata !== undefined
+          ? (issueData.metadata as Record<string, unknown> | null)
+          : (existing.metadata as Record<string, unknown> | null);
+        if (!nextMetadata?.exploreDocumentPath) {
+          throw unprocessable(
+            "Explore issues require metadata.exploreDocumentPath to be set before marking as done",
+            { requirement: "exploreDocumentPath" },
+          );
+        }
+      }
+
       if (issueData.status === "done" && existing.status !== "done") {
         const nextProjectId = issueData.projectId !== undefined ? issueData.projectId : existing.projectId;
         const nextReviewBundleMode =

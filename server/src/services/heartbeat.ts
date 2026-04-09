@@ -788,6 +788,20 @@ async function buildAgentSelfContext(
       lines.push("3. Iterate on the plan based on user feedback in comments");
       lines.push(`4. When the plan is finalized, update the issue metadata with \`planDocumentPath\` set to the plan file path`);
       lines.push("5. Do NOT execute the plan — a separate execution issue will be created for that");
+    } else if (currentIssue.type === "explore") {
+      const identifier = currentIssue.identifier ?? currentIssue.id.slice(0, 8);
+      lines.push("");
+      lines.push("## Explore Mode Instructions");
+      lines.push("");
+      lines.push("You are working on an **EXPLORE** issue. Your job is to investigate and report findings, NOT to make changes or create plans.");
+      lines.push("");
+      lines.push("Requirements:");
+      lines.push("1. Research the topic thoroughly using available tools (code search, file reads, web search, API queries).");
+      lines.push(`2. Create a findings document at: \`{workspace}/workspace/docs/${identifier}-explore.md\``);
+      lines.push("3. The document must include: summary, investigation scope, detailed findings with evidence, open questions, and recommendations.");
+      lines.push("4. Do NOT modify source code, create PRs, or execute implementation work.");
+      lines.push("5. Do NOT produce an implementation plan — focus on raw findings and observations.");
+      lines.push(`6. When the exploration is complete, update the issue metadata with \`exploreDocumentPath\` set to the findings file path.`);
     } else if (meta?.planDocumentPath) {
       lines.push("");
       lines.push("## Execution Plan Reference");
