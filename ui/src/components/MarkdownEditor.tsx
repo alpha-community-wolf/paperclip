@@ -579,10 +579,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
     [decorateProjectMentions, onChange],
   );
 
-  const selectSlashCommand = useCallback((command: Command) => {
-    const state = slashStateRef.current;
-    if (!state) return;
-
+  const selectSlashCommand = useCallback((command: Command, state: SlashState) => {
     const replacement = command.content.endsWith(" ") ? command.content : `${command.content} `;
     const sel = window.getSelection();
 
@@ -701,7 +698,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
             if (e.key === "Enter" || e.key === "Tab") {
               e.preventDefault();
               e.stopPropagation();
-              selectSlashCommand(filteredSlashCommands[slashIndex]);
+              if (slashState) selectSlashCommand(filteredSlashCommands[slashIndex], slashState);
             }
           }
         }
@@ -788,7 +785,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
           top={slashState.top}
           left={slashState.left}
           onHover={setSlashIndex}
-          onSelect={selectSlashCommand}
+          onSelect={(command) => selectSlashCommand(command, slashState)}
         />
       )}
 

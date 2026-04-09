@@ -1,10 +1,13 @@
 import type { Command } from "@paperclipai/shared";
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "../lib/utils";
 
 const VIEWPORT_MARGIN = 8;
 const PICKER_OFFSET = 4;
+const PICKER_WIDTH = 280;
+const PREVIEW_WIDTH = 240;
+const PREVIEW_GAP = 4;
 
 interface SlashPickerPositionInput {
   anchorTop: number;
@@ -52,54 +55,87 @@ export function SlashCommandPicker({
   onSelect,
 }: SlashCommandPickerProps) {
   const pickerRef = useRef<HTMLDivElement | null>(null);
+  const activeRef = useRef<HTMLButtonElement | null>(null);
   const [pickerPos, setPickerPos] = useState({ top, left });
+  const [previewSide, setPreviewSide] = useState<"right" | "left">("right");
 
   useLayoutEffect(() => {
     if (typeof window === "undefined") return;
     const el = pickerRef.current;
     const rect = el?.getBoundingClientRect();
-    const menuWidth = rect?.width ?? 280;
+    const menuWidth = rect?.width ?? PICKER_WIDTH;
     const menuHeight = rect?.height ?? 200;
 
-    setPickerPos(
-      calculateSlashPickerPosition({
-        anchorTop: top,
-        anchorLeft: left,
-        menuHeight,
-        menuWidth,
-        viewportWidth: window.innerWidth,
-        viewportHeight: window.innerHeight,
-      }),
-    );
+    const pos = calculateSlashPickerPosition({
+      anchorTop: top,
+      anchorLeft: left,
+      menuHeight,
+      menuWidth,
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+    });
+
+    setPickerPos(pos);
+
+    const rightSpace = window.innerWidth - (pos.left + PICKER_WIDTH);
+    setPreviewSide(rightSpace >= PREVIEW_WIDTH + PREVIEW_GAP + VIEWPORT_MARGIN ? "right" : "left");
   }, [top, left, commands.length]);
+
+  useEffect(() => {
+    activeRef.current?.scrollIntoView({ block: "nearest" });
+  }, [index]);
 
   if (commands.length === 0) return null;
 
+  const highlighted = commands[index];
+  const preview = highlighted?.content?.trim();
+
   return createPortal(
-    <div
-      ref={pickerRef}
-      className="fixed z-50 w-[280px] max-h-[200px] overflow-y-auto rounded-lg border border-border bg-popover shadow-lg py-1"
-      style={{ top: pickerPos.top, left: pickerPos.left }}
-    >
-      {commands.map((command, i) => (
-        <button
-          key={command.id}
-          title={command.content}
-          className={cn(
-            "flex w-full items-start gap-2 px-2.5 py-1.5 text-left text-[13px] transition-colors hover:bg-accent/50",
-            i === index && "bg-accent",
-          )}
-          onMouseDown={(event) => {
-            event.preventDefault();
-            onSelect(command);
+    <>
+      <div
+        ref={pickerRef}
+        data-slash-command-picker
+        className="fixed z-50 w-[280px] max-h-[200px] overflow-y-auto rounded-lg border border-border bg-popover shadow-lg py-1"
+        style={{ top: pickerPos.top, left: pickerPos.left }}
+      >
+        {commands.map((command, i) => (
+          <button
+            key={command.id}
+            ref={i === index ? activeRef : undefined}
+            type="button"
+            className={cn(
+              "flex w-full items-start gap-2 px-2.5 py-1.5 text-left text-[13px] transition-colors hover:bg-accent/50",
+              i === index && "bg-accent",
+            )}
+            onMouseDown={(event) => {
+              event.preventDefault();
+              onSelect(command);
+            }}
+            onMouseEnter={() => onHover(i)}
+          >
+            <span className="shrink-0 font-medium text-foreground">/{command.trigger}</span>
+            <span className="min-w-0 truncate text-xs text-muted-foreground leading-5">
+              {command.label}
+            </span>
+          </button>
+        ))}
+      </div>
+      {preview && (
+        <div
+          className="fixed z-50 w-[240px] max-h-[200px] overflow-y-auto rounded-lg border border-border bg-popover shadow-lg px-3 py-2.5"
+          style={{
+            top: pickerPos.top,
+            left:
+              previewSide === "right"
+                ? pickerPos.left + PICKER_WIDTH + PREVIEW_GAP
+                : pickerPos.left - PREVIEW_WIDTH - PREVIEW_GAP,
           }}
-          onMouseEnter={() => onHover(i)}
         >
-          <span className="shrink-0 font-medium text-foreground">/{command.trigger}</span>
-          <span className="min-w-0 truncate text-xs text-muted-foreground leading-5">{command.label}</span>
-        </button>
-      ))}
-    </div>,
+          <p className="text-[11px] font-medium text-foreground mb-1.5">/{highlighted.trigger}</p>
+          <p className="text-xs leading-relaxed text-muted-foreground whitespace-pre-wrap">{preview}</p>
+        </div>
+      )}
+    </>,
     document.body,
   );
 }
