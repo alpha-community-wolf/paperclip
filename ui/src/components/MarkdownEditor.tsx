@@ -34,6 +34,7 @@ import { X } from "lucide-react";
 import { cn } from "../lib/utils";
 import { commandsApi } from "../api/commands";
 import { useCompany } from "../context/CompanyContext";
+import { useModalPortalRoot } from "../context/ModalPortalRootContext";
 import { queryKeys } from "../lib/queryKeys";
 import { SlashCommandPicker } from "./SlashCommandPicker";
 
@@ -265,6 +266,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
   onSlashCommandApplied,
 }: MarkdownEditorProps, forwardedRef) {
   const { selectedCompanyId } = useCompany();
+  const modalPortalRoot = useModalPortalRoot();
   const containerRef = useRef<HTMLDivElement>(null);
   const ref = useRef<MDXEditorMethods>(null);
   const latestValueRef = useRef(value);
@@ -922,6 +924,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
           top={slashPickerViewportAnchor.top}
           left={slashPickerViewportAnchor.left}
           portal
+          portalContainer={modalPortalRoot}
           onHover={setSlashIndex}
           onSelect={(command) => {
             // Guard: prevent selectionchange from clearing state mid-click.

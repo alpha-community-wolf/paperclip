@@ -50,6 +50,13 @@ interface SlashCommandPickerProps {
    * — coordinates should be relative to the nearest positioned ancestor.
    */
   portal?: boolean;
+  /**
+   * When set with `portal={true}`, portals here (e.g. Radix `DialogContent`)
+   * instead of `document.body` so the menu stays inside the modal subtree and
+   * remains clickable (`inert` is not applied to nodes outside the dialog).
+   * Uses `position: absolute` with coordinates relative to this element.
+   */
+  portalContainer?: HTMLElement | null;
 }
 
 export function SlashCommandPicker({
@@ -60,16 +67,20 @@ export function SlashCommandPicker({
   onHover,
   onSelect,
   portal = true,
+  portalContainer = null,
 }: SlashCommandPickerProps) {
   const pickerRef = useRef<HTMLDivElement | null>(null);
   const activeRef = useRef<HTMLButtonElement | null>(null);
   const [pickerPos, setPickerPos] = useState({ top, left });
   const [previewSide, setPreviewSide] = useState<"right" | "left">("right");
 
+  const portalTarget = portal && portalContainer ? portalContainer : null;
+  const useBodyPortal = portal && !portalContainer;
+
   useLayoutEffect(() => {
     if (typeof window === "undefined") return;
 
-    if (portal) {
+    if (useBodyPortal) {
       const el = pickerRef.current;
       const rect = el?.getBoundingClientRect();
       const menuWidth = rect?.width ?? PICKER_WIDTH;
@@ -88,6 +99,29 @@ export function SlashCommandPicker({
 
       const rightSpace = window.innerWidth - (pos.left + PICKER_WIDTH);
       setPreviewSide(rightSpace >= PREVIEW_WIDTH + PREVIEW_GAP + VIEWPORT_MARGIN ? "right" : "left");
+    } else if (portalTarget) {
+      const el = pickerRef.current;
+      const rect = el?.getBoundingClientRect();
+      const menuWidth = rect?.width ?? PICKER_WIDTH;
+      const menuHeight = rect?.height ?? 200;
+
+      const posViewport = calculateSlashPickerPosition({
+        anchorTop: top,
+        anchorLeft: left,
+        menuHeight,
+        menuWidth,
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+      });
+
+      const cr = portalTarget.getBoundingClientRect();
+      setPickerPos({
+        top: posViewport.top - cr.top + portalTarget.scrollTop,
+        left: posViewport.left - cr.left + portalTarget.scrollLeft,
+      });
+
+      const rightSpace = window.innerWidth - (posViewport.left + PICKER_WIDTH);
+      setPreviewSide(rightSpace >= PREVIEW_WIDTH + PREVIEW_GAP + VIEWPORT_MARGIN ? "right" : "left");
     } else {
       // Inline mode: use coordinates as-is (container-relative)
       setPickerPos({ top: top + PICKER_OFFSET, left });
@@ -102,7 +136,7 @@ export function SlashCommandPicker({
         setPreviewSide("right");
       }
     }
-  }, [top, left, commands.length, portal]);
+  }, [top, left, commands.length, portal, portalTarget, useBodyPortal]);
 
   useEffect(() => {
     activeRef.current?.scrollIntoView({ block: "nearest" });
@@ -112,7 +146,7 @@ export function SlashCommandPicker({
 
   const highlighted = commands[index];
   const preview = highlighted?.content?.trim();
-  const positionClass = portal ? "fixed" : "absolute";
+  const positionClass = useBodyPortal ? "fixed" : "absolute";
   /* Portaled pickers must sit above modal overlays (typically z-50). */
   const zClass = portal ? "z-[100]" : "z-50";
 
@@ -173,5 +207,7 @@ export function SlashCommandPicker({
     </>
   );
 
-  return portal ? createPortal(content, document.body) : content;
+  if (!portal) return content;
+  const target = portalTarget ?? document.body;
+  return createPortal(content, target);
 }

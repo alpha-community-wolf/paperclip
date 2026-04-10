@@ -4,6 +4,7 @@ import type { Command } from "@paperclipai/shared";
 import { X } from "lucide-react";
 import { commandsApi } from "../api/commands";
 import { useCompany } from "../context/CompanyContext";
+import { useModalPortalRoot } from "../context/ModalPortalRootContext";
 import { queryKeys } from "../lib/queryKeys";
 import { Textarea } from "@/components/ui/textarea";
 import { SlashCommandPicker } from "./SlashCommandPicker";
@@ -92,6 +93,7 @@ export function SlashCommandTextarea({
   onSlashCommandApplied,
 }: SlashCommandTextareaProps) {
   const { selectedCompanyId } = useCompany();
+  const modalPortalRoot = useModalPortalRoot();
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [slash, setSlash] = useState<SlashDetection | null>(null);
   const slashRef = useRef<SlashDetection | null>(null);
@@ -264,6 +266,7 @@ export function SlashCommandTextarea({
           index={slashIndex}
           top={slash.top}
           left={slash.left}
+          portalContainer={modalPortalRoot}
           onHover={setSlashIndex}
           onSelect={(command) => {
             pickerBusyRef.current = true;
