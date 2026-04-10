@@ -697,6 +697,11 @@
 .outpost-markdown th {
   font-weight: 600;
   text-align: left;
+  vertical-align: top;
+}
+
+.outpost-markdown td {
+  vertical-align: top;
 }
 
 .outpost-mermaid {
