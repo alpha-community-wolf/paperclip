@@ -62,11 +62,9 @@ import {
   ArrowUp,
   ArrowDown,
   Link2,
-  GripVertical,
 } from "lucide-react";
 import { KanbanBoard } from "./KanbanBoard";
 import { useIssueTriageKeyboard } from "../hooks/useIssueTriageKeyboard";
-import { useColumnResize, type ColumnConfig } from "../hooks/useColumnResize";
 import type { Issue } from "@paperclipai/shared";
 import type { TaskCronSchedule } from "@paperclipai/shared";
 
@@ -93,18 +91,8 @@ function statusLabel(status: string): string {
   return status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-const ISSUE_COLUMNS: ColumnConfig[] = [
-  { key: "checkbox", defaultWidth: 32, minWidth: 32, resizable: false },
-  { key: "priority", defaultWidth: 28, minWidth: 28, resizable: false },
-  { key: "status", defaultWidth: 110, minWidth: 80, resizable: true },
-  { key: "identifier", defaultWidth: 72, minWidth: 50, resizable: true },
-  { key: "title", defaultWidth: 300, minWidth: 200, resizable: true, flex: true },
-  { key: "type", defaultWidth: 80, minWidth: 60, resizable: true },
-  { key: "runState", defaultWidth: 80, minWidth: 60, resizable: true },
-  { key: "assignee", defaultWidth: 180, minWidth: 100, resizable: true },
-  { key: "project", defaultWidth: 150, minWidth: 100, resizable: true },
-  { key: "date", defaultWidth: 140, minWidth: 100, resizable: true },
-];
+/* Fixed grid template: checkbox | priority | status | id | title(flex) | type | runState | assignee | project | date */
+const GRID_TEMPLATE = "2rem 1.75rem minmax(80px, auto) 72px 1fr minmax(60px, auto) minmax(60px, auto) minmax(100px, auto) minmax(100px, auto) minmax(100px, auto)";
 
 const COLUMN_HEADERS: Record<string, string> = {
   checkbox: "",
@@ -328,7 +316,6 @@ export function IssuesList({
   const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
   const hasSelection = selectedIds.size > 0;
 
-  const { gridTemplateColumns, onResizeStart, resizingCol, resetColumn } = useColumnResize(ISSUE_COLUMNS);
 
   const [assigneePickerIssueId, setAssigneePickerIssueId] = useState<string | null>(null);
   const [projectPickerIssueId, setProjectPickerIssueId] = useState<string | null>(null);
@@ -630,12 +617,11 @@ export function IssuesList({
       to={`/issues/${issue.identifier ?? issue.id}`}
       state={issueLinkState}
       className={cn(
-        "group/row flex items-start gap-2 py-2.5 pl-3 pr-3 text-sm last:border-b-0 cursor-pointer hover:bg-accent/50 transition-colors no-underline text-inherit sm:grid sm:items-center sm:py-2 sm:min-w-[1000px]",
+        "group/row flex items-start gap-2 py-2.5 pl-3 pr-3 text-sm last:border-b-0 cursor-pointer hover:bg-accent/50 transition-colors no-underline text-inherit sm:grid sm:items-center sm:py-2",
         isKbSelected && "ring-2 ring-inset ring-primary bg-accent/60",
         isChecked && "bg-primary/5",
-        resizingCol && "select-none",
       )}
-      style={{ gridTemplateColumns } as React.CSSProperties}
+      style={{ gridTemplateColumns: GRID_TEMPLATE }}
     >
       {/* Col 1: Checkbox */}
       <span
@@ -1137,7 +1123,7 @@ export function IssuesList({
         {formatDateTime(issue.updatedAt)}
       </span>
     </Link>
-  ); }, [issueLinkState, onUpdateIssue, recurringIssueIds, templateIssueIds, spawnedFromTemplateIds, liveIssueIds, recurringByIssueId, recurringPickerIssueId, updateSchedule, scheduleDraftValue, recurringDrafts, assigneePickerIssueId, assigneeSearch, agentName, agents, projectPickerIssueId, projectSearch, allProjects, flatVisibleIssues, selectedIndex, selectedIds, hasSelection, toggleSelect, gridTemplateColumns, resizingCol]); // eslint-disable-line react-hooks/exhaustive-deps
+  ); }, [issueLinkState, onUpdateIssue, recurringIssueIds, templateIssueIds, spawnedFromTemplateIds, liveIssueIds, recurringByIssueId, recurringPickerIssueId, updateSchedule, scheduleDraftValue, recurringDrafts, assigneePickerIssueId, assigneeSearch, agentName, agents, projectPickerIssueId, projectSearch, allProjects, flatVisibleIssues, selectedIndex, selectedIds, hasSelection, toggleSelect]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="space-y-4">
@@ -1577,11 +1563,6 @@ export function IssuesList({
                       : [...viewState.collapsedGroups, key],
                   })}
                   renderRow={renderIssueRow}
-                  columns={ISSUE_COLUMNS}
-                  gridTemplateColumns={gridTemplateColumns}
-                  onResizeStart={onResizeStart}
-                  resizingCol={resizingCol}
-                  resetColumn={resetColumn}
                 />
               )}
               {pastIssues.length > 0 && (
@@ -1598,11 +1579,6 @@ export function IssuesList({
                       : viewState.collapsedGroups.filter((k) => k !== key),
                   })}
                   renderRow={renderIssueRow}
-                  columns={ISSUE_COLUMNS}
-                  gridTemplateColumns={gridTemplateColumns}
-                  onResizeStart={onResizeStart}
-                  resizingCol={resizingCol}
-                  resetColumn={resetColumn}
                 />
               )}
             </>
@@ -1622,11 +1598,6 @@ export function IssuesList({
                 })}
                 renderRow={renderIssueRow}
                 onAdd={() => openNewIssue(newIssueDefaults(group.key))}
-                columns={ISSUE_COLUMNS}
-                gridTemplateColumns={gridTemplateColumns}
-                onResizeStart={onResizeStart}
-                resizingCol={resizingCol}
-                resetColumn={resetColumn}
               />
             ))
           )}
@@ -1816,48 +1787,14 @@ export function IssuesList({
 
 /* ── Reusable collapsible section for issue groups ── */
 
-function ColumnHeaderRow({
-  columns,
-  gridTemplateColumns,
-  onResizeStart,
-  resizingCol,
-  resetColumn,
-}: {
-  columns: ColumnConfig[];
-  gridTemplateColumns: string;
-  onResizeStart: (colKey: string, startX: number) => void;
-  resizingCol: string | null;
-  resetColumn: (colKey: string) => void;
-}) {
+function ColumnHeaderRow() {
   return (
     <div
-      className="hidden sm:grid sm:items-center sm:min-w-[1000px] border-b border-border bg-muted/30 px-3 py-1.5 text-[11px] font-medium text-muted-foreground uppercase tracking-wider select-none"
-      style={{ gridTemplateColumns } as React.CSSProperties}
+      className="hidden sm:grid sm:items-center border-b border-border bg-muted/30 px-3 py-1.5 text-[11px] font-medium text-muted-foreground uppercase tracking-wider select-none"
+      style={{ gridTemplateColumns: GRID_TEMPLATE }}
     >
-      {columns.map((col, i) => (
-        <span key={col.key} className="relative flex items-center min-w-0 overflow-hidden">
-          <span className="truncate">{COLUMN_HEADERS[col.key] ?? ""}</span>
-          {col.resizable && (
-            <span
-              className={cn(
-                "absolute right-0 top-0 bottom-0 flex items-center justify-center w-4 cursor-col-resize z-10 group/handle hover:bg-primary/10",
-                resizingCol === col.key && "bg-primary/20",
-              )}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                onResizeStart(col.key, e.clientX);
-              }}
-              onDoubleClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                resetColumn(col.key);
-              }}
-            >
-              <GripVertical className="h-3 w-3 text-muted-foreground/50 group-hover/handle:text-muted-foreground" />
-            </span>
-          )}
-        </span>
+      {Object.entries(COLUMN_HEADERS).map(([key, label]) => (
+        <span key={key} className="truncate">{label}</span>
       ))}
     </div>
   );
@@ -1873,11 +1810,6 @@ function IssueSection({
   onToggle,
   renderRow,
   onAdd,
-  columns,
-  gridTemplateColumns,
-  onResizeStart,
-  resizingCol,
-  resetColumn,
 }: {
   sectionKey: string;
   label: string | null;
@@ -1888,11 +1820,6 @@ function IssueSection({
   onToggle: (key: string, open: boolean) => void;
   renderRow: (issue: Issue) => React.ReactNode;
   onAdd?: () => void;
-  columns: ColumnConfig[];
-  gridTemplateColumns: string;
-  onResizeStart: (colKey: string, startX: number) => void;
-  resizingCol: string | null;
-  resetColumn: (colKey: string) => void;
 }) {
   const inCollapsed = collapsedGroups.includes(sectionKey);
   const effectiveOpen = defaultOpen ? !inCollapsed : inCollapsed;
@@ -1928,13 +1855,7 @@ function IssueSection({
       )}
       <CollapsibleContent>
         <div className="border border-border rounded-lg divide-y divide-border mb-4 overflow-x-auto">
-          <ColumnHeaderRow
-            columns={columns}
-            gridTemplateColumns={gridTemplateColumns}
-            onResizeStart={onResizeStart}
-            resizingCol={resizingCol}
-            resetColumn={resetColumn}
-          />
+          <ColumnHeaderRow />
           {items.map(renderRow)}
         </div>
       </CollapsibleContent>
