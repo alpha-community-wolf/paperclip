@@ -113,6 +113,8 @@ export function SlashCommandPicker({
   const highlighted = commands[index];
   const preview = highlighted?.content?.trim();
   const positionClass = portal ? "fixed" : "absolute";
+  /* Portaled pickers must sit above modal overlays (typically z-50). */
+  const zClass = portal ? "z-[100]" : "z-50";
 
   const content = (
     <>
@@ -121,7 +123,8 @@ export function SlashCommandPicker({
         data-slash-command-picker
         className={cn(
           positionClass,
-          "z-50 w-[280px] max-h-[200px] overflow-y-auto rounded-lg border border-border bg-popover shadow-lg py-1",
+          zClass,
+          "w-[280px] max-h-[200px] overflow-y-auto rounded-lg border border-border bg-popover shadow-lg py-1",
         )}
         style={{ top: pickerPos.top, left: pickerPos.left }}
       >
@@ -152,7 +155,8 @@ export function SlashCommandPicker({
           data-slash-command-picker
           className={cn(
             positionClass,
-            "z-50 w-[240px] max-h-[200px] overflow-y-auto rounded-lg border border-border bg-popover shadow-lg px-3 py-2.5",
+            zClass,
+            "w-[240px] max-h-[200px] overflow-y-auto rounded-lg border border-border bg-popover shadow-lg px-3 py-2.5",
           )}
           style={{
             top: pickerPos.top,

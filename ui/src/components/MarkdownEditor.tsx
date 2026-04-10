@@ -4,6 +4,7 @@ import {
   useEffect,
   useImperativeHandle,
   useMemo,
+  useReducer,
   useRef,
   useState,
   type CSSProperties,
@@ -29,6 +30,7 @@ import {
   type RealmPlugin,
 } from "@mdxeditor/editor";
 import { buildProjectMentionHref, parseProjectMentionHref, type Command } from "@paperclipai/shared";
+import { X } from "lucide-react";
 import { cn } from "../lib/utils";
 import { commandsApi } from "../api/commands";
 import { useCompany } from "../context/CompanyContext";
@@ -60,6 +62,8 @@ interface MarkdownEditorProps {
   mentions?: MentionOption[];
   /** Called on Cmd/Ctrl+Enter */
   onSubmit?: () => void;
+  /** Fired when a slash command is applied or cleared via the badge. */
+  onSlashCommandApplied?: (command: Command | null) => void;
 }
 
 export interface MarkdownEditorRef {
@@ -258,6 +262,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
   bordered = true,
   mentions,
   onSubmit,
+  onSlashCommandApplied,
 }: MarkdownEditorProps, forwardedRef) {
   const { selectedCompanyId } = useCompany();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -282,6 +287,11 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
   // Guard: when true, checkSlash skips clearing state so the picker stays
   // visible while a pointer interaction (click) is in flight.
   const slashPickerBusyRef = useRef(false);
+
+  const [selectedSlashCommand, setSelectedSlashCommand] = useState<Command | null>(null);
+  /** First occurrence of this string is removed when the user clears the badge. */
+  const lastSlashInsertionRef = useRef<string | null>(null);
+  const [, rerenderSlashAnchor] = useReducer((x: number) => x + 1, 0);
 
   const { data: allCommands } = useQuery({
     queryKey: queryKeys.commands.list(selectedCompanyId ?? "__none__"),
@@ -443,6 +453,18 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
       setSlashState(null);
     }
   }, [availableCommands.length]);
+
+  // Keep portaled slash picker anchored to the caret when the dialog or page scrolls.
+  useEffect(() => {
+    if (!slashState) return;
+    const onScrollOrResize = () => rerenderSlashAnchor();
+    window.addEventListener("scroll", onScrollOrResize, true);
+    window.addEventListener("resize", onScrollOrResize);
+    return () => {
+      window.removeEventListener("scroll", onScrollOrResize, true);
+      window.removeEventListener("resize", onScrollOrResize);
+    };
+  }, [slashState]);
 
   useEffect(() => {
     if ((!mentions || mentions.length === 0) && availableCommands.length === 0) {
@@ -614,6 +636,23 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
     [decorateProjectMentions, onChange],
   );
 
+  const clearSlashCommandBadge = useCallback(() => {
+    const inserted = lastSlashInsertionRef.current;
+    if (inserted) {
+      const current = latestValueRef.current;
+      const idx = current.indexOf(inserted);
+      if (idx !== -1) {
+        const next = current.slice(0, idx) + current.slice(idx + inserted.length);
+        latestValueRef.current = next;
+        ref.current?.setMarkdown(next);
+        onChange(next);
+      }
+    }
+    lastSlashInsertionRef.current = null;
+    setSelectedSlashCommand(null);
+    onSlashCommandApplied?.(null);
+  }, [onChange, onSlashCommandApplied]);
+
   const selectSlashCommand = useCallback((command: Command, state: SlashState) => {
     const replacement = command.content.endsWith(" ") ? command.content : `${command.content} `;
 
@@ -641,6 +680,14 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
       }
     }
 
+    let applied = false;
+    if (inserted) {
+      applied = true;
+      requestAnimationFrame(() => {
+        ref.current?.focus(undefined, { defaultSelection: "rootEnd" });
+      });
+    }
+
     if (!inserted) {
       const current = latestValueRef.current;
       const token = `/${state.query}`;
@@ -650,22 +697,37 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
         latestValueRef.current = next;
         ref.current?.setMarkdown(next);
         onChange(next);
+        applied = true;
       }
       requestAnimationFrame(() => {
         ref.current?.focus(undefined, { defaultSelection: "rootEnd" });
       });
     }
 
+    if (applied) {
+      lastSlashInsertionRef.current = replacement;
+      setSelectedSlashCommand(command);
+      onSlashCommandApplied?.(command);
+    }
+
     slashPickerBusyRef.current = false;
     slashStateRef.current = null;
     setSlashState(null);
-  }, [onChange]);
+  }, [onChange, onSlashCommandApplied]);
 
   function hasFilePayload(evt: DragEvent<HTMLDivElement>) {
     return Array.from(evt.dataTransfer?.types ?? []).includes("Files");
   }
 
   const canDropImage = Boolean(imageUploadHandler);
+
+  const slashPickerViewportAnchor =
+    slashState && containerRef.current
+      ? (() => {
+          const r = containerRef.current.getBoundingClientRect();
+          return { top: r.top + slashState.top, left: r.left + slashState.left };
+        })()
+      : { top: 0, left: 0 };
 
   return (
     <div
@@ -753,7 +815,8 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
             if (e.key === "Enter" || e.key === "Tab") {
               e.preventDefault();
               e.stopPropagation();
-              if (slashState) selectSlashCommand(filteredSlashCommands[slashIndex], slashState);
+              const state = slashStateRef.current;
+              if (state) selectSlashCommand(filteredSlashCommands[slashIndex], state);
             }
           }
         }
@@ -778,6 +841,25 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
         setIsDragOver(false);
       }}
     >
+      {selectedSlashCommand && (
+        <div className="flex flex-wrap items-center gap-1.5 px-1 pt-1 pb-0.5 shrink-0">
+          <span className="inline-flex items-center gap-0.5 rounded-full border border-primary/35 bg-primary/12 px-2 py-0.5 text-[11px] font-medium text-primary">
+            <span className="font-mono">/{selectedSlashCommand.trigger}</span>
+            <button
+              type="button"
+              className="inline-flex rounded-full p-0.5 text-primary/80 hover:bg-primary/15 hover:text-primary"
+              aria-label="Remove slash command"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                clearSlashCommandBadge();
+              }}
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </span>
+        </div>
+      )}
+
       <MDXEditor
         ref={ref}
         markdown={value}
@@ -837,14 +919,15 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
         <SlashCommandPicker
           commands={filteredSlashCommands}
           index={slashIndex}
-          top={slashState.top}
-          left={slashState.left}
-          portal={false}
+          top={slashPickerViewportAnchor.top}
+          left={slashPickerViewportAnchor.left}
+          portal
           onHover={setSlashIndex}
           onSelect={(command) => {
             // Guard: prevent selectionchange from clearing state mid-click.
             slashPickerBusyRef.current = true;
-            selectSlashCommand(command, slashState);
+            const state = slashStateRef.current;
+            if (state) selectSlashCommand(command, state);
           }}
         />
       )}

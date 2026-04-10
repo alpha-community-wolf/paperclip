@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { Command } from "@paperclipai/shared";
+import { X } from "lucide-react";
 import { commandsApi } from "../api/commands";
 import { useCompany } from "../context/CompanyContext";
 import { queryKeys } from "../lib/queryKeys";
 import { Textarea } from "@/components/ui/textarea";
-import { SlashCommandPicker, calculateSlashPickerPosition } from "./SlashCommandPicker";
+import { SlashCommandPicker } from "./SlashCommandPicker";
 
 interface SlashCommandTextareaProps {
   value: string;
@@ -16,6 +17,8 @@ interface SlashCommandTextareaProps {
   disabled?: boolean;
   /** Called when the user presses Enter (without Shift). */
   onSubmit?: () => void;
+  /** Fired when a slash command is applied or cleared via the badge. */
+  onSlashCommandApplied?: (command: Command | null) => void;
 }
 
 interface SlashDetection {
@@ -86,12 +89,16 @@ export function SlashCommandTextarea({
   className,
   disabled,
   onSubmit,
+  onSlashCommandApplied,
 }: SlashCommandTextareaProps) {
   const { selectedCompanyId } = useCompany();
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [slash, setSlash] = useState<SlashDetection | null>(null);
+  const slashRef = useRef<SlashDetection | null>(null);
   const [slashIndex, setSlashIndex] = useState(0);
   const pickerBusyRef = useRef(false);
+  const [selectedSlashCommand, setSelectedSlashCommand] = useState<Command | null>(null);
+  const lastSlashInsertionRef = useRef<string | null>(null);
 
   const { data: allCommands } = useQuery({
     queryKey: queryKeys.commands.list(selectedCompanyId ?? "__none__"),
@@ -110,6 +117,24 @@ export function SlashCommandTextarea({
   }, [commands, slash]);
 
   const active = slash !== null && commands.length > 0 && filtered.length > 0;
+
+  useEffect(() => {
+    slashRef.current = slash;
+  }, [slash]);
+
+  const clearSlashCommandBadge = useCallback(() => {
+    const inserted = lastSlashInsertionRef.current;
+    if (inserted) {
+      const current = value;
+      const idx = current.indexOf(inserted);
+      if (idx !== -1) {
+        onChange(current.slice(0, idx) + current.slice(idx + inserted.length));
+      }
+    }
+    lastSlashInsertionRef.current = null;
+    setSelectedSlashCommand(null);
+    onSlashCommandApplied?.(null);
+  }, [onChange, onSlashCommandApplied, value]);
 
   const detect = useCallback(() => {
     if (pickerBusyRef.current) return;
@@ -133,13 +158,18 @@ export function SlashCommandTextarea({
 
   const insertCommand = useCallback(
     (command: Command) => {
-      if (!slash) return;
+      const s = slashRef.current;
+      if (!s) return;
       const replacement = command.content.endsWith(" ") ? command.content : `${command.content} `;
-      const before = value.slice(0, slash.slashPos);
+      const before = value.slice(0, s.slashPos);
       const cursorPos = textareaRef.current?.selectionStart ?? value.length;
       const after = value.slice(cursorPos);
       const next = before + replacement + after;
       onChange(next);
+
+      lastSlashInsertionRef.current = replacement;
+      setSelectedSlashCommand(command);
+      onSlashCommandApplied?.(command);
 
       // Restore focus and cursor position
       requestAnimationFrame(() => {
@@ -153,8 +183,9 @@ export function SlashCommandTextarea({
 
       pickerBusyRef.current = false;
       setSlash(null);
+      slashRef.current = null;
     },
-    [onChange, slash, value],
+    [onChange, onSlashCommandApplied, value],
   );
 
   const handleKeyDown = useCallback(
@@ -197,7 +228,25 @@ export function SlashCommandTextarea({
   );
 
   return (
-    <>
+    <div className="flex flex-col gap-1 w-full min-w-0">
+      {selectedSlashCommand && (
+        <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+          <span className="inline-flex items-center gap-0.5 rounded-full border border-primary/35 bg-primary/12 px-2 py-0.5 text-[11px] font-medium text-primary">
+            <span className="font-mono">/{selectedSlashCommand.trigger}</span>
+            <button
+              type="button"
+              className="inline-flex rounded-full p-0.5 text-primary/80 hover:bg-primary/15 hover:text-primary"
+              aria-label="Remove slash command"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                clearSlashCommandBadge();
+              }}
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </span>
+        </div>
+      )}
       <Textarea
         ref={textareaRef}
         value={value}
@@ -222,6 +271,6 @@ export function SlashCommandTextarea({
           }}
         />
       )}
-    </>
+    </div>
   );
 }
