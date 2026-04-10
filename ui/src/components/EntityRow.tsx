@@ -11,6 +11,7 @@ interface EntityRowProps {
   trailing?: ReactNode;
   selected?: boolean;
   to?: string;
+  state?: unknown;
   onClick?: () => void;
   className?: string;
 }
@@ -24,6 +25,7 @@ export function EntityRow({
   trailing,
   selected,
   to,
+  state,
   onClick,
   className,
 }: EntityRowProps) {
@@ -57,7 +59,7 @@ export function EntityRow({
 
   if (to) {
     return (
-      <Link to={to} className={cn(classes, "no-underline text-inherit")} onClick={onClick}>
+      <Link to={to} state={state} className={cn(classes, "no-underline text-inherit")} onClick={onClick}>
         {content}
       </Link>
     );

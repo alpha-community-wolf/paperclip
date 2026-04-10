@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { issuesApi } from "../api/issues";
 import { heartbeatsApi, type FailedRunForIssue } from "../api/heartbeats";
@@ -6,6 +6,7 @@ import { approvalsApi } from "../api/approvals";
 import { authApi } from "../api/auth";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
+import { createIssueDetailLocationState } from "../lib/issueDetailBreadcrumb";
 import { queryKeys } from "../lib/queryKeys";
 import { StatusIcon } from "../components/StatusIcon";
 import { PriorityIcon } from "../components/PriorityIcon";
@@ -206,12 +207,13 @@ function FailedRunGroupRow({ finishedAt, runs }: { finishedAt: string; runs: Fai
   );
 }
 
-function IssueRow({ issue }: { issue: Issue }) {
+function IssueRow({ issue, state }: { issue: Issue; state?: unknown }) {
   return (
     <EntityRow
       identifier={issue.identifier ?? issue.id.slice(0, 8)}
       title={issue.title}
       to={`/issues/${issue.identifier ?? issue.id}`}
+      state={state}
       leading={
         <>
           <PriorityIcon priority={issue.priority} />
@@ -257,6 +259,11 @@ function ApprovalRow({ approval }: { approval: Approval }) {
 export function MyWork() {
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
+
+  const issueLinkState = useMemo(
+    () => createIssueDetailLocationState("My Work", "/my-work"),
+    [],
+  );
 
   useEffect(() => {
     setBreadcrumbs([{ label: "My Work" }]);
@@ -371,7 +378,7 @@ export function MyWork() {
           count={inReviewIssues.length}
         >
           {inReviewIssues.map((issue) => (
-            <IssueRow key={issue.id} issue={issue} />
+            <IssueRow key={issue.id} issue={issue} state={issueLinkState} />
           ))}
         </CollapsibleSection>
       )}
