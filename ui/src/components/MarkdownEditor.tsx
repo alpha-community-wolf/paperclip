@@ -225,6 +225,26 @@ function detectSlash(container: HTMLElement): SlashState | null {
   };
 }
 
+/** Match the active `/query` token in the markdown string for controlled sync. */
+function findSlashReplaceRangeInMarkdown(
+  markdown: string,
+  query: string,
+): { start: number; len: number } | null {
+  if (query.length > 0) {
+    const needle = `/${query}`;
+    const start = markdown.lastIndexOf(needle);
+    if (start === -1) return null;
+    return { start, len: needle.length };
+  }
+  for (let i = markdown.length - 1; i >= 0; i--) {
+    if (markdown[i] !== "/") continue;
+    if (i === 0 || /\s/.test(markdown[i - 1]!)) {
+      return { start: i, len: 1 };
+    }
+  }
+  return null;
+}
+
 function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
   const trimmed = hex.trim();
   const match = /^#([0-9a-f]{6})$/i.exec(trimmed);
@@ -658,15 +678,38 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
   const selectSlashCommand = useCallback((command: Command, state: SlashState) => {
     const replacement = command.content.endsWith(" ") ? command.content : `${command.content} `;
 
-    // Try DOM-level insertion first (preserves cursor position naturally).
-    // Falls back to markdown-level replacement when execCommand fails —
-    // this happens when focus shifts during portal interactions (picker click).
+    const finishApplied = () => {
+      lastSlashInsertionRef.current = replacement;
+      setSelectedSlashCommand(command);
+      onSlashCommandApplied?.(command);
+      slashPickerBusyRef.current = false;
+      slashStateRef.current = null;
+      setSlashState(null);
+      requestAnimationFrame(() => {
+        ref.current?.focus(undefined, { defaultSelection: "rootEnd" });
+      });
+    };
+
+    // Always sync via markdown + onChange first. If we only execCommand and skip
+    // onChange, controlled MDXEditor re-renders with stale `markdown={value}` (often
+    // still "/"), wipes the insert, and detectSlash re-opens the menu.
+    const current = latestValueRef.current;
+    const slice = findSlashReplaceRangeInMarkdown(current, state.query);
+    if (slice) {
+      const next =
+        current.slice(0, slice.start) + replacement + current.slice(slice.start + slice.len);
+      latestValueRef.current = next;
+      ref.current?.setMarkdown(next);
+      onChange(next);
+      finishApplied();
+      return;
+    }
+
+    // Rare: Lexical DOM has /query but string not updated yet — DOM insert then flush.
     let inserted = false;
     const sel = window.getSelection();
     if (sel && state.textNode.isConnected) {
       try {
-        // Re-focus the contentEditable — clicking the picker may have moved
-        // focus away, which causes execCommand to silently fail.
         const editable = containerRef.current?.querySelector('[contenteditable="true"]') as HTMLElement | null;
         if (editable && document.activeElement !== editable) {
           editable.focus();
@@ -682,34 +725,20 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
       }
     }
 
-    let applied = false;
     if (inserted) {
-      applied = true;
       requestAnimationFrame(() => {
+        const md = ref.current?.getMarkdown() ?? "";
+        latestValueRef.current = md;
+        onChange(md);
+        lastSlashInsertionRef.current = replacement;
+        setSelectedSlashCommand(command);
+        onSlashCommandApplied?.(command);
+        slashPickerBusyRef.current = false;
+        slashStateRef.current = null;
+        setSlashState(null);
         ref.current?.focus(undefined, { defaultSelection: "rootEnd" });
       });
-    }
-
-    if (!inserted) {
-      const current = latestValueRef.current;
-      const token = `/${state.query}`;
-      const index = current.lastIndexOf(token);
-      if (index !== -1) {
-        const next = current.slice(0, index) + replacement + current.slice(index + token.length);
-        latestValueRef.current = next;
-        ref.current?.setMarkdown(next);
-        onChange(next);
-        applied = true;
-      }
-      requestAnimationFrame(() => {
-        ref.current?.focus(undefined, { defaultSelection: "rootEnd" });
-      });
-    }
-
-    if (applied) {
-      lastSlashInsertionRef.current = replacement;
-      setSelectedSlashCommand(command);
-      onSlashCommandApplied?.(command);
+      return;
     }
 
     slashPickerBusyRef.current = false;
