@@ -211,6 +211,11 @@ export const issueColumns = [
       return (
         <span className="min-w-0 overflow-hidden block">
           <span className="line-clamp-1 truncate block text-sm">{issue.title}</span>
+          {issue.description && (
+            <span className="line-clamp-1 text-[11px] text-muted-foreground mt-0.5 block">
+              {issue.description.replace(/[\n\r]+/g, " ").slice(0, 160)}
+            </span>
+          )}
           {(issue.labels ?? []).length > 0 && (
             <span className="inline-flex items-center gap-1 ml-2 align-middle">
               {(issue.labels ?? []).slice(0, 3).map((label) => (
@@ -446,7 +451,7 @@ export const issueColumns = [
             }}
           >
             <PopoverTrigger asChild>
-              <button className="flex items-center rounded-md px-2 py-1 hover:bg-accent/50 transition-colors min-w-0">
+              <button className="flex items-center rounded-md pl-0 pr-2 py-1 hover:bg-accent/50 transition-colors min-w-0">
                 {issue.assigneeAgentId && c.agentName(issue.assigneeAgentId) ? (
                   <Identity name={c.agentName(issue.assigneeAgentId)!} size="sm" />
                 ) : (
@@ -538,7 +543,7 @@ export const issueColumns = [
             }}
           >
             <PopoverTrigger asChild>
-              <button className="flex items-center rounded-md px-2 py-1 hover:bg-accent/50 transition-colors min-w-0">
+              <button className="flex items-center rounded-md pl-0 pr-2 py-1 hover:bg-accent/50 transition-colors min-w-0">
                 {issue.projectId && issue.project ? (
                   <span className="inline-flex items-center gap-1.5 text-xs min-w-0">
                     <span
