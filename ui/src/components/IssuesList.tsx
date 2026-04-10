@@ -1353,15 +1353,12 @@ function IssueSection({
         <div className="hidden sm:block border border-border rounded-lg mb-4 overflow-x-auto">
           <table className="w-full min-w-[1000px] text-sm border-collapse">
             <colgroup>
-              {table.getAllColumns().map((column) => {
-                const size = column.getSize();
-                return (
-                  <col
-                    key={column.id}
-                    style={size !== 150 ? { width: size } : undefined}
-                  />
-                );
-              })}
+              {table.getAllColumns().map((column) => (
+                <col
+                  key={column.id}
+                  style={column.id !== "title" ? { width: column.getSize() } : undefined}
+                />
+              ))}
             </colgroup>
             <thead>
               {table.getHeaderGroups().map((headerGroup) => (
@@ -1403,7 +1400,7 @@ function IssueSection({
                     }}
                   >
                     {row.getVisibleCells().map((cell) => (
-                      <td key={cell.id} className="px-2 py-2 align-middle text-sm">
+                      <td key={cell.id} className="px-2 py-1.5 align-middle text-sm">
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
                       </td>
                     ))}
