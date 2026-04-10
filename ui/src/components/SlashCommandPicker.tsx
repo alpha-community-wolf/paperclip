@@ -149,6 +149,7 @@ export function SlashCommandPicker({
       </div>
       {preview && (
         <div
+          data-slash-command-picker
           className={cn(
             positionClass,
             "z-50 w-[240px] max-h-[200px] overflow-y-auto rounded-lg border border-border bg-popover shadow-lg px-3 py-2.5",

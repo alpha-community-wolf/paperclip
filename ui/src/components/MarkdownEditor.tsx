@@ -462,10 +462,37 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
       checkSlash();
     };
 
+    // Set the busy guard in the capture phase of pointerdown — this fires
+    // BEFORE selectionchange, so checkSlash will see the guard and skip
+    // clearing state while the user is clicking a picker item.
+    const onPointerDownCapture = (e: PointerEvent) => {
+      if (
+        slashPickerBusyRef.current === false &&
+        slashStateRef.current &&
+        (e.target as HTMLElement).closest?.("[data-slash-command-picker]")
+      ) {
+        slashPickerBusyRef.current = true;
+      }
+    };
+
+    // Safety: clear the busy guard when the pointer is released so it
+    // never stays stuck if onMouseDown didn't fire (e.g. element removed).
+    const onPointerUp = () => {
+      if (slashPickerBusyRef.current) {
+        requestAnimationFrame(() => {
+          slashPickerBusyRef.current = false;
+        });
+      }
+    };
+
+    document.addEventListener("pointerdown", onPointerDownCapture, true);
     document.addEventListener("selectionchange", onSelectionChange);
+    document.addEventListener("pointerup", onPointerUp);
     el?.addEventListener("input", onInput, true);
     return () => {
+      document.removeEventListener("pointerdown", onPointerDownCapture, true);
       document.removeEventListener("selectionchange", onSelectionChange);
+      document.removeEventListener("pointerup", onPointerUp);
       el?.removeEventListener("input", onInput, true);
     };
   }, [availableCommands.length, checkMention, checkSlash, mentions]);
@@ -597,6 +624,12 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
     const sel = window.getSelection();
     if (sel && state.textNode.isConnected) {
       try {
+        // Re-focus the contentEditable — clicking the picker may have moved
+        // focus away, which causes execCommand to silently fail.
+        const editable = containerRef.current?.querySelector('[contenteditable="true"]') as HTMLElement | null;
+        if (editable && document.activeElement !== editable) {
+          editable.focus();
+        }
         const range = document.createRange();
         range.setStart(state.textNode, state.slashPos);
         range.setEnd(state.textNode, state.endPos);
