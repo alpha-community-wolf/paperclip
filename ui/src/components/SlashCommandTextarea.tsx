@@ -124,6 +124,33 @@ export function SlashCommandTextarea({
     slashRef.current = slash;
   }, [slash]);
 
+  // Match MarkdownEditor: set busy on pointerdown *capture* before selection/detect
+  // can clear slash state while clicking a picker row.
+  useEffect(() => {
+    const onPointerDownCapture = (e: PointerEvent) => {
+      if (
+        !pickerBusyRef.current &&
+        slashRef.current &&
+        (e.target as HTMLElement).closest?.("[data-slash-command-picker]")
+      ) {
+        pickerBusyRef.current = true;
+      }
+    };
+    const onPointerUp = () => {
+      if (pickerBusyRef.current) {
+        requestAnimationFrame(() => {
+          pickerBusyRef.current = false;
+        });
+      }
+    };
+    document.addEventListener("pointerdown", onPointerDownCapture, true);
+    document.addEventListener("pointerup", onPointerUp);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDownCapture, true);
+      document.removeEventListener("pointerup", onPointerUp);
+    };
+  }, []);
+
   const clearSlashCommandBadge = useCallback(() => {
     const inserted = lastSlashInsertionRef.current;
     if (inserted) {
@@ -163,9 +190,12 @@ export function SlashCommandTextarea({
       const s = slashRef.current;
       if (!s) return;
       const replacement = command.content.endsWith(" ") ? command.content : `${command.content} `;
-      const before = value.slice(0, s.slashPos);
-      const cursorPos = textareaRef.current?.selectionStart ?? value.length;
-      const after = value.slice(cursorPos);
+      // Never use selectionStart here: clicking the picker can move or collapse the caret
+      // before this runs, which used to leave the /token in place and duplicate the string.
+      const live = textareaRef.current?.value ?? value;
+      const tokenEnd = Math.min(s.slashPos + 1 + s.query.length, live.length);
+      const before = live.slice(0, s.slashPos);
+      const after = live.slice(tokenEnd);
       const next = before + replacement + after;
       onChange(next);
 

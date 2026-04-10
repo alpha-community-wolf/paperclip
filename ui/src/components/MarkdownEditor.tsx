@@ -702,6 +702,23 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
       ref.current?.setMarkdown(next);
       onChange(next);
       finishApplied();
+      // MDXEditor/Lexical can emit a follow-up onChange with stale markdown and clobber parent
+      // state; re-sync if the serialized doc lost the insertion.
+      const repTrim = replacement.trim();
+      if (repTrim) {
+        const ensureInsertPersisted = () => {
+          const md = ref.current?.getMarkdown() ?? "";
+          if (!md.includes(repTrim)) {
+            latestValueRef.current = next;
+            ref.current?.setMarkdown(next);
+            onChange(next);
+          }
+        };
+        requestAnimationFrame(() => {
+          ensureInsertPersisted();
+          requestAnimationFrame(ensureInsertPersisted);
+        });
+      }
       return;
     }
 
