@@ -86,9 +86,11 @@ export function NewGoalDialog() {
 
   function handleSubmit() {
     if (!selectedCompanyId || !title.trim()) return;
+    const descriptionForApi =
+      (descriptionEditorRef.current?.consumeDeferredSlashExpansion(description) ?? description).trim() || undefined;
     createGoal.mutate({
       title: title.trim(),
-      description: description.trim() || undefined,
+      description: descriptionForApi,
       status,
       level,
       ...(appliedParentId ? { parentId: appliedParentId } : {}),

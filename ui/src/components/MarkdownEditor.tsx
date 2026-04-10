@@ -37,6 +37,7 @@ import { useCompany } from "../context/CompanyContext";
 import { useModalPortalRoot } from "../context/ModalPortalRootContext";
 import { queryKeys } from "../lib/queryKeys";
 import { SlashCommandPicker } from "./SlashCommandPicker";
+import { mergeSlashExpansionForSubmit, type SlashDeferredPayload } from "../lib/slashDeferredExpansion";
 
 /* ---- Mention types ---- */
 
@@ -69,6 +70,13 @@ interface MarkdownEditorProps {
 
 export interface MarkdownEditorRef {
   focus: () => void;
+  /** True while a slash command is picked; template is merged only in `consumeDeferredSlashExpansion`. */
+  hasDeferredSlashExpansion: () => boolean;
+  /**
+   * Applies any deferred slash-command template to `markdown` for submit/send.
+   * Clears the badge/deferred state without putting the template in the editor.
+   */
+  consumeDeferredSlashExpansion: (markdown: string) => string;
 }
 
 /* ---- Mention detection helpers ---- */
@@ -311,8 +319,8 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
   const slashPickerBusyRef = useRef(false);
 
   const [selectedSlashCommand, setSelectedSlashCommand] = useState<Command | null>(null);
-  /** First occurrence of this string is removed when the user clears the badge. */
-  const lastSlashInsertionRef = useRef<string | null>(null);
+  /** Template inserted only at submit; editor shows badge + text without the blob. */
+  const slashDeferredForSubmitRef = useRef<SlashDeferredPayload | null>(null);
   const [, rerenderSlashAnchor] = useReducer((x: number) => x + 1, 0);
 
   const { data: allCommands } = useQuery({
@@ -356,7 +364,18 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
     focus: () => {
       ref.current?.focus(undefined, { defaultSelection: "rootEnd" });
     },
-  }), []);
+    hasDeferredSlashExpansion: () => slashDeferredForSubmitRef.current !== null,
+    consumeDeferredSlashExpansion: (markdown: string) => {
+      const payload = slashDeferredForSubmitRef.current;
+      if (!payload) return markdown;
+      slashDeferredForSubmitRef.current = null;
+      queueMicrotask(() => {
+        setSelectedSlashCommand(null);
+        onSlashCommandApplied?.(null);
+      });
+      return mergeSlashExpansionForSubmit(markdown, payload);
+    },
+  }), [onSlashCommandApplied]);
 
   // Whether the image plugin should be included (boolean is stable across renders
   // as long as the handler presence doesn't toggle)
@@ -659,27 +678,15 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
   );
 
   const clearSlashCommandBadge = useCallback(() => {
-    const inserted = lastSlashInsertionRef.current;
-    if (inserted) {
-      const current = latestValueRef.current;
-      const idx = current.indexOf(inserted);
-      if (idx !== -1) {
-        const next = current.slice(0, idx) + current.slice(idx + inserted.length);
-        latestValueRef.current = next;
-        ref.current?.setMarkdown(next);
-        onChange(next);
-      }
-    }
-    lastSlashInsertionRef.current = null;
+    slashDeferredForSubmitRef.current = null;
     setSelectedSlashCommand(null);
     onSlashCommandApplied?.(null);
-  }, [onChange, onSlashCommandApplied]);
+  }, [onSlashCommandApplied]);
 
   const selectSlashCommand = useCallback((command: Command, state: SlashState) => {
     const replacement = command.content.endsWith(" ") ? command.content : `${command.content} `;
 
     const finishApplied = () => {
-      lastSlashInsertionRef.current = replacement;
       setSelectedSlashCommand(command);
       onSlashCommandApplied?.(command);
       slashPickerBusyRef.current = false;
@@ -690,39 +697,23 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
       });
     };
 
-    // Always sync via markdown + onChange first. If we only execCommand and skip
-    // onChange, controlled MDXEditor re-renders with stale `markdown={value}` (often
-    // still "/"), wipes the insert, and detectSlash re-opens the menu.
+    // Strip `/query` from the editor only; full template is merged at submit via
+    // consumeDeferredSlashExpansion (keeps compose UI to badge + user's text).
     const current = latestValueRef.current;
     const slice = findSlashReplaceRangeInMarkdown(current, state.query);
     if (slice) {
-      const next =
-        current.slice(0, slice.start) + replacement + current.slice(slice.start + slice.len);
+      const before = current.slice(0, slice.start);
+      const after = current.slice(slice.start + slice.len);
+      const next = before + after;
+      slashDeferredForSubmitRef.current = { before, expansion: replacement };
       latestValueRef.current = next;
       ref.current?.setMarkdown(next);
       onChange(next);
       finishApplied();
-      // MDXEditor/Lexical can emit a follow-up onChange with stale markdown and clobber parent
-      // state; re-sync if the serialized doc lost the insertion.
-      const repTrim = replacement.trim();
-      if (repTrim) {
-        const ensureInsertPersisted = () => {
-          const md = ref.current?.getMarkdown() ?? "";
-          if (!md.includes(repTrim)) {
-            latestValueRef.current = next;
-            ref.current?.setMarkdown(next);
-            onChange(next);
-          }
-        };
-        requestAnimationFrame(() => {
-          ensureInsertPersisted();
-          requestAnimationFrame(ensureInsertPersisted);
-        });
-      }
       return;
     }
 
-    // Rare: Lexical DOM has /query but string not updated yet — DOM insert then flush.
+    // Rare: Lexical DOM has /query but string not updated yet — delete via DOM, defer template.
     let inserted = false;
     const sel = window.getSelection();
     if (sel && state.textNode.isConnected) {
@@ -736,7 +727,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
         range.setEnd(state.textNode, state.endPos);
         sel.removeAllRanges();
         sel.addRange(range);
-        inserted = document.execCommand("insertText", false, replacement);
+        inserted = document.execCommand("insertText", false, "");
       } catch {
         // Range may be invalid if Lexical reconciled the DOM; fall through.
       }
@@ -747,7 +738,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
         const md = ref.current?.getMarkdown() ?? "";
         latestValueRef.current = md;
         onChange(md);
-        lastSlashInsertionRef.current = replacement;
+        slashDeferredForSubmitRef.current = { before: "", expansion: replacement };
         setSelectedSlashCommand(command);
         onSlashCommandApplied?.(command);
         slashPickerBusyRef.current = false;

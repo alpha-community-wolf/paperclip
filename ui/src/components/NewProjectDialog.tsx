@@ -149,9 +149,12 @@ export function NewProjectDialog() {
     setWorkspaceError(null);
 
     try {
+      const descriptionForApi =
+        (descriptionEditorRef.current?.consumeDeferredSlashExpansion(description) ?? description).trim() ||
+        undefined;
       const created = await createProject.mutateAsync({
         name: name.trim(),
-        description: description.trim() || undefined,
+        description: descriptionForApi,
         status,
         color: PROJECT_COLORS[Math.floor(Math.random() * PROJECT_COLORS.length)],
         ...(goalIds.length > 0 ? { goalIds } : {}),

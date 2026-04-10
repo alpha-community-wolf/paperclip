@@ -13,7 +13,7 @@ import { displaySessionTitle, filterChatSessions, groupChatSessions } from "../l
 import { MarkdownBody } from "./MarkdownBody";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { SlashCommandTextarea } from "./SlashCommandTextarea";
+import { SlashCommandTextarea, type SlashCommandTextareaRef } from "./SlashCommandTextarea";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -128,6 +128,8 @@ export function AgentChatSessionTab({
   const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
   const autoExpandedRunIdRef = useRef<string | null>(null);
   const [draft, setDraft] = useState("");
+  const [slashExpandPending, setSlashExpandPending] = useState(false);
+  const chatComposerRef = useRef<SlashCommandTextareaRef>(null);
   const [sendError, setSendError] = useState<string | null>(null);
   const [streamState, setStreamState] = useState<StreamState | null>(null);
   const [completedMessageId, setCompletedMessageId] = useState<string | null>(null);
@@ -441,7 +443,10 @@ export function AgentChatSessionTab({
     activeRunId && messages.some((message) => message.role === "assistant" && message.runId === activeRunId),
   );
   const canSend =
-    draft.trim().length > 0 && !sendMessage.isPending && !streamInProgress && !selectedSession?.archivedAt;
+    (draft.trim().length > 0 || slashExpandPending) &&
+    !sendMessage.isPending &&
+    !streamInProgress &&
+    !selectedSession?.archivedAt;
 
   const { data: runDetail } = useQuery({
     queryKey: expandedRunId ? queryKeys.runDetail(expandedRunId) : ["heartbeat-run", "none"],
@@ -937,11 +942,18 @@ export function AgentChatSessionTab({
           <div className="border-t border-border bg-background/95 px-6 py-4 backdrop-blur-sm lg:px-12">
             <div className="space-y-2">
               <SlashCommandTextarea
+                ref={chatComposerRef}
                 value={draft}
                 onChange={setDraft}
                 placeholder={selectedSession?.archivedAt ? "Archived conversations are read-only." : "Message this agent..."}
                 rows={3}
-                onSubmit={() => { if (canSend) sendMessage.mutate(draft.trim()); }}
+                onSlashCommandApplied={(cmd) => setSlashExpandPending(cmd !== null)}
+                onSubmit={() => {
+                  if (!canSend) return;
+                  const content =
+                    chatComposerRef.current?.consumeDeferredSlashExpansion(draft) ?? draft;
+                  sendMessage.mutate(content.trim());
+                }}
                 disabled={
                   !selectedSessionId || sendMessage.isPending || streamInProgress || Boolean(selectedSession?.archivedAt)
                 }
@@ -954,7 +966,14 @@ export function AgentChatSessionTab({
                       ? "Wait for the current response to finish before sending another message."
                       : "Press Enter to send. Use Shift+Enter for a new line."}
                 </div>
-                <Button size="sm" onClick={() => sendMessage.mutate(draft.trim())} disabled={!selectedSessionId || !canSend}>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    const content = chatComposerRef.current?.consumeDeferredSlashExpansion(draft) ?? draft;
+                    sendMessage.mutate(content.trim());
+                  }}
+                  disabled={!selectedSessionId || !canSend}
+                >
                   {sendMessage.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
                   Send
                 </Button>

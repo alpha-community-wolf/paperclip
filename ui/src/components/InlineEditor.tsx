@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { cn } from "../lib/utils";
 import { Button } from "@/components/ui/button";
 import { MarkdownBody } from "./MarkdownBody";
-import { MarkdownEditor, type MentionOption } from "./MarkdownEditor";
+import { MarkdownEditor, type MarkdownEditorRef, type MentionOption } from "./MarkdownEditor";
 
 interface InlineEditorProps {
   value: string;
@@ -31,6 +31,7 @@ export function InlineEditor({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const markdownEditorRef = useRef<MarkdownEditorRef>(null);
 
   useEffect(() => {
     setDraft(value);
@@ -53,7 +54,8 @@ export function InlineEditor({
   }, [editing, autoSize]);
 
   function commit() {
-    const trimmed = draft.trim();
+    const expanded = markdownEditorRef.current?.consumeDeferredSlashExpansion(draft) ?? draft;
+    const trimmed = expanded.trim();
     if (trimmed && trimmed !== value) {
       onSave(trimmed);
     } else {
@@ -78,6 +80,7 @@ export function InlineEditor({
       return (
         <div className={cn("space-y-2", pad)}>
           <MarkdownEditor
+            ref={markdownEditorRef}
             value={draft}
             onChange={setDraft}
             placeholder={placeholder}

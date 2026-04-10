@@ -1,4 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { Command } from "@paperclipai/shared";
 import { X } from "lucide-react";
@@ -6,8 +15,14 @@ import { commandsApi } from "../api/commands";
 import { useCompany } from "../context/CompanyContext";
 import { useModalPortalRoot } from "../context/ModalPortalRootContext";
 import { queryKeys } from "../lib/queryKeys";
+import { mergeSlashExpansionForSubmit, type SlashDeferredPayload } from "../lib/slashDeferredExpansion";
 import { Textarea } from "@/components/ui/textarea";
 import { SlashCommandPicker } from "./SlashCommandPicker";
+
+export interface SlashCommandTextareaRef {
+  hasDeferredSlashExpansion: () => boolean;
+  consumeDeferredSlashExpansion: (value: string) => string;
+}
 
 interface SlashCommandTextareaProps {
   value: string;
@@ -82,228 +97,238 @@ function detectSlashInTextarea(
   };
 }
 
-export function SlashCommandTextarea({
-  value,
-  onChange,
-  placeholder,
-  rows,
-  className,
-  disabled,
-  onSubmit,
-  onSlashCommandApplied,
-}: SlashCommandTextareaProps) {
-  const { selectedCompanyId } = useCompany();
-  const modalPortalRoot = useModalPortalRoot();
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const [slash, setSlash] = useState<SlashDetection | null>(null);
-  const slashRef = useRef<SlashDetection | null>(null);
-  const [slashIndex, setSlashIndex] = useState(0);
-  const pickerBusyRef = useRef(false);
-  const [selectedSlashCommand, setSelectedSlashCommand] = useState<Command | null>(null);
-  const lastSlashInsertionRef = useRef<string | null>(null);
+export const SlashCommandTextarea = forwardRef<SlashCommandTextareaRef, SlashCommandTextareaProps>(
+  function SlashCommandTextarea(
+    {
+      value,
+      onChange,
+      placeholder,
+      rows,
+      className,
+      disabled,
+      onSubmit,
+      onSlashCommandApplied,
+    },
+    forwardedRef,
+  ) {
+    const { selectedCompanyId } = useCompany();
+    const modalPortalRoot = useModalPortalRoot();
+    const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+    const [slash, setSlash] = useState<SlashDetection | null>(null);
+    const slashRef = useRef<SlashDetection | null>(null);
+    const [slashIndex, setSlashIndex] = useState(0);
+    const pickerBusyRef = useRef(false);
+    const [selectedSlashCommand, setSelectedSlashCommand] = useState<Command | null>(null);
+    const slashDeferredForSubmitRef = useRef<SlashDeferredPayload | null>(null);
 
-  const { data: allCommands } = useQuery({
-    queryKey: queryKeys.commands.list(selectedCompanyId ?? "__none__"),
-    queryFn: () => commandsApi.list(selectedCompanyId!),
-    enabled: Boolean(selectedCompanyId),
-  });
-  const commands = allCommands ?? [];
+    const { data: allCommands } = useQuery({
+      queryKey: queryKeys.commands.list(selectedCompanyId ?? "__none__"),
+      queryFn: () => commandsApi.list(selectedCompanyId!),
+      enabled: Boolean(selectedCompanyId),
+    });
+    const commands = allCommands ?? [];
 
-  const filtered = useMemo(() => {
-    if (!slash) return [];
-    const q = slash.query.trim().toLowerCase();
-    if (!q) return commands.slice(0, 8);
-    return commands
-      .filter((c) => c.trigger.toLowerCase().includes(q) || c.label.toLowerCase().includes(q))
-      .slice(0, 8);
-  }, [commands, slash]);
+    const filtered = useMemo(() => {
+      if (!slash) return [];
+      const q = slash.query.trim().toLowerCase();
+      if (!q) return commands.slice(0, 8);
+      return commands
+        .filter((c) => c.trigger.toLowerCase().includes(q) || c.label.toLowerCase().includes(q))
+        .slice(0, 8);
+    }, [commands, slash]);
 
-  const active = slash !== null && commands.length > 0 && filtered.length > 0;
+    const active = slash !== null && commands.length > 0 && filtered.length > 0;
 
-  useEffect(() => {
-    slashRef.current = slash;
-  }, [slash]);
+    useEffect(() => {
+      slashRef.current = slash;
+    }, [slash]);
 
-  // Match MarkdownEditor: set busy on pointerdown *capture* before selection/detect
-  // can clear slash state while clicking a picker row.
-  useEffect(() => {
-    const onPointerDownCapture = (e: PointerEvent) => {
-      if (
-        !pickerBusyRef.current &&
-        slashRef.current &&
-        (e.target as HTMLElement).closest?.("[data-slash-command-picker]")
-      ) {
-        pickerBusyRef.current = true;
-      }
-    };
-    const onPointerUp = () => {
-      if (pickerBusyRef.current) {
-        requestAnimationFrame(() => {
-          pickerBusyRef.current = false;
+    useImperativeHandle(forwardedRef, () => ({
+      hasDeferredSlashExpansion: () => slashDeferredForSubmitRef.current !== null,
+      consumeDeferredSlashExpansion: (markdown: string) => {
+        const payload = slashDeferredForSubmitRef.current;
+        if (!payload) return markdown;
+        slashDeferredForSubmitRef.current = null;
+        queueMicrotask(() => {
+          setSelectedSlashCommand(null);
+          onSlashCommandApplied?.(null);
         });
+        return mergeSlashExpansionForSubmit(markdown, payload);
+      },
+    }), [onSlashCommandApplied]);
+
+    // Match MarkdownEditor: set busy on pointerdown *capture* before selection/detect
+    // can clear slash state while clicking a picker row.
+    useEffect(() => {
+      const onPointerDownCapture = (e: PointerEvent) => {
+        if (
+          !pickerBusyRef.current &&
+          slashRef.current &&
+          (e.target as HTMLElement).closest?.("[data-slash-command-picker]")
+        ) {
+          pickerBusyRef.current = true;
+        }
+      };
+      const onPointerUp = () => {
+        if (pickerBusyRef.current) {
+          requestAnimationFrame(() => {
+            pickerBusyRef.current = false;
+          });
+        }
+      };
+      document.addEventListener("pointerdown", onPointerDownCapture, true);
+      document.addEventListener("pointerup", onPointerUp);
+      return () => {
+        document.removeEventListener("pointerdown", onPointerDownCapture, true);
+        document.removeEventListener("pointerup", onPointerUp);
+      };
+    }, []);
+
+    const clearSlashCommandBadge = useCallback(() => {
+      slashDeferredForSubmitRef.current = null;
+      setSelectedSlashCommand(null);
+      onSlashCommandApplied?.(null);
+    }, [onSlashCommandApplied]);
+
+    const detect = useCallback(() => {
+      if (pickerBusyRef.current) return;
+      if (!textareaRef.current || commands.length === 0) {
+        setSlash(null);
+        return;
       }
-    };
-    document.addEventListener("pointerdown", onPointerDownCapture, true);
-    document.addEventListener("pointerup", onPointerUp);
-    return () => {
-      document.removeEventListener("pointerdown", onPointerDownCapture, true);
-      document.removeEventListener("pointerup", onPointerUp);
-    };
-  }, []);
-
-  const clearSlashCommandBadge = useCallback(() => {
-    const inserted = lastSlashInsertionRef.current;
-    if (inserted) {
-      const current = value;
-      const idx = current.indexOf(inserted);
-      if (idx !== -1) {
-        onChange(current.slice(0, idx) + current.slice(idx + inserted.length));
+      const result = detectSlashInTextarea(textareaRef.current);
+      if (result) {
+        setSlash(result);
+        setSlashIndex(0);
+      } else {
+        setSlash(null);
       }
-    }
-    lastSlashInsertionRef.current = null;
-    setSelectedSlashCommand(null);
-    onSlashCommandApplied?.(null);
-  }, [onChange, onSlashCommandApplied, value]);
+    }, [commands.length]);
 
-  const detect = useCallback(() => {
-    if (pickerBusyRef.current) return;
-    if (!textareaRef.current || commands.length === 0) {
-      setSlash(null);
-      return;
-    }
-    const result = detectSlashInTextarea(textareaRef.current);
-    if (result) {
-      setSlash(result);
-      setSlashIndex(0);
-    } else {
-      setSlash(null);
-    }
-  }, [commands.length]);
+    // Re-detect on value or cursor change
+    useEffect(() => {
+      detect();
+    }, [value, detect]);
 
-  // Re-detect on value or cursor change
-  useEffect(() => {
-    detect();
-  }, [value, detect]);
+    const insertCommand = useCallback(
+      (command: Command) => {
+        const s = slashRef.current;
+        if (!s) return;
+        const expansion = command.content.endsWith(" ") ? command.content : `${command.content} `;
+        const live = textareaRef.current?.value ?? value;
+        const tokenEnd = Math.min(s.slashPos + 1 + s.query.length, live.length);
+        const before = live.slice(0, s.slashPos);
+        const after = live.slice(tokenEnd);
+        const next = before + after;
+        slashDeferredForSubmitRef.current = { before, expansion };
+        onChange(next);
 
-  const insertCommand = useCallback(
-    (command: Command) => {
-      const s = slashRef.current;
-      if (!s) return;
-      const replacement = command.content.endsWith(" ") ? command.content : `${command.content} `;
-      // Never use selectionStart here: clicking the picker can move or collapse the caret
-      // before this runs, which used to leave the /token in place and duplicate the string.
-      const live = textareaRef.current?.value ?? value;
-      const tokenEnd = Math.min(s.slashPos + 1 + s.query.length, live.length);
-      const before = live.slice(0, s.slashPos);
-      const after = live.slice(tokenEnd);
-      const next = before + replacement + after;
-      onChange(next);
+        setSelectedSlashCommand(command);
+        onSlashCommandApplied?.(command);
 
-      lastSlashInsertionRef.current = replacement;
-      setSelectedSlashCommand(command);
-      onSlashCommandApplied?.(command);
+        requestAnimationFrame(() => {
+          const ta = textareaRef.current;
+          if (ta) {
+            ta.focus();
+            const pos = before.length;
+            ta.setSelectionRange(pos, pos);
+          }
+        });
 
-      // Restore focus and cursor position
-      requestAnimationFrame(() => {
-        const ta = textareaRef.current;
-        if (ta) {
-          ta.focus();
-          const pos = before.length + replacement.length;
-          ta.setSelectionRange(pos, pos);
+        pickerBusyRef.current = false;
+        setSlash(null);
+        slashRef.current = null;
+      },
+      [onChange, onSlashCommandApplied, value],
+    );
+
+    const handleKeyDown = useCallback(
+      (e: KeyboardEvent<HTMLTextAreaElement>) => {
+        if (active) {
+          if (e.key === "Escape") {
+            e.preventDefault();
+            setSlash(null);
+            return;
+          }
+          if (e.key === "ArrowDown") {
+            e.preventDefault();
+            setSlashIndex((prev) => Math.min(prev + 1, filtered.length - 1));
+            return;
+          }
+          if (e.key === "ArrowUp") {
+            e.preventDefault();
+            setSlashIndex((prev) => Math.max(prev - 1, 0));
+            return;
+          }
+          if (e.key === "Enter" || e.key === "Tab") {
+            e.preventDefault();
+            insertCommand(filtered[slashIndex]);
+            return;
+          }
+          if (e.key === " ") {
+            setSlash(null);
+            // let the space be typed normally
+            return;
+          }
         }
-      });
 
-      pickerBusyRef.current = false;
-      setSlash(null);
-      slashRef.current = null;
-    },
-    [onChange, onSlashCommandApplied, value],
-  );
-
-  const handleKeyDown = useCallback(
-    (e: KeyboardEvent<HTMLTextAreaElement>) => {
-      if (active) {
-        if (e.key === "Escape") {
+        // Normal Enter → submit (without shift)
+        if (onSubmit && e.key === "Enter" && !e.shiftKey && !active) {
           e.preventDefault();
-          setSlash(null);
-          return;
+          onSubmit();
         }
-        if (e.key === "ArrowDown") {
-          e.preventDefault();
-          setSlashIndex((prev) => Math.min(prev + 1, filtered.length - 1));
-          return;
-        }
-        if (e.key === "ArrowUp") {
-          e.preventDefault();
-          setSlashIndex((prev) => Math.max(prev - 1, 0));
-          return;
-        }
-        if (e.key === "Enter" || e.key === "Tab") {
-          e.preventDefault();
-          insertCommand(filtered[slashIndex]);
-          return;
-        }
-        if (e.key === " ") {
-          setSlash(null);
-          // let the space be typed normally
-          return;
-        }
-      }
+      },
+      [active, filtered, insertCommand, onSubmit, slashIndex],
+    );
 
-      // Normal Enter → submit (without shift)
-      if (onSubmit && e.key === "Enter" && !e.shiftKey && !active) {
-        e.preventDefault();
-        onSubmit();
-      }
-    },
-    [active, filtered, insertCommand, onSubmit, slashIndex],
-  );
-
-  return (
-    <div className="flex flex-col gap-1 w-full min-w-0">
-      {selectedSlashCommand && (
-        <div className="flex flex-wrap items-center gap-1.5 shrink-0">
-          <span className="inline-flex items-center gap-0.5 rounded-full border border-primary/35 bg-primary/12 px-2 py-0.5 text-[11px] font-medium text-primary">
-            <span className="font-mono">/{selectedSlashCommand.trigger}</span>
-            <button
-              type="button"
-              className="inline-flex rounded-full p-0.5 text-primary/80 hover:bg-primary/15 hover:text-primary"
-              aria-label="Remove slash command"
-              onMouseDown={(e) => {
-                e.preventDefault();
-                clearSlashCommandBadge();
-              }}
-            >
-              <X className="h-3 w-3" />
-            </button>
-          </span>
-        </div>
-      )}
-      <Textarea
-        ref={textareaRef}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onKeyDown={handleKeyDown}
-        onSelect={detect}
-        placeholder={placeholder}
-        rows={rows}
-        className={className}
-        disabled={disabled}
-      />
-      {active && slash && (
-        <SlashCommandPicker
-          commands={filtered}
-          index={slashIndex}
-          top={slash.top}
-          left={slash.left}
-          portalContainer={modalPortalRoot}
-          onHover={setSlashIndex}
-          onSelect={(command) => {
-            pickerBusyRef.current = true;
-            insertCommand(command);
-          }}
+    return (
+      <div className="flex flex-col gap-1 w-full min-w-0">
+        {selectedSlashCommand && (
+          <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+            <span className="inline-flex items-center gap-0.5 rounded-full border border-primary/35 bg-primary/12 px-2 py-0.5 text-[11px] font-medium text-primary">
+              <span className="font-mono">/{selectedSlashCommand.trigger}</span>
+              <button
+                type="button"
+                className="inline-flex rounded-full p-0.5 text-primary/80 hover:bg-primary/15 hover:text-primary"
+                aria-label="Remove slash command"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  clearSlashCommandBadge();
+                }}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          </div>
+        )}
+        <Textarea
+          ref={textareaRef}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={handleKeyDown}
+          onSelect={detect}
+          placeholder={placeholder}
+          rows={rows}
+          className={className}
+          disabled={disabled}
         />
-      )}
-    </div>
-  );
-}
+        {active && slash && (
+          <SlashCommandPicker
+            commands={filtered}
+            index={slashIndex}
+            top={slash.top}
+            left={slash.left}
+            portalContainer={modalPortalRoot}
+            onHover={setSlashIndex}
+            onSelect={(command) => {
+              pickerBusyRef.current = true;
+              insertCommand(command);
+            }}
+          />
+        )}
+      </div>
+    );
+  },
+);
+
+SlashCommandTextarea.displayName = "SlashCommandTextarea";

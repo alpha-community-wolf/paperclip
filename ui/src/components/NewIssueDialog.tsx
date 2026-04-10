@@ -561,10 +561,12 @@ export function NewIssueDialog() {
           mode: useIsolatedExecutionWorkspace ? "isolated" : "project_primary",
         }
       : null;
+    const descriptionForApi =
+      (descriptionEditorRef.current?.consumeDeferredSlashExpansion(description) ?? description).trim() || undefined;
     createIssue.mutate({
       companyId: effectiveCompanyId,
       title: title.trim(),
-      description: description.trim() || undefined,
+      description: descriptionForApi,
       type,
       status,
       priority: priority || "medium",

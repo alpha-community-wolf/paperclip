@@ -416,6 +416,8 @@ export function CommentThread({
   const [attaching, setAttaching] = useState(false);
   const [reassignTarget, setReassignTarget] = useState(currentAssigneeValue);
   const [highlightCommentId, setHighlightCommentId] = useState<string | null>(null);
+  /** Enables Comment when only a deferred slash template is pending (compose shows badge only). */
+  const [slashExpandPending, setSlashExpandPending] = useState(false);
   const editorRef = useRef<MarkdownEditorRef>(null);
   const attachInputRef = useRef<HTMLInputElement | null>(null);
   const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -506,7 +508,8 @@ export function CommentThread({
   }, [location.hash, comments]);
 
   async function handleSubmit() {
-    const trimmed = body.trim();
+    const text = editorRef.current?.consumeDeferredSlashExpansion(body) ?? body;
+    const trimmed = text.trim();
     if (!trimmed) return;
     const hasReassignment = enableReassign && reassignTarget !== currentAssigneeValue;
     const reassignment = hasReassignment ? parseReassignment(reassignTarget) : null;
@@ -535,7 +538,7 @@ export function CommentThread({
     }
   }
 
-  const canSubmit = !submitting && !!body.trim();
+  const canSubmit = !submitting && (!!body.trim() || slashExpandPending);
 
   return (
     <div className="space-y-4">
@@ -555,6 +558,7 @@ export function CommentThread({
           placeholder="Leave a comment..."
           mentions={mentions}
           onSubmit={handleSubmit}
+          onSlashCommandApplied={(cmd) => setSlashExpandPending(cmd !== null)}
           imageUploadHandler={imageUploadHandler}
           contentClassName="min-h-[60px] text-sm"
         />

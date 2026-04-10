@@ -25,7 +25,7 @@ import { displaySessionTitle } from "../lib/chat-sessions";
 import { MarkdownBody } from "./MarkdownBody";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { SlashCommandTextarea } from "./SlashCommandTextarea";
+import { SlashCommandTextarea, type SlashCommandTextareaRef } from "./SlashCommandTextarea";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -126,6 +126,8 @@ export function ChatSidePanel() {
   const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [draft, setDraft] = useState("");
+  const [slashExpandPending, setSlashExpandPending] = useState(false);
+  const chatComposerRef = useRef<SlashCommandTextareaRef>(null);
   const [sendError, setSendError] = useState<string | null>(null);
   const [streamState, setStreamState] = useState<StreamState | null>(null);
   const [completedMessageId, setCompletedMessageId] = useState<string | null>(null);
@@ -144,6 +146,7 @@ export function ChatSidePanel() {
   useEffect(() => {
     setSelectedSessionId(null);
     setDraft("");
+    setSlashExpandPending(false);
     setSendError(null);
     setStreamState(null);
     setCompletedMessageId(null);
@@ -398,7 +401,11 @@ export function ChatSidePanel() {
     activeRunId && messages.some((m) => m.role === "assistant" && m.runId === activeRunId),
   );
   const isArchivedSession = Boolean(selectedSession?.archivedAt);
-  const canSend = draft.trim().length > 0 && !sendMessage.isPending && !streaming && !isArchivedSession;
+  const canSend =
+    (draft.trim().length > 0 || slashExpandPending) &&
+    !sendMessage.isPending &&
+    !streaming &&
+    !isArchivedSession;
 
   const handleResize = useCallback(
     (delta: number) => {
@@ -704,17 +711,26 @@ export function ChatSidePanel() {
       <div className="border-t border-border bg-background/95 px-3 py-2.5 backdrop-blur-sm">
         <div className="flex items-end gap-2">
           <SlashCommandTextarea
+            ref={chatComposerRef}
             value={draft}
             onChange={setDraft}
             placeholder={isArchivedSession ? "Archived conversation (read-only)" : "Message..."}
             rows={1}
             className="min-h-[36px] max-h-[120px] resize-none text-xs"
-            onSubmit={() => { if (canSend) sendMessage.mutate(draft.trim()); }}
+            onSlashCommandApplied={(cmd) => setSlashExpandPending(cmd !== null)}
+            onSubmit={() => {
+              if (!canSend) return;
+              const content = chatComposerRef.current?.consumeDeferredSlashExpansion(draft) ?? draft;
+              sendMessage.mutate(content.trim());
+            }}
             disabled={!selectedSessionId || sendMessage.isPending || streaming || isArchivedSession}
           />
           <Button
             size="icon-sm"
-            onClick={() => sendMessage.mutate(draft.trim())}
+            onClick={() => {
+              const content = chatComposerRef.current?.consumeDeferredSlashExpansion(draft) ?? draft;
+              sendMessage.mutate(content.trim());
+            }}
             disabled={!selectedSessionId || !canSend}
             className="shrink-0"
           >
