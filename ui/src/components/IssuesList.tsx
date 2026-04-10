@@ -1790,7 +1790,7 @@ const COLUMN_KEYS = Object.keys(COLUMN_HEADERS);
 function ColumnHeaderRow() {
   return (
     <div
-      className="hidden sm:grid sm:items-center sm:min-w-[1000px] border-b border-border bg-muted/30 px-3 py-1.5 text-[11px] font-medium text-muted-foreground uppercase tracking-wider select-none"
+      className="hidden sm:grid gap-2 sm:items-center sm:min-w-[1000px] border-b border-border bg-muted/30 pl-3 pr-3 py-1.5 text-[11px] font-medium text-muted-foreground uppercase tracking-wider select-none"
       style={{ gridTemplateColumns: GRID_TEMPLATE } as React.CSSProperties}
     >
       {COLUMN_KEYS.map((key) => (
