@@ -214,6 +214,22 @@ export function issueLinkService(db: Db) {
     },
 
     /**
+     * Find all trigger links where targetId is the given issue (incoming triggers).
+     * Used to identify entry steps (those with no incoming triggers).
+     */
+    findTriggersToTarget: async (targetId: string) => {
+      return db
+        .select()
+        .from(issueLinks)
+        .where(
+          and(
+            eq(issueLinks.targetId, targetId),
+            eq(issueLinks.linkType, "triggers"),
+          ),
+        );
+    },
+
+    /**
      * Check if all upstream "triggers" dependencies for a target are done.
      * Returns true if all upstream sources have status "done".
      */

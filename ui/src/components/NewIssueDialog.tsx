@@ -8,6 +8,7 @@ import { projectsApi } from "../api/projects";
 import { agentsApi } from "../api/agents";
 import { authApi } from "../api/auth";
 import { assetsApi } from "../api/assets";
+import { workflowTemplatesApi, type WorkflowTemplate, type VariableDeclaration } from "../api/workflowTemplates";
 import { queryKeys } from "../lib/queryKeys";
 import { useProjectOrder } from "../hooks/useProjectOrder";
 import { getRecentAssigneeIds, sortAgentsByRecency, trackRecentAssignee } from "../lib/recent-assignees";
@@ -41,6 +42,8 @@ import {
   ListChecks,
   Map,
   Search,
+  Workflow,
+  X,
 } from "lucide-react";
 import { cn } from "../lib/utils";
 import { extractProviderIdWithFallback } from "../lib/model-utils";
@@ -210,6 +213,8 @@ export function NewIssueDialog() {
   const [recurringExpression, setRecurringExpression] = useState("0 9 * * 1-5");
   const [recurringTimezone, setRecurringTimezone] = useState("UTC");
   const [recurringIssueMode, setRecurringIssueMode] = useState<"create_new" | "reuse_existing" | "reopen_existing">("reopen_existing");
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
+  const [templateVariables, setTemplateVariables] = useState<Record<string, string>>({});
   const [expanded, setExpanded] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [clientError, setClientError] = useState<string | null>(null);
@@ -236,6 +241,14 @@ export function NewIssueDialog() {
     queryFn: () => agentsApi.list(effectiveCompanyId!),
     enabled: !!effectiveCompanyId && newIssueOpen,
   });
+
+  const { data: workflowTemplates } = useQuery({
+    queryKey: queryKeys.workflowTemplates.list(effectiveCompanyId!),
+    queryFn: () => workflowTemplatesApi.list(effectiveCompanyId!),
+    enabled: !!effectiveCompanyId && newIssueOpen,
+  });
+
+  const selectedTemplate = workflowTemplates?.find((t) => t.id === selectedTemplateId) ?? null;
 
   const { data: projects } = useQuery({
     queryKey: queryKeys.projects.list(effectiveCompanyId!),
@@ -294,6 +307,7 @@ export function NewIssueDialog() {
     mutationFn: async ({
       companyId,
       recurring,
+      workflow,
       ...data
     }: {
       companyId: string;
@@ -303,6 +317,10 @@ export function NewIssueDialog() {
         expression: string;
         timezone: string;
         issueMode: "create_new" | "reuse_existing" | "reopen_existing";
+      };
+      workflow?: {
+        templateId: string;
+        variables: Record<string, string>;
       };
     } & Record<string, unknown>) => {
       const issue = await issuesApi.create(companyId, data);
@@ -317,6 +335,12 @@ export function NewIssueDialog() {
           },
           companyId,
         );
+      }
+      if (workflow) {
+        await workflowTemplatesApi.run(workflow.templateId, {
+          rootIssueId: issue.id,
+          variables: workflow.variables,
+        });
       }
       return issue;
     },
@@ -511,6 +535,8 @@ export function NewIssueDialog() {
     setRecurringExpression("0 9 * * 1-5");
     setRecurringTimezone("UTC");
     setRecurringIssueMode("reopen_existing");
+    setSelectedTemplateId(null);
+    setTemplateVariables({});
     setExpanded(false);
     setAdvancedOpen(false);
     setDialogCompanyId(null);
@@ -524,6 +550,8 @@ export function NewIssueDialog() {
     setDialogCompanyId(companyId);
     setAssigneeId("");
     setProjectId("");
+    setSelectedTemplateId(null);
+    setTemplateVariables({});
     setAssigneeModelOverride("");
     setAssigneeThinkingEffort("");
     setAssigneeChrome(false);
@@ -585,6 +613,9 @@ export function NewIssueDialog() {
           timezone: recurringTimezone.trim() || "UTC",
           issueMode: recurringIssueMode,
         }
+        : undefined,
+      workflow: selectedTemplateId
+        ? { templateId: selectedTemplateId, variables: templateVariables }
         : undefined,
     });
   }
@@ -1331,6 +1362,99 @@ export function NewIssueDialog() {
               </div>
             )}
 
+            {/* Workflow template */}
+            {workflowTemplates && workflowTemplates.length > 0 && (
+              <div className="space-y-2">
+                <div className="text-xs font-medium">Workflow template</div>
+                {selectedTemplate ? (
+                  <div className="rounded-md border border-primary/30 bg-primary/5 p-2.5 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-xs font-medium">
+                        <Workflow className="h-3 w-3 text-primary" />
+                        {selectedTemplate.name}
+                      </div>
+                      <button
+                        type="button"
+                        className="text-muted-foreground hover:text-foreground transition-colors"
+                        onClick={() => { setSelectedTemplateId(null); setTemplateVariables({}); }}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-1 flex-wrap">
+                      {selectedTemplate.steps.map((step, i) => (
+                        <div key={step.key} className="flex items-center gap-1">
+                          <span className={cn(
+                            "inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded border",
+                            step.type === "explore" && "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20",
+                            step.type === "plan" && "bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/20",
+                            step.type === "task" && "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
+                          )}>
+                            {step.type}
+                          </span>
+                          {i < selectedTemplate.steps.length - 1 && (
+                            <ChevronRight className="h-3 w-3 text-muted-foreground/40" />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    {Object.keys(selectedTemplate.variables ?? {}).length > 0 && (
+                      <div className="space-y-2 pt-1">
+                        {Object.entries(selectedTemplate.variables ?? {}).map(([name, decl]) => (
+                          <div key={name} className="space-y-0.5">
+                            <div className="text-[11px] text-muted-foreground">
+                              {name}
+                              {(decl as VariableDeclaration).required !== false && <span className="text-destructive ml-0.5">*</span>}
+                            </div>
+                            {(decl as VariableDeclaration).type === "uuid" && agents ? (
+                              <select
+                                className="w-full rounded-md border border-border bg-transparent px-2 py-1 text-xs"
+                                value={templateVariables[name] ?? ""}
+                                onChange={(e) => setTemplateVariables((prev) => ({ ...prev, [name]: e.target.value }))}
+                              >
+                                <option value="">Select an agent</option>
+                                {agents.map((a) => (
+                                  <option key={a.id} value={a.id}>{a.name}</option>
+                                ))}
+                              </select>
+                            ) : (
+                              <input
+                                className="w-full rounded-md border border-border bg-transparent px-2 py-1 text-xs"
+                                placeholder={`Enter ${name}`}
+                                value={templateVariables[name] ?? ""}
+                                onChange={(e) => setTemplateVariables((prev) => ({ ...prev, [name]: e.target.value }))}
+                              />
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <select
+                    className="w-full rounded-md border border-border bg-transparent px-2 py-1 text-xs"
+                    value=""
+                    onChange={(e) => {
+                      const tmpl = workflowTemplates.find((t) => t.id === e.target.value);
+                      if (tmpl) {
+                        setSelectedTemplateId(tmpl.id);
+                        const defaults: Record<string, string> = {};
+                        for (const [name, decl] of Object.entries(tmpl.variables ?? {})) {
+                          if ((decl as VariableDeclaration).default) defaults[name] = (decl as VariableDeclaration).default!;
+                        }
+                        setTemplateVariables(defaults);
+                      }
+                    }}
+                  >
+                    <option value="">None (no workflow)</option>
+                    {workflowTemplates.map((tmpl) => (
+                      <option key={tmpl.id} value={tmpl.id}>{tmpl.name}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            )}
+
             {/* Recurring schedule */}
             <div>
               <button
@@ -1477,7 +1601,7 @@ export function NewIssueDialog() {
             >
               <span className="inline-flex items-center justify-center gap-1.5">
                 {createIssue.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-                <span>{createIssue.isPending ? "Creating..." : "Create Issue"}</span>
+                <span>{createIssue.isPending ? "Creating..." : selectedTemplateId ? "Create & Run Workflow" : "Create Issue"}</span>
               </span>
             </Button>
           </div>

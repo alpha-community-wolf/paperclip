@@ -59,6 +59,6 @@ export const workflowTemplatesApi = {
   archive: (id: string) =>
     api.delete<{ ok: boolean }>(`/workflow-templates/${encodeURIComponent(id)}`),
 
-  run: (id: string, data: { variables?: Record<string, string>; projectId?: string; goalId?: string; assigneeAgentId?: string }) =>
+  run: (id: string, data: { variables?: Record<string, string>; projectId?: string; goalId?: string; assigneeAgentId?: string; rootIssueId?: string }) =>
     api.post<RunWorkflowResult>(`/workflow-templates/${encodeURIComponent(id)}/run`, data),
 };
