@@ -8,6 +8,8 @@ import {
   type WorkflowStep,
   type VariableDeclaration,
 } from "../api/workflowTemplates";
+import { agentsApi } from "../api/agents";
+import type { Agent } from "@paperclipai/shared";
 import { queryKeys } from "../lib/queryKeys";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -81,12 +83,14 @@ function StepEditor({
   step,
   index,
   allStepKeys,
+  agents,
   onChange,
   onRemove,
 }: {
   step: WorkflowStep;
   index: number;
   allStepKeys: string[];
+  agents?: Agent[];
   onChange: (step: WorkflowStep) => void;
   onRemove: () => void;
 }) {
@@ -159,13 +163,50 @@ function StepEditor({
           </Select>
         </div>
         <div className="space-y-1">
-          <Label className="text-xs">Assignee Agent ID</Label>
-          <Input
-            placeholder='UUID or {{ var }}'
-            className="h-8 text-sm font-mono"
-            value={step.assigneeAgentId ?? ""}
-            onChange={(e) => onChange({ ...step, assigneeAgentId: e.target.value || undefined })}
-          />
+          <Label className="text-xs">Assignee</Label>
+          {step.assigneeAgentId?.includes("{{") ? (
+            <div className="flex gap-1.5">
+              <Input
+                placeholder='{{ variable }}'
+                className="h-8 text-sm font-mono flex-1"
+                value={step.assigneeAgentId}
+                onChange={(e) => onChange({ ...step, assigneeAgentId: e.target.value || undefined })}
+              />
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-8 text-xs px-2"
+                onClick={() => onChange({ ...step, assigneeAgentId: undefined })}
+              >
+                Clear
+              </Button>
+            </div>
+          ) : (
+            <Select
+              value={step.assigneeAgentId ?? "__none__"}
+              onValueChange={(v) => {
+                if (v === "__none__") onChange({ ...step, assigneeAgentId: undefined });
+                else if (v === "__variable__") onChange({ ...step, assigneeAgentId: "{{ }}" });
+                else onChange({ ...step, assigneeAgentId: v });
+              }}
+            >
+              <SelectTrigger className="h-8 text-sm">
+                <SelectValue placeholder="Unassigned" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">Unassigned</SelectItem>
+                {agents?.map((a) => (
+                  <SelectItem key={a.id} value={a.id}>
+                    {a.name}
+                  </SelectItem>
+                ))}
+                <SelectItem value="__variable__">
+                  <span className="font-mono text-muted-foreground">{"{{ variable }}"}</span>
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          )}
         </div>
       </div>
 
@@ -301,6 +342,12 @@ export function WorkflowTemplateDetail() {
     queryKey: queryKeys.workflowTemplates.detail(templateId!),
     queryFn: () => workflowTemplatesApi.get(templateId!),
     enabled: !isNew && !!templateId,
+  });
+
+  const { data: agents } = useQuery({
+    queryKey: queryKeys.agents.list(companyId),
+    queryFn: () => agentsApi.list(companyId),
+    enabled: !!companyId,
   });
 
   useEffect(() => {
@@ -462,6 +509,7 @@ export function WorkflowTemplateDetail() {
             step={step}
             index={i}
             allStepKeys={steps.map((s) => s.key)}
+            agents={agents}
             onChange={(updated) => setSteps((prev) => prev.map((s, j) => (j === i ? updated : s)))}
             onRemove={() => setSteps((prev) => prev.filter((_, j) => j !== i))}
           />
