@@ -33,6 +33,8 @@ import { Timeline } from "./pages/Timeline";
 import { Memories } from "./pages/Memories";
 import { KnowledgeGraph } from "./pages/KnowledgeGraph";
 import { SystemChores } from "./pages/SystemChores";
+import { WorkflowTemplates } from "./pages/WorkflowTemplates";
+import { WorkflowTemplateDetail } from "./pages/WorkflowTemplateDetail";
 import { MyWork } from "./pages/MyWork";
 import { Reviews } from "./pages/Reviews";
 import { NewAgent } from "./pages/NewAgent";
@@ -172,6 +174,8 @@ function boardRoutes() {
       <Route path="knowledge" element={<Memories />} />
       <Route path="knowledge/graph" element={<KnowledgeGraph />} />
       <Route path="system-chores" element={<SystemChores />} />
+      <Route path="workflow-templates" element={<WorkflowTemplates />} />
+      <Route path="workflow-templates/:templateId" element={<WorkflowTemplateDetail />} />
       <Route path="skills" element={<Skills />} />
       <Route path="commands" element={<Commands />} />
       <Route path="webhooks" element={<Webhooks />} />

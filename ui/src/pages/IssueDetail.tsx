@@ -56,6 +56,7 @@ import {
   SlidersHorizontal,
   Repeat,
   Trash2,
+  Workflow,
   X,
 } from "lucide-react";
 import type { Agent, IssueAttachment, IssueReviewBundle } from "@paperclipai/shared";
@@ -960,6 +961,49 @@ export function IssueDetail() {
             <Play className="h-3.5 w-3.5 mr-1.5" />
             {createPlanFromExplore.isPending ? "Creating..." : "Plan"}
           </Button>
+        </div>
+      )}
+
+      {!!(issue.metadata as Record<string, unknown> | null)?.workflowTemplateId && childIssues.length > 0 && (
+        <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 space-y-2">
+          <div className="flex items-center gap-2">
+            <Workflow className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+            <h3 className="text-sm font-medium">Pipeline Progress</h3>
+            <span className="text-[10px] text-muted-foreground ml-auto">
+              {childIssues.filter((c) => c.status === "done").length}/{childIssues.length} complete
+            </span>
+          </div>
+          <div className="space-y-1">
+            {childIssues.map((child, i) => {
+              const meta = child.metadata as Record<string, unknown> | null;
+              const stepKey = meta?.workflowStepKey as string | undefined;
+              const assignee = agents?.find((a) => a.id === child.assigneeAgentId);
+              return (
+                <Link
+                  key={child.id}
+                  to={`/issues/${child.identifier}`}
+                  className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-accent/50 transition-colors group"
+                >
+                  <StatusIcon status={child.status} />
+                  {stepKey && (
+                    <span className="text-[10px] font-mono text-muted-foreground w-16 shrink-0 truncate">{stepKey}</span>
+                  )}
+                  <span className="text-xs truncate flex-1 group-hover:text-foreground">{child.title}</span>
+                  <span className={cn(
+                    "text-[10px] px-1.5 py-0.5 rounded border",
+                    child.type === "explore" ? "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20" :
+                    child.type === "plan" ? "bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/20" :
+                    "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20"
+                  )}>
+                    {child.type}
+                  </span>
+                  {assignee && (
+                    <span className="text-[10px] text-muted-foreground truncate max-w-[80px]">{assignee.name}</span>
+                  )}
+                </Link>
+              );
+            })}
+          </div>
         </div>
       )}
 
