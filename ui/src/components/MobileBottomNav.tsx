@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { NavLink, useLocation } from "@/lib/router";
+import { useQuery } from "@tanstack/react-query";
 import {
   House,
   CircleDot,
@@ -9,6 +10,10 @@ import {
 } from "lucide-react";
 import { useCompany } from "../context/CompanyContext";
 import { useDialog } from "../context/DialogContext";
+import { agentsApi } from "../api/agents";
+import { chatApi } from "../api/chat";
+import { heartbeatsApi } from "../api/heartbeats";
+import { queryKeys } from "../lib/queryKeys";
 import { cn } from "../lib/utils";
 import { useInboxBadge } from "../hooks/useInboxBadge";
 
@@ -39,12 +44,43 @@ export function MobileBottomNav({ visible }: MobileBottomNavProps) {
   const { openNewIssue } = useDialog();
   const inboxBadge = useInboxBadge(selectedCompanyId);
 
+  const { data: agents } = useQuery({
+    queryKey: queryKeys.agents.list(selectedCompanyId!),
+    queryFn: () => agentsApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+  const { data: liveRuns } = useQuery({
+    queryKey: queryKeys.liveRuns(selectedCompanyId!),
+    queryFn: () => heartbeatsApi.liveRunsForCompany(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+    refetchInterval: 10_000,
+  });
+  const { data: unreadSummary } = useQuery({
+    queryKey: queryKeys.chatUnreadSummary(selectedCompanyId!),
+    queryFn: () => chatApi.getUnreadSummary(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+    refetchInterval: 15_000,
+  });
+
+  const agentsBadge = useMemo(() => {
+    const runningByAgent = new Set<string>((liveRuns ?? []).map((run) => run.agentId));
+    const unreadByAgent = new Map((unreadSummary ?? []).map((entry) => [entry.agentId, entry.unreadCount]));
+
+    return (agents ?? []).reduce((count, agent) => {
+      if (agent.status === "terminated") return count;
+      const hasUnread = (unreadByAgent.get(agent.id) ?? 0) > 0;
+      const isRunning = runningByAgent.has(agent.id);
+      const needsAttention = hasUnread || isRunning || agent.status === "error" || agent.status === "pending_approval";
+      return needsAttention ? count + 1 : count;
+    }, 0);
+  }, [agents, liveRuns, unreadSummary]);
+
   const items = useMemo<MobileNavItem[]>(
     () => [
       { type: "link", to: "/dashboard", label: "Home", icon: House },
       { type: "link", to: "/issues", label: "Issues", icon: CircleDot },
       { type: "action", label: "Create", icon: SquarePen, onClick: () => openNewIssue() },
-      { type: "link", to: "/agents/all", label: "Agents", icon: Users },
+      { type: "link", to: "/agents/all", label: "Agents", icon: Users, badge: agentsBadge },
       {
         type: "link",
         to: "/inbox",
@@ -53,7 +89,7 @@ export function MobileBottomNav({ visible }: MobileBottomNavProps) {
         badge: inboxBadge.inbox,
       },
     ],
-    [openNewIssue, inboxBadge.inbox],
+    [agentsBadge, openNewIssue, inboxBadge.inbox],
   );
 
   return (
