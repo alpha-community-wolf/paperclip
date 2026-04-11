@@ -1,7 +1,8 @@
 import { Link } from "@/lib/router";
-import { Menu, Maximize2, Minimize2, PanelLeft } from "lucide-react";
+import { Menu, Maximize2, Minimize2, PanelLeft, PanelRightClose, PanelRightOpen } from "lucide-react";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useSidebar } from "../context/SidebarContext";
+import { useAgentsSidebar } from "../context/AgentsSidebarContext";
 import { useContentWidth, ZOOM_LEVELS } from "./Layout";
 import { Button } from "@/components/ui/button";
 import {
@@ -69,8 +70,26 @@ function ContentWidthToggle() {
 }
 
 function ViewControls() {
+  const { agentsSidebarOpen, toggleAgentsSidebar } = useAgentsSidebar();
+
   return (
     <div className="flex items-center gap-0.5 ml-auto shrink-0">
+      <Tooltip delayDuration={400}>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="text-muted-foreground/50 hover:text-foreground shrink-0"
+            onClick={toggleAgentsSidebar}
+            aria-label={agentsSidebarOpen ? "Hide agents sidebar" : "Show agents sidebar"}
+          >
+            {agentsSidebarOpen ? <PanelRightClose className="h-3.5 w-3.5" /> : <PanelRightOpen className="h-3.5 w-3.5" />}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" sideOffset={4}>
+          <p>{agentsSidebarOpen ? "Hide agents panel" : "Show agents panel"} (Cmd/Ctrl+Shift+A)</p>
+        </TooltipContent>
+      </Tooltip>
       <ZoomControl />
       <ContentWidthToggle />
     </div>

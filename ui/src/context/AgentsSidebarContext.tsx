@@ -9,24 +9,21 @@ interface AgentsSidebarContextValue {
 const AgentsSidebarContext = createContext<AgentsSidebarContextValue | null>(null);
 
 const STORAGE_KEY = "outpost.agentsSidebarOpen";
-const WIDE_BREAKPOINT = 1280;
+const COMFORT_BREAKPOINT = 1100;
 
 export function AgentsSidebarProvider({ children }: { children: ReactNode }) {
   const [agentsSidebarOpen, setAgentsSidebarOpen] = useState(() => {
-    if (window.innerWidth < WIDE_BREAKPOINT) return false;
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored !== null) return stored === "true";
     } catch {}
-    return true;
+    return window.innerWidth >= COMFORT_BREAKPOINT;
   });
 
   useEffect(() => {
-    const mql = window.matchMedia(`(min-width: ${WIDE_BREAKPOINT}px)`);
+    const mql = window.matchMedia(`(min-width: ${COMFORT_BREAKPOINT}px)`);
     const onChange = (e: MediaQueryListEvent) => {
-      if (!e.matches) {
-        setAgentsSidebarOpen(false);
-      } else {
+      if (e.matches) {
         try {
           const stored = localStorage.getItem(STORAGE_KEY);
           setAgentsSidebarOpen(stored !== null ? stored === "true" : true);

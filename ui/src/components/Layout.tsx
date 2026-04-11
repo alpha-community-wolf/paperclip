@@ -22,6 +22,7 @@ import { useChatSidePanel } from "../context/ChatSidePanelContext";
 import { useCompany } from "../context/CompanyContext";
 import { useSidebar } from "../context/SidebarContext";
 import { useTheme } from "../context/ThemeContext";
+import { useAgentsSidebar } from "../context/AgentsSidebarContext";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
 import { useCompanyPageMemory } from "../hooks/useCompanyPageMemory";
 import { healthApi } from "../api/health";
@@ -65,6 +66,7 @@ export function Layout() {
   const { sidebarOpen, setSidebarOpen, toggleSidebar, isMobile } = useSidebar();
   const { openNewIssue, openOnboarding } = useDialog();
   const { togglePanelVisible } = usePanel();
+  const { toggleAgentsSidebar } = useAgentsSidebar();
   const { toggleChat: toggleChatPanel } = useChatSidePanel();
   const {
     companies,
@@ -194,6 +196,7 @@ export function Layout() {
     onNewIssue: () => openNewIssue(),
     onToggleSidebar: toggleSidebar,
     onTogglePanel: togglePanel,
+    onToggleAgentsSidebar: toggleAgentsSidebar,
     onToggleContentWidth: toggleContentWidth,
     onToggleChatPanel: () => toggleChatPanel(),
     onSwitchCompany: switchCompany,
