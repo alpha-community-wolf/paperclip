@@ -17,7 +17,7 @@ import { queryKeys } from "../lib/queryKeys";
 import { readIssueDetailBreadcrumb, readFromRun } from "../lib/issueDetailBreadcrumb";
 import { cronPresetOptions } from "../lib/cron-presets";
 import { useProjectOrder } from "../hooks/useProjectOrder";
-import { relativeTime, cn, formatTokens, agentRouteRef } from "../lib/utils";
+import { relativeTime, cn, formatTokens, agentRouteRef, deriveFlowIssueTitle } from "../lib/utils";
 import { resolveEffectiveReviewBundleMode } from "../lib/review-bundles";
 import { InlineEditor } from "../components/InlineEditor";
 import { CommentThread } from "../components/CommentThread";
@@ -419,7 +419,7 @@ export function IssueDetail() {
     mutationFn: () => {
       const meta = issue?.metadata as Record<string, unknown> | null;
       return issuesApi.create(selectedCompanyId!, {
-        title: `Build plan ${issue?.identifier ?? ""}`,
+        title: deriveFlowIssueTitle("Build", issue?.title),
         description: `Execute the plan defined in \`${meta?.planDocumentPath ?? ""}\`.\n\nPlan source: ${issue?.identifier ?? issue?.id}`,
         type: "task",
         status: "todo",
@@ -444,7 +444,7 @@ export function IssueDetail() {
     mutationFn: () => {
       const meta = issue?.metadata as Record<string, unknown> | null;
       return issuesApi.create(selectedCompanyId!, {
-        title: `Plan: ${issue?.title ?? ""}`,
+        title: deriveFlowIssueTitle("Plan", issue?.title),
         type: "plan",
         status: "todo",
         parentId: issue?.id,
