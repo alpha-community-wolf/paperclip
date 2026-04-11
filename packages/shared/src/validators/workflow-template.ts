@@ -48,6 +48,7 @@ export const runWorkflowTemplateSchema = z.object({
   projectId: z.string().uuid().optional(),
   goalId: z.string().uuid().optional(),
   assigneeAgentId: z.string().uuid().optional(),
+  rootIssueId: z.string().uuid().optional(),
 });
 
 export type RunWorkflowTemplate = z.infer<typeof runWorkflowTemplateSchema>;

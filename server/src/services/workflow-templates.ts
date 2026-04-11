@@ -4,6 +4,7 @@ import { workflowTemplates, companies } from "@paperclipai/db";
 import type { CreateWorkflowTemplate, UpdateWorkflowTemplate, RunWorkflowTemplate } from "@paperclipai/shared";
 import { issueService } from "./issues.js";
 import { issueLinkService } from "./issue-links.js";
+import { heartbeatService } from "./heartbeat.js";
 import { unprocessable } from "../errors.js";
 
 interface StepDef {
@@ -109,6 +110,7 @@ function interpolateStep(step: StepDef, bindings: Record<string, string>): StepD
 export function workflowTemplateService(db: Db) {
   const issueSvc = issueService(db);
   const linkSvc = issueLinkService(db);
+  const heartbeat = heartbeatService(db);
 
   async function list(companyId: string, includeInactive = false) {
     const conditions = [eq(workflowTemplates.companyId, companyId)];
@@ -224,37 +226,67 @@ export function workflowTemplateService(db: Db) {
     // Sort steps in topological order
     const sortedSteps = topologicalSort(steps);
 
-    // Build variable summary for root issue title
-    const varSummary = Object.entries(bindings)
-      .map(([k, v]) => `${k}=${v}`)
-      .join(", ");
-    const rootTitle = varSummary
-      ? `${template.name} (${varSummary})`
-      : template.name;
+    // B1: When rootIssueId is provided, use an existing issue as root
+    let rootIssue: { id: string; identifier: string };
 
-    // Determine root issue assignee — prefer explicit, fall back to actor
-    const rootAssigneeAgentId = data.assigneeAgentId ?? actor?.agentId ?? null;
-    const rootAssigneeUserId = !rootAssigneeAgentId ? (actor?.userId ?? null) : null;
-    const hasAssignee = !!rootAssigneeAgentId || !!rootAssigneeUserId;
+    if (data.rootIssueId) {
+      const existing = await issueSvc.getById(data.rootIssueId);
+      if (!existing) throw unprocessable("Root issue not found");
+      if (existing.companyId !== template.companyId) {
+        throw unprocessable("Root issue must belong to the same company as the template");
+      }
+      const existingMeta = (existing.metadata ?? {}) as Record<string, unknown>;
+      if (existingMeta.workflowTemplateId) {
+        throw unprocessable("Issue already has a workflow attached");
+      }
+      if (existing.status === "done" || existing.status === "cancelled") {
+        throw unprocessable("Cannot attach workflow to a completed or cancelled issue");
+      }
 
-    // Create root issue — only in_progress if there's an assignee
-    const rootIssue = await issueSvc.create(template.companyId, {
-      title: rootTitle.slice(0, 500),
-      description: template.description ?? `Workflow: ${template.name}`,
-      type: "task",
-      status: hasAssignee ? "in_progress" : "todo",
-      priority: "medium",
-      parentId: null,
-      projectId: data.projectId ?? null,
-      goalId: data.goalId ?? null,
-      assigneeAgentId: rootAssigneeAgentId,
-      assigneeUserId: rootAssigneeUserId,
-      metadata: {
-        workflowTemplateId: template.id,
-        workflowTemplateVersion: template.version,
-        workflowVariableBindings: bindings,
-      },
-    });
+      // Merge workflow metadata onto existing issue
+      await issueSvc.update(data.rootIssueId, {
+        metadata: {
+          ...existingMeta,
+          workflowTemplateId: template.id,
+          workflowTemplateVersion: template.version,
+          workflowVariableBindings: bindings,
+        },
+      });
+
+      rootIssue = { id: existing.id, identifier: existing.identifier! };
+    } else {
+      // Original behavior: create a new root issue from template
+      const varSummary = Object.entries(bindings)
+        .map(([k, v]) => `${k}=${v}`)
+        .join(", ");
+      const rootTitle = varSummary
+        ? `${template.name} (${varSummary})`
+        : template.name;
+
+      const rootAssigneeAgentId = data.assigneeAgentId ?? actor?.agentId ?? null;
+      const rootAssigneeUserId = !rootAssigneeAgentId ? (actor?.userId ?? null) : null;
+      const hasAssignee = !!rootAssigneeAgentId || !!rootAssigneeUserId;
+
+      const created = await issueSvc.create(template.companyId, {
+        title: rootTitle.slice(0, 500),
+        description: template.description ?? `Workflow: ${template.name}`,
+        type: "task",
+        status: hasAssignee ? "in_progress" : "todo",
+        priority: "medium",
+        parentId: null,
+        projectId: data.projectId ?? null,
+        goalId: data.goalId ?? null,
+        assigneeAgentId: rootAssigneeAgentId,
+        assigneeUserId: rootAssigneeUserId,
+        metadata: {
+          workflowTemplateId: template.id,
+          workflowTemplateVersion: template.version,
+          workflowVariableBindings: bindings,
+        },
+      });
+
+      rootIssue = { id: created.id, identifier: created.identifier! };
+    }
 
     // Create step issues
     const stepIssues: Array<{ key: string; issueId: string; status: string }> = [];
@@ -298,6 +330,38 @@ export function workflowTemplateService(db: Db) {
           }
         }
       }
+    }
+
+    // A1: Auto-wake entry steps (no dependencies) that have an assignee
+    for (const step of sortedSteps) {
+      const hasDependencies = step.dependsOn && step.dependsOn.length > 0;
+      if (hasDependencies) continue;
+
+      const stepIssueId = keyToIssueId.get(step.key);
+      if (!stepIssueId) continue;
+
+      const interpolated = interpolateStep(step, bindings);
+      const assigneeAgentId = interpolated.assigneeAgentId ?? data.assigneeAgentId ?? null;
+      if (!assigneeAgentId) continue;
+
+      heartbeat
+        .wakeup(assigneeAgentId, {
+          source: "automation",
+          triggerDetail: "dependency_trigger",
+          reason: "workflow_instantiation",
+          payload: {
+            issueId: stepIssueId,
+            workflowTemplateId: template.id,
+            workflowRootIssueId: rootIssue.id,
+          },
+          contextSnapshot: {
+            issueId: stepIssueId,
+            taskId: stepIssueId,
+            wakeReason: "workflow_instantiation",
+            source: "workflow.instantiation",
+          },
+        })
+        .catch(() => {}); // best-effort; execution lock prevents duplicates
     }
 
     return {

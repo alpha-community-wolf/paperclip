@@ -742,6 +742,52 @@ export function issueRoutes(db: Db, storage: StorageService) {
         } catch (err) {
           logger.warn({ err, issueId: issue.id }, "failed to fire dependency triggers");
         }
+
+        // A2: Root-done fallback — when a workflow root issue is marked done,
+        // wake any entry steps (no incoming triggers) that haven't started yet
+        try {
+          const meta = (issue.metadata ?? {}) as Record<string, unknown>;
+          if (meta.workflowTemplateId && !meta.workflowStepKey) {
+            // This is a workflow root issue
+            const children = await svc.list(issue.companyId, { parentId: issue.id });
+            for (const child of children) {
+              const childMeta = (child.metadata ?? {}) as Record<string, unknown>;
+              if (!childMeta.workflowStepKey) continue;
+              if (child.status === "done" || child.status === "cancelled" || child.status === "in_progress") continue;
+
+              // Check if this is an entry step (no incoming triggers)
+              const incomingTriggers = await issueLinksSvc.findTriggersToTarget(child.id);
+              if (incomingTriggers.length > 0) continue;
+
+              // Transition backlog → todo if needed
+              if (child.status === "backlog" || child.status === "blocked") {
+                await svc.update(child.id, { status: "todo" });
+              }
+
+              if (child.assigneeAgentId && !wakeups.has(child.assigneeAgentId)) {
+                wakeups.set(child.assigneeAgentId, {
+                  source: "automation",
+                  triggerDetail: "dependency_trigger",
+                  reason: "workflow_root_done",
+                  payload: {
+                    issueId: child.id,
+                    workflowRootIssueId: issue.id,
+                  },
+                  requestedByActorType: actor.actorType,
+                  requestedByActorId: actor.actorId,
+                  contextSnapshot: {
+                    issueId: child.id,
+                    taskId: child.id,
+                    wakeReason: "workflow_root_done",
+                    source: "workflow.root_done",
+                  },
+                });
+              }
+            }
+          }
+        } catch (err) {
+          logger.warn({ err, issueId: issue.id }, "failed to fire workflow root-done entry step triggers");
+        }
       }
 
       for (const [agentId, wakeup] of wakeups.entries()) {
