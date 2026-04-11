@@ -1,4 +1,5 @@
 import { Router } from "express";
+import path from "node:path";
 import type { Db } from "@paperclipai/db";
 import { assertCompanyAccess } from "./authz.js";
 import { badRequest } from "../errors.js";
@@ -15,9 +16,8 @@ export function fileIndexRoutes(db: Db) {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
 
-    const index = await fileIndexService.getIndex(db, companyId);
+    const { index } = await fileIndexService.getIndex(db, companyId);
 
-    // Convert Map to plain object for JSON serialization
     const result: Record<string, Array<{
       agentId: string;
       agentName: string;
@@ -72,6 +72,27 @@ export function fileIndexRoutes(db: Db) {
 
     const result = await fileIndexService.resolveBatch(db, companyId, names as string[]);
     res.json(result);
+  });
+
+  /**
+   * GET /companies/:companyId/file-index/backlinks?filename=foo
+   * Get all files that link to the given file via [[wikilinks]].
+   * Use the filename without extension (e.g. "MEMORY" for "MEMORY.md").
+   */
+  router.get("/:companyId/file-index/backlinks", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+
+    const filename = req.query.filename as string | undefined;
+    if (!filename || !filename.trim()) {
+      throw badRequest("Query parameter 'filename' is required");
+    }
+
+    // Also accept full relative paths — strip extension if given
+    const nameOnly = path.basename(filename, path.extname(filename));
+
+    const backlinks = await fileIndexService.getBacklinks(db, companyId, nameOnly);
+    res.json(backlinks);
   });
 
   /**

@@ -39,4 +39,4 @@ export { timelineService } from "./timeline.js";
 export { sharedMemoryService } from "./shared-memories.js";
 export { systemChoreRunnerService } from "./system-chore-runner.js";
 export { workflowTemplateService, seedWorkflowTemplatesForAllCompanies } from "./workflow-templates.js";
-export { fileIndexService, type FileEntry, type ResolveResult } from "./file-index.js";
+export { fileIndexService, type FileEntry, type BacklinkEntry, type ResolveResult } from "./file-index.js";
