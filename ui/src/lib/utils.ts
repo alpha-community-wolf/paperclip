@@ -115,6 +115,13 @@ export function projectUrl(project: { id: string; urlKey?: string | null; name?:
   return `/projects/${projectRouteRef(project)}`;
 }
 
+const FLOW_TITLE_PREFIX_PATTERN = /^(?:explore|plan|build):\s*|^build plan\s+/i;
+
+export function deriveFlowIssueTitle(prefix: "Plan" | "Build", sourceTitle?: string | null): string {
+  const normalizedSource = (sourceTitle ?? "").trim().replace(FLOW_TITLE_PREFIX_PATTERN, "").trim();
+  return normalizedSource ? `${prefix}: ${normalizedSource}` : `${prefix}: Untitled`;
+}
+
 export type ActivityLevel = "hot" | "warm" | "cold" | "stale";
 
 const FOUR_HOURS = 4 * 60 * 60 * 1000;
