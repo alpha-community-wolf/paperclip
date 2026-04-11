@@ -38,3 +38,4 @@ export { telegramService } from "./telegram.js";
 export { timelineService } from "./timeline.js";
 export { sharedMemoryService } from "./shared-memories.js";
 export { systemChoreRunnerService } from "./system-chore-runner.js";
+export { workflowTemplateService, seedWorkflowTemplatesForAllCompanies } from "./workflow-templates.js";

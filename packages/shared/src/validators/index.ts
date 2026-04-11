@@ -261,3 +261,12 @@ export {
   type SearchSharedMemoryQuery,
   type VerifySharedMemory,
 } from "./shared-memory.js";
+
+export {
+  createWorkflowTemplateSchema,
+  updateWorkflowTemplateSchema,
+  runWorkflowTemplateSchema,
+  type CreateWorkflowTemplate,
+  type UpdateWorkflowTemplate,
+  type RunWorkflowTemplate,
+} from "./workflow-template.js";

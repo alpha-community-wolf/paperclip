@@ -385,6 +385,12 @@ export {
   type UpdateSharedMemory,
   type SearchSharedMemoryQuery,
   type VerifySharedMemory,
+  createWorkflowTemplateSchema,
+  updateWorkflowTemplateSchema,
+  runWorkflowTemplateSchema,
+  type CreateWorkflowTemplate,
+  type UpdateWorkflowTemplate,
+  type RunWorkflowTemplate,
 } from "./validators/index.js";
 
 export { sanitizeCommentBody } from "./sanitize-comment.js";
