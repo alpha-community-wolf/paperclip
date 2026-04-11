@@ -55,6 +55,55 @@ export function useBacklinks(
   });
 }
 
+// ---------------------------------------------------------------------------
+// File graph
+// ---------------------------------------------------------------------------
+
+export interface FileGraphNode {
+  id: string;
+  label: string;
+  type: "file";
+  agentId: string;
+  agentName: string;
+  agentUrlKey: string;
+  relativePath: string;
+  backlinkCount: number;
+}
+
+export interface FileGraphEdge {
+  id: string;
+  source: string;
+  target: string;
+  edgeType: "wikilink";
+}
+
+export interface FileGraphData {
+  nodes: FileGraphNode[];
+  edges: FileGraphEdge[];
+}
+
+export function useFileGraph(
+  companyId: string | null | undefined,
+  options?: { agentId?: string; minLinks?: number },
+) {
+  const params = new URLSearchParams();
+  if (options?.agentId) params.set("agentId", options.agentId);
+  if (options?.minLinks && options.minLinks > 0) params.set("minLinks", String(options.minLinks));
+  const query = params.toString();
+
+  return useQuery<FileGraphData>({
+    queryKey: ["file-index", "graph", companyId, options?.agentId ?? null, options?.minLinks ?? 0],
+    queryFn: () =>
+      api.get<FileGraphData>(
+        `/companies/${companyId}/file-index/graph${query ? `?${query}` : ""}`,
+      ),
+    enabled: !!companyId,
+    staleTime: STALE_TIME,
+    gcTime: STALE_TIME,
+    retry: false,
+  });
+}
+
 export function useWikiLinkResolve(
   companyId: string | null | undefined,
   name: string,
