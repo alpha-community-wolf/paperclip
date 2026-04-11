@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { Link, useNavigate } from "@/lib/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useReactTable,
+  getCoreRowModel,
+  flexRender,
+  type RowSelectionState,
+  type OnChangeFn,
+  type ColumnDef,
+} from "@tanstack/react-table";
 import { useDialog } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
 import { issuesApi } from "../api/issues";
@@ -9,14 +17,15 @@ import { projectsApi } from "../api/projects";
 import { taskCronsApi } from "../api/taskCrons";
 import { queryKeys } from "../lib/queryKeys";
 import { groupBy } from "../lib/groupBy";
-import { formatDate, formatDateTime, cn, timeUntil, activityLevel, activityConfig } from "../lib/utils";
+import { formatDate, formatDateTime, cn, timeUntil } from "../lib/utils";
 import { timeAgo } from "../lib/timeAgo";
 import { StatusIcon } from "./StatusIcon";
 import { PriorityIcon } from "./PriorityIcon";
-import { DependencyPills } from "./DependencyPills";
 import { EmptyState } from "./EmptyState";
 import { Identity } from "./Identity";
 import { PageSkeleton } from "./PageSkeleton";
+import { IssueCard } from "./IssueCard";
+import { issueColumns, type IssueColumnContext, type Agent, type FailedRunInfo } from "./issues/columns";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
@@ -45,23 +54,13 @@ import {
   CalendarClock,
   Clock3,
   Repeat,
-  Copy,
-  Pause,
-  Play,
-  Save,
   History,
   Zap,
-  XCircle,
-  RotateCcw,
   Loader2,
   FolderKanban,
   Keyboard,
   CheckSquare,
-  Square,
   MinusSquare,
-  ArrowUp,
-  ArrowDown,
-  Link2,
 } from "lucide-react";
 import { KanbanBoard } from "./KanbanBoard";
 import { useIssueTriageKeyboard } from "../hooks/useIssueTriageKeyboard";
@@ -70,19 +69,6 @@ import type { TaskCronSchedule } from "@paperclipai/shared";
 
 /* ── Helpers ── */
 
-function ActivityDot({ date }: { date: Date | string }) {
-  const level = activityLevel(date);
-  const config = activityConfig[level];
-  return (
-    <span className={cn("inline-block h-2 w-2 rounded-full shrink-0", config.className, {
-      "bg-orange-500": level === "hot",
-      "bg-yellow-500 dark:bg-yellow-400": level === "warm",
-      "bg-blue-400": level === "cold",
-      "bg-muted-foreground/40": level === "stale",
-    })} title={`${config.label} — updated ${timeAgo(date)}`} />
-  );
-}
-
 const statusOrder = ["in_progress", "todo", "backlog", "in_review", "blocked", "done", "cancelled"];
 const pastStatuses = new Set(["done", "cancelled"]);
 const priorityOrder = ["critical", "high", "medium", "low"];
@@ -90,21 +76,6 @@ const priorityOrder = ["critical", "high", "medium", "low"];
 function statusLabel(status: string): string {
   return status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
-
-const GRID_TEMPLATE = "2rem 1.75rem minmax(80px, auto) 72px 1fr minmax(60px, auto) minmax(60px, auto) minmax(100px, auto) minmax(100px, auto) minmax(100px, auto)";
-
-const COLUMN_HEADERS: Record<string, string> = {
-  checkbox: "",
-  priority: "",
-  status: "Status",
-  identifier: "ID",
-  title: "Title",
-  type: "Type",
-  runState: "State",
-  assignee: "Assignee",
-  project: "Project",
-  date: "Updated",
-};
 
 /* ── View state ── */
 
@@ -217,20 +188,9 @@ function countActiveFilters(state: IssueViewState): number {
 
 /* ── Component ── */
 
-interface Agent {
-  id: string;
-  name: string;
-}
+export type { Agent, FailedRunInfo };
 
-export interface FailedRunInfo {
-  runId: string;
-  agentId: string;
-  agentName: string;
-  error?: string | null;
-  finishedAt: string | null;
-}
-
-interface IssuesListProps {
+export interface IssuesListProps {
   issues: Issue[];
   isLoading?: boolean;
   error?: Error | null;
@@ -295,25 +255,20 @@ export function IssuesList({
     },
   });
 
-  // Multi-select state
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  // Row selection state (replaces the previous selectedIds Set)
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+  const selectedIds = useMemo(
+    () => new Set(Object.entries(rowSelection).filter(([, v]) => v).map(([k]) => k)),
+    [rowSelection],
+  );
+  const hasSelection = selectedIds.size > 0;
+  const clearSelection = useCallback(() => setRowSelection({}), []);
+
   const [bulkAssigneeOpen, setBulkAssigneeOpen] = useState(false);
   const [bulkProjectOpen, setBulkProjectOpen] = useState(false);
   const [bulkAssigneeSearch, setBulkAssigneeSearch] = useState("");
   const [bulkProjectSearch, setBulkProjectSearch] = useState("");
   const [bulkUpdating, setBulkUpdating] = useState(false);
-
-  const toggleSelect = useCallback((id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
-
-  const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
-  const hasSelection = selectedIds.size > 0;
 
   const [assigneePickerIssueId, setAssigneePickerIssueId] = useState<string | null>(null);
   const [projectPickerIssueId, setProjectPickerIssueId] = useState<string | null>(null);
@@ -440,11 +395,11 @@ export function IssuesList({
 
   // Clear multi-selection when filtered list changes
   useEffect(() => {
-    setSelectedIds(new Set());
+    setRowSelection({});
   }, [filtered.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const selectAll = useCallback(() => {
-    setSelectedIds(new Set(filtered.map((i) => i.id)));
+    setRowSelection(Object.fromEntries(filtered.map((i) => [i.id, true])));
   }, [filtered]);
 
   const bulkUpdate = useCallback(async (data: Record<string, unknown>) => {
@@ -543,12 +498,6 @@ export function IssuesList({
     return defaults;
   };
 
-  const assignIssue = (issueId: string, assigneeAgentId: string | null) => {
-    onUpdateIssue(issueId, { assigneeAgentId, assigneeUserId: null });
-    setAssigneePickerIssueId(null);
-    setAssigneeSearch("");
-  };
-
   // Compute flat visible issue list matching render order for keyboard navigation
   const flatVisibleIssues = useMemo(() => {
     if (viewState.viewMode !== "list") return [];
@@ -601,527 +550,39 @@ export function IssuesList({
   const scheduleDraftValue = (schedule: TaskCronSchedule) =>
     recurringDrafts[schedule.id] ?? schedule.expression;
 
-  const renderIssueRow = useCallback((issue: Issue) => {
-    const visibleIdx = flatVisibleIssues.indexOf(issue);
-    const isKbSelected = visibleIdx >= 0 && visibleIdx === selectedIndex;
-    const isChecked = selectedIds.has(issue.id);
-    return (
-    <Link
-      key={issue.id}
-      ref={(el: HTMLAnchorElement | null) => {
-        if (el) issueRowRefs.current.set(issue.id, el);
-        else issueRowRefs.current.delete(issue.id);
-      }}
-      to={`/issues/${issue.identifier ?? issue.id}`}
-      state={issueLinkState}
-      className={cn(
-        "group/row flex items-start gap-2 py-2.5 pl-3 pr-3 text-sm last:border-b-0 cursor-pointer hover:bg-accent/50 transition-colors no-underline text-inherit sm:grid sm:items-center sm:py-2 sm:min-w-[1000px]",
-        isKbSelected && "ring-2 ring-inset ring-primary bg-accent/60",
-        isChecked && "bg-primary/5",
-      )}
-      style={{ gridTemplateColumns: GRID_TEMPLATE } as React.CSSProperties}
-    >
-      {/* Col 1: Checkbox */}
-      <span
-        className={cn(
-          "shrink-0 flex items-center justify-center w-5 h-5 mt-px sm:mt-0",
-          hasSelection ? "visible" : "invisible group-hover/row:visible",
-        )}
-        onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
-      >
-        <Checkbox
-          checked={isChecked}
-          onCheckedChange={() => toggleSelect(issue.id)}
-          className="h-4 w-4"
-        />
-      </span>
-
-      {/* Mobile-only status (before title on mobile) */}
-      <span className="shrink-0 pt-px sm:hidden" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
-        <StatusIcon
-          status={issue.status}
-          onChange={(s) => onUpdateIssue(issue.id, { status: s })}
-          showLabel
-          linkSummary={issue.linkSummary}
-        />
-      </span>
-
-      {/* Mobile wrapper - stacked column on mobile, sm:contents to flatten into grid on desktop */}
-      <span className="flex min-w-0 flex-1 flex-col gap-0.5 sm:contents">
-
-        {/* Col 2: Priority (desktop only) */}
-        <span className="hidden sm:inline-flex sm:items-center sm:justify-center" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
-          <PriorityIcon priority={issue.priority} onChange={(p) => onUpdateIssue(issue.id, { priority: p })} />
-        </span>
-
-        {/* Col 3: Status (desktop only) */}
-        <span className="hidden sm:inline-flex sm:items-center sm:justify-start" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
-          <StatusIcon
-            status={issue.status}
-            onChange={(s) => onUpdateIssue(issue.id, { status: s })}
-            showLabel
-            linkSummary={issue.linkSummary}
-          />
-        </span>
-
-        {/* Col 4: Identifier */}
-        <span className="hidden sm:flex sm:items-center text-xs text-muted-foreground font-mono">
-          {issue.identifier ?? issue.id.slice(0, 8)}
-        </span>
-
-        {/* Col 5: Title + description */}
-        <span className="sm:min-w-0 sm:overflow-hidden">
-          <span className="line-clamp-2 text-sm sm:line-clamp-1 sm:truncate block">
-            {issue.title}
-          </span>
-          {issue.description && (
-            <span className="line-clamp-1 text-[11px] text-muted-foreground mt-0.5 block">
-              {issue.description.replace(/[\n\r]+/g, " ").slice(0, 120)}
-            </span>
-          )}
-          {/* Desktop: inline labels & deps after title */}
-          {(issue.labels ?? []).length > 0 && (
-            <span className="hidden sm:inline-flex items-center gap-1 ml-2 align-middle">
-              {(issue.labels ?? []).slice(0, 3).map((label) => (
-                <span
-                  key={label.id}
-                  className="inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium"
-                  style={{
-                    borderColor: label.color,
-                    color: label.color,
-                    backgroundColor: `${label.color}1f`,
-                  }}
-                >
-                  {label.name}
-                </span>
-              ))}
-              {(issue.labels ?? []).length > 3 && (
-                <span className="text-[10px] text-muted-foreground">+{(issue.labels ?? []).length - 3}</span>
-              )}
-            </span>
-          )}
-          {issue.linkSummary && (
-            <span className="hidden sm:inline-flex ml-2 align-middle" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
-              <DependencyPills issueId={issue.id} linkSummary={issue.linkSummary} />
-            </span>
-          )}
-        </span>
-
-        {/* Mobile-only meta row */}
-        <span className="flex items-center gap-2 sm:hidden">
-          <span className="text-xs text-muted-foreground font-mono shrink-0">
-            {issue.identifier ?? issue.id.slice(0, 8)}
-          </span>
-          <span className="inline-flex items-center gap-1">
-            {issue.type === "plan" && (
-              <span className="inline-flex items-center gap-1 rounded-full border border-violet-500/40 bg-violet-500/10 px-1.5 py-0.5 text-[10px] text-violet-600 dark:text-violet-400">
-                Plan
-              </span>
-            )}
-            {issue.type === "explore" && (
-              <span className="inline-flex items-center gap-1 rounded-full border border-blue-500/40 bg-blue-500/10 px-1.5 py-0.5 text-[10px] text-blue-600 dark:text-blue-400">
-                Explore
-              </span>
-            )}
-            {templateIssueIds.has(issue.id) ? (
-              <span className="inline-flex items-center gap-1 rounded-full border border-teal-500/40 bg-teal-500/10 px-1.5 py-0.5 text-[10px] text-teal-600 dark:text-teal-400">
-                <Repeat className="h-2.5 w-2.5" />
-                Template
-              </span>
-            ) : recurringIssueIds.has(issue.id) ? (
-              <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-600 dark:text-amber-400">
-                <Clock3 className="h-2.5 w-2.5" />
-                Recurring
-              </span>
-            ) : null}
-            {spawnedFromTemplateIds.has(issue.id) && (
-              <span className="inline-flex items-center gap-1 rounded-full border border-sky-500/40 bg-sky-500/10 px-1.5 py-0.5 text-[10px] text-sky-600 dark:text-sky-400">
-                <Copy className="h-2.5 w-2.5" />
-                Scheduled
-              </span>
-            )}
-            {liveIssueIds?.has(issue.id) && (
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-blue-500/10">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-pulse absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
-                </span>
-              </span>
-            )}
-            {!liveIssueIds?.has(issue.id) && failedRunMap?.has(issue.id) && (
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-red-500/10">
-                <XCircle className="h-3 w-3 text-red-500" />
-              </span>
-            )}
-          </span>
-          {issue.linkSummary && (
-            <span onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
-              <DependencyPills issueId={issue.id} linkSummary={issue.linkSummary} />
-            </span>
-          )}
-          <span className="text-xs text-muted-foreground">&middot;</span>
-          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-            <ActivityDot date={issue.updatedAt} />
-            {timeAgo(issue.updatedAt)}
-          </span>
-        </span>
-      </span>
-
-      {/* Col 6: Type (desktop) */}
-      <span className="hidden sm:flex items-center gap-1 overflow-hidden">
-          {issue.type === "plan" && (
-            <span className="inline-flex items-center gap-1 rounded-full border border-violet-500/40 bg-violet-500/10 px-1.5 py-0.5 text-[10px] text-violet-600 dark:text-violet-400">
-              Plan
-            </span>
-          )}
-          {issue.type === "explore" && (
-            <span className="inline-flex items-center gap-1 rounded-full border border-blue-500/40 bg-blue-500/10 px-1.5 py-0.5 text-[10px] text-blue-600 dark:text-blue-400">
-              Explore
-            </span>
-          )}
-          {templateIssueIds.has(issue.id) ? (
-            <span className="inline-flex items-center gap-1 rounded-full border border-teal-500/40 bg-teal-500/10 px-1.5 py-0.5 text-[10px] text-teal-600 dark:text-teal-400">
-              <Repeat className="h-2.5 w-2.5" />
-              Template
-            </span>
-          ) : recurringIssueIds.has(issue.id) ? (
-            <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-600 dark:text-amber-400">
-              <Clock3 className="h-2.5 w-2.5" />
-              Recurring
-            </span>
-          ) : null}
-          {spawnedFromTemplateIds.has(issue.id) && (
-            <span className="inline-flex items-center gap-1 rounded-full border border-sky-500/40 bg-sky-500/10 px-1.5 py-0.5 text-[10px] text-sky-600 dark:text-sky-400">
-              <Copy className="h-2.5 w-2.5" />
-              Scheduled
-            </span>
-          )}
-      </span>
-
-      {/* Col 7: Run state (desktop) */}
-      <span className="hidden sm:flex items-center gap-1 overflow-hidden">
-          {liveIssueIds?.has(issue.id) && (
-            <span className="inline-flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2 py-0.5 rounded-full bg-blue-500/10">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-pulse absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
-              </span>
-              <span className="text-[11px] font-medium text-blue-600 dark:text-blue-400">Live</span>
-            </span>
-          )}
-          {!liveIssueIds?.has(issue.id) && failedRunMap?.has(issue.id) && (() => {
-            const info = failedRunMap.get(issue.id)!;
-            const isRetrying = retryingIssueId === issue.id;
-            return (
-              <span className="inline-flex items-center gap-1 sm:gap-1.5">
-                <span
-                  className="inline-flex items-center gap-1 px-1.5 sm:px-2 py-0.5 rounded-full bg-red-500/10"
-                  title={info.error ?? `Last run by ${info.agentName} failed`}
-                >
-                  <XCircle className="h-3 w-3 text-red-500" />
-                  <span className="text-[11px] font-medium text-red-600 dark:text-red-400">Failed</span>
-                </span>
-                <button
-                  type="button"
-                  className="inline-flex items-center justify-center h-5 w-5 rounded-full hover:bg-muted transition-colors"
-                  title={`Retry ${info.agentName}`}
-                  disabled={isRetrying}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    retryMutation.mutate({ agentId: info.agentId, issueId: issue.id });
-                  }}
-                >
-                  {isRetrying
-                    ? <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
-                    : <RotateCcw className="h-3 w-3 text-muted-foreground hover:text-foreground" />
-                  }
-                </button>
-              </span>
-            );
-          })()}
-      </span>
-
-      {/* Col 8: Assignee (desktop) */}
-      <span className="hidden sm:inline-flex sm:items-center sm:gap-1 sm:overflow-hidden" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
-        {(() => {
-          const issueSchedules = recurringByIssueId.get(issue.id) ?? [];
-          if (issueSchedules.length > 0) {
-            const enabledCount = issueSchedules.filter((schedule) => schedule.enabled).length;
-            return (
-              <Popover
-                open={recurringPickerIssueId === issue.id}
-                onOpenChange={(open) => setRecurringPickerIssueId(open ? issue.id : null)}
-              >
-                <PopoverTrigger asChild>
-                  <button
-                    className="inline-flex items-center gap-1 rounded-md border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground hover:bg-accent/50 transition-colors shrink-0"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                    }}
-                  >
-                    <Clock3 className="h-3 w-3" />
-                    {enabledCount}/{issueSchedules.length}
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent
-                  className="w-80 p-2"
-                  align="end"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <div className="space-y-2">
-                    {issueSchedules.map((schedule) => (
-                      <div key={schedule.id} className="rounded border border-border p-2">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-medium truncate">{schedule.name}</span>
-                          <span className="ml-auto">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="h-6 px-2 text-[10px]"
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                updateSchedule.mutate({
-                                  scheduleId: schedule.id,
-                                  patch: { enabled: !schedule.enabled },
-                                });
-                              }}
-                              disabled={updateSchedule.isPending}
-                            >
-                              {schedule.enabled ? (
-                                <>
-                                  <Pause className="h-3 w-3 mr-1" />
-                                  Stop
-                                </>
-                              ) : (
-                                <>
-                                  <Play className="h-3 w-3 mr-1" />
-                                  Start
-                                </>
-                              )}
-                            </Button>
-                          </span>
-                        </div>
-                        <div className="mt-2 flex items-center gap-1.5">
-                          <input
-                            className="w-full rounded-md border border-border bg-transparent px-2 py-1 text-[11px] font-mono"
-                            value={scheduleDraftValue(schedule)}
-                            onChange={(e) =>
-                              setRecurringDrafts((prev) => ({
-                                ...prev,
-                                [schedule.id]: e.target.value,
-                              }))
-                            }
-                          />
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-6 px-2 text-[10px]"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              updateSchedule.mutate({
-                                scheduleId: schedule.id,
-                                patch: { expression: scheduleDraftValue(schedule).trim() },
-                              });
-                            }}
-                            disabled={
-                              updateSchedule.isPending ||
-                              scheduleDraftValue(schedule).trim().length === 0
-                            }
-                          >
-                            <Save className="h-3 w-3 mr-1" />
-                            Save
-                          </Button>
-                        </div>
-                        <div className="mt-1 text-[10px] text-muted-foreground">
-                          {schedule.timezone} - {schedule.enabled ? "enabled" : "disabled"} - next{" "}
-                          {schedule.nextTriggerAt ? timeAgo(schedule.nextTriggerAt) : "not scheduled"}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </PopoverContent>
-              </Popover>
-            );
-          }
-          return null;
-        })()}
-        <Popover
-          open={assigneePickerIssueId === issue.id}
-          onOpenChange={(open) => {
-            setAssigneePickerIssueId(open ? issue.id : null);
-            if (!open) setAssigneeSearch("");
-          }}
-        >
-          <PopoverTrigger asChild>
-            <button
-              className="flex items-center rounded-md px-2 py-1 hover:bg-accent/50 transition-colors min-w-0"
-            >
-              {issue.assigneeAgentId && agentName(issue.assigneeAgentId) ? (
-                <Identity name={agentName(issue.assigneeAgentId)!} size="sm" />
-              ) : (
-                <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-dashed border-muted-foreground/35 bg-muted/30">
-                    <User className="h-3 w-3" />
-                  </span>
-                  Assignee
-                </span>
-              )}
-            </button>
-          </PopoverTrigger>
-          <PopoverContent
-            className="w-56 p-1"
-            align="end"
-            onClick={(e) => e.stopPropagation()}
-            onPointerDownOutside={() => setAssigneeSearch("")}
-          >
-            <input
-              className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-muted-foreground/50"
-              placeholder="Search agents..."
-              value={assigneeSearch}
-              onChange={(e) => setAssigneeSearch(e.target.value)}
-              autoFocus
-            />
-            <div className="max-h-48 overflow-y-auto overscroll-contain">
-              <button
-                className={cn(
-                  "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
-                  !issue.assigneeAgentId && "bg-accent"
-                )}
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  assignIssue(issue.id, null);
-                }}
-              >
-                No assignee
-              </button>
-              {(agents ?? [])
-                .filter((agent) => {
-                  if (!assigneeSearch.trim()) return true;
-                  return agent.name.toLowerCase().includes(assigneeSearch.toLowerCase());
-                })
-                .map((agent) => (
-                  <button
-                    key={agent.id}
-                    className={cn(
-                      "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 text-left",
-                      issue.assigneeAgentId === agent.id && "bg-accent"
-                    )}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      assignIssue(issue.id, agent.id);
-                    }}
-                  >
-                    <Identity name={agent.name} size="sm" className="min-w-0" />
-                  </button>
-                ))}
-            </div>
-          </PopoverContent>
-        </Popover>
-      </span>
-
-      {/* Col 9: Project (desktop) */}
-      <span className="hidden sm:inline-flex sm:items-center sm:overflow-hidden" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
-        <Popover
-          open={projectPickerIssueId === issue.id}
-          onOpenChange={(open) => {
-            setProjectPickerIssueId(open ? issue.id : null);
-            if (!open) setProjectSearch("");
-          }}
-        >
-          <PopoverTrigger asChild>
-            <button
-              className="flex items-center rounded-md px-2 py-1 hover:bg-accent/50 transition-colors min-w-0"
-            >
-              {issue.projectId && issue.project ? (
-                <span className="inline-flex items-center gap-1.5 text-xs min-w-0">
-                  <span
-                    className="shrink-0 h-3 w-3 rounded-sm"
-                    style={{ backgroundColor: issue.project.color ?? "#6366f1" }}
-                  />
-                  <span className="truncate">{issue.project.name}</span>
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-dashed border-muted-foreground/35 bg-muted/30">
-                    <FolderKanban className="h-3 w-3" />
-                  </span>
-                  Project
-                </span>
-              )}
-            </button>
-          </PopoverTrigger>
-          <PopoverContent
-            className="w-56 p-1"
-            align="end"
-            onClick={(e) => e.stopPropagation()}
-            onPointerDownOutside={() => setProjectSearch("")}
-          >
-            <input
-              className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-muted-foreground/50"
-              placeholder="Search projects..."
-              value={projectSearch}
-              onChange={(e) => setProjectSearch(e.target.value)}
-              autoFocus
-            />
-            <div className="max-h-48 overflow-y-auto overscroll-contain">
-              <button
-                className={cn(
-                  "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
-                  !issue.projectId && "bg-accent"
-                )}
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  onUpdateIssue(issue.id, { projectId: null });
-                  setProjectPickerIssueId(null);
-                }}
-              >
-                No project
-              </button>
-              {(allProjects ?? [])
-                .filter((proj) => {
-                  if (!projectSearch.trim()) return true;
-                  return proj.name.toLowerCase().includes(projectSearch.toLowerCase());
-                })
-                .map((proj) => (
-                  <button
-                    key={proj.id}
-                    className={cn(
-                      "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 text-left",
-                      issue.projectId === proj.id && "bg-accent"
-                    )}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      onUpdateIssue(issue.id, { projectId: proj.id });
-                      setProjectPickerIssueId(null);
-                    }}
-                  >
-                    <span
-                      className="shrink-0 h-3 w-3 rounded-sm"
-                      style={{ backgroundColor: proj.color ?? "#6366f1" }}
-                    />
-                    <span className="truncate">{proj.name}</span>
-                  </button>
-                ))}
-            </div>
-          </PopoverContent>
-        </Popover>
-      </span>
-
-      {/* Col 10: Date (desktop) */}
-      <span className="hidden sm:inline-flex items-center gap-1.5 text-xs text-muted-foreground tabular-nums whitespace-nowrap">
-        <ActivityDot date={issue.updatedAt} />
-        {formatDateTime(issue.updatedAt)}
-      </span>
-    </Link>
-  ); }, [issueLinkState, onUpdateIssue, recurringIssueIds, templateIssueIds, spawnedFromTemplateIds, liveIssueIds, recurringByIssueId, recurringPickerIssueId, updateSchedule, scheduleDraftValue, recurringDrafts, assigneePickerIssueId, assigneeSearch, agentName, agents, projectPickerIssueId, projectSearch, allProjects, flatVisibleIssues, selectedIndex, selectedIds, hasSelection, toggleSelect]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Context object passed to TanStack Table meta — cell renderers read from this
+  const ctx: IssueColumnContext = {
+    issueLinkState,
+    onUpdateIssue,
+    agents,
+    agentName,
+    liveIssueIds,
+    failedRunMap,
+    retryingIssueId,
+    onRetry: (agentId: string, issueId: string) => retryMutation.mutate({ agentId, issueId }),
+    recurringIssueIds,
+    templateIssueIds,
+    spawnedFromTemplateIds,
+    recurringByIssueId,
+    recurringPickerIssueId,
+    setRecurringPickerIssueId,
+    scheduleDraftValue,
+    onUpdateSchedule: (args) => updateSchedule.mutate(args),
+    isUpdatingSchedule: updateSchedule.isPending,
+    setRecurringDrafts,
+    assigneePickerIssueId,
+    setAssigneePickerIssueId,
+    assigneeSearch,
+    setAssigneeSearch,
+    projectPickerIssueId,
+    setProjectPickerIssueId,
+    projectSearch,
+    setProjectSearch,
+    allProjects,
+    kbSelectedIssueId: flatVisibleIssues[selectedIndex]?.id ?? null,
+    issueRowRefs,
+    hasSelection,
+  };
 
   return (
     <div className="space-y-4">
@@ -1560,7 +1021,10 @@ export function IssuesList({
                       ? viewState.collapsedGroups.filter((k) => k !== key)
                       : [...viewState.collapsedGroups, key],
                   })}
-                  renderRow={renderIssueRow}
+                  columns={issueColumns}
+                  meta={ctx}
+                  rowSelection={rowSelection}
+                  onRowSelectionChange={setRowSelection}
                 />
               )}
               {pastIssues.length > 0 && (
@@ -1576,7 +1040,10 @@ export function IssuesList({
                       ? [...viewState.collapsedGroups, key]
                       : viewState.collapsedGroups.filter((k) => k !== key),
                   })}
-                  renderRow={renderIssueRow}
+                  columns={issueColumns}
+                  meta={ctx}
+                  rowSelection={rowSelection}
+                  onRowSelectionChange={setRowSelection}
                 />
               )}
             </>
@@ -1594,7 +1061,10 @@ export function IssuesList({
                     ? viewState.collapsedGroups.filter((k) => k !== key)
                     : [...viewState.collapsedGroups, key],
                 })}
-                renderRow={renderIssueRow}
+                columns={issueColumns}
+                meta={ctx}
+                rowSelection={rowSelection}
+                onRowSelectionChange={setRowSelection}
                 onAdd={() => openNewIssue(newIssueDefaults(group.key))}
               />
             ))
@@ -1785,23 +1255,6 @@ export function IssuesList({
 
 /* ── Reusable collapsible section for issue groups ── */
 
-const COLUMN_KEYS = Object.keys(COLUMN_HEADERS);
-
-function ColumnHeaderRow() {
-  return (
-    <div
-      className="hidden sm:grid gap-2 sm:items-center sm:min-w-[1000px] border-b border-border bg-muted/30 pl-3 pr-3 py-1.5 text-[11px] font-medium text-muted-foreground uppercase tracking-wider select-none"
-      style={{ gridTemplateColumns: GRID_TEMPLATE } as React.CSSProperties}
-    >
-      {COLUMN_KEYS.map((key) => (
-        <span key={key} className="relative flex items-center min-w-0 overflow-hidden">
-          <span className="truncate">{COLUMN_HEADERS[key] ?? ""}</span>
-        </span>
-      ))}
-    </div>
-  );
-}
-
 function IssueSection({
   sectionKey,
   label,
@@ -1810,7 +1263,10 @@ function IssueSection({
   defaultOpen = true,
   collapsedGroups,
   onToggle,
-  renderRow,
+  columns,
+  meta,
+  rowSelection,
+  onRowSelectionChange,
   onAdd,
 }: {
   sectionKey: string;
@@ -1820,11 +1276,27 @@ function IssueSection({
   defaultOpen?: boolean;
   collapsedGroups: string[];
   onToggle: (key: string, open: boolean) => void;
-  renderRow: (issue: Issue) => React.ReactNode;
+  columns: ColumnDef<Issue>[];
+  meta: IssueColumnContext;
+  rowSelection: RowSelectionState;
+  onRowSelectionChange: OnChangeFn<RowSelectionState>;
   onAdd?: () => void;
 }) {
+  const navigate = useNavigate();
   const inCollapsed = collapsedGroups.includes(sectionKey);
   const effectiveOpen = defaultOpen ? !inCollapsed : inCollapsed;
+
+  const table = useReactTable({
+    data: items,
+    columns,
+    state: { rowSelection },
+    onRowSelectionChange,
+    getRowId: (row) => row.id,
+    getCoreRowModel: getCoreRowModel(),
+    enableRowSelection: true,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    meta: meta as any,
+  });
 
   return (
     <Collapsible
@@ -1856,9 +1328,87 @@ function IssueSection({
         </div>
       )}
       <CollapsibleContent>
-        <div className="border border-border rounded-lg divide-y divide-border mb-4 overflow-x-auto">
-          <ColumnHeaderRow />
-          {items.map(renderRow)}
+        {/* Mobile: card list (sm:hidden) */}
+        <div className="sm:hidden border border-border rounded-lg divide-y divide-border mb-4">
+          {table.getRowModel().rows.map((row) => (
+            <IssueCard
+              key={row.id}
+              issue={row.original}
+              isChecked={row.getIsSelected()}
+              hasSelection={meta.hasSelection}
+              onToggleSelect={() => row.toggleSelected()}
+              isKbSelected={row.id === meta.kbSelectedIssueId}
+              liveIssueIds={meta.liveIssueIds}
+              failedRunMap={meta.failedRunMap}
+              recurringIssueIds={meta.recurringIssueIds}
+              templateIssueIds={meta.templateIssueIds}
+              spawnedFromTemplateIds={meta.spawnedFromTemplateIds}
+              onUpdateIssue={meta.onUpdateIssue}
+              issueLinkState={meta.issueLinkState}
+            />
+          ))}
+        </div>
+
+        {/* Desktop: HTML table (hidden sm:block) */}
+        <div className="hidden sm:block border border-border rounded-lg mb-4 overflow-x-auto">
+          <table className="w-full min-w-[1000px] text-sm border-collapse">
+            <colgroup>
+              {table.getAllColumns().map((column) => (
+                <col
+                  key={column.id}
+                  style={column.id !== "title" ? { width: column.getSize() } : undefined}
+                />
+              ))}
+            </colgroup>
+            <thead>
+              {table.getHeaderGroups().map((headerGroup) => (
+                <tr key={headerGroup.id} className="border-b border-border bg-muted/30">
+                  {headerGroup.headers.map((header) => (
+                    <th
+                      key={header.id}
+                      className="h-9 px-2 text-left align-middle text-[11px] font-medium text-muted-foreground uppercase tracking-wider whitespace-nowrap select-none"
+                    >
+                      {header.isPlaceholder
+                        ? null
+                        : flexRender(header.column.columnDef.header, header.getContext())}
+                    </th>
+                  ))}
+                </tr>
+              ))}
+            </thead>
+            <tbody>
+              {table.getRowModel().rows.map((row) => {
+                const isKbSelected = row.id === meta.kbSelectedIssueId;
+                const isChecked = row.getIsSelected();
+                return (
+                  <tr
+                    key={row.id}
+                    ref={(el) => {
+                      if (el) meta.issueRowRefs.current.set(row.id, el);
+                      else meta.issueRowRefs.current.delete(row.id);
+                    }}
+                    className={cn(
+                      "group/row border-b border-border last:border-b-0 transition-colors cursor-pointer hover:bg-accent/50",
+                      isKbSelected && "ring-2 ring-inset ring-primary bg-accent/60",
+                      isChecked && "bg-primary/5",
+                    )}
+                    onClick={(e) => {
+                      if (!(e.target as HTMLElement).closest('button,a,[role="button"]')) {
+                        const issue = row.original;
+                        navigate(`/issues/${issue.identifier ?? issue.id}`, { state: meta.issueLinkState });
+                      }
+                    }}
+                  >
+                    {row.getVisibleCells().map((cell) => (
+                      <td key={cell.id} className="px-2 py-1.5 align-middle text-sm">
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </td>
+                    ))}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       </CollapsibleContent>
     </Collapsible>
