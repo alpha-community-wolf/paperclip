@@ -1,11 +1,13 @@
 import { Fragment, isValidElement, useEffect, useId, useState, type CSSProperties, type ReactNode } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { remarkWikiLink } from "@portaljs/remark-wiki-link";
 import { parseProjectMentionHref } from "@paperclipai/shared";
 import { cn } from "../lib/utils";
 import { useTheme } from "../context/ThemeContext";
 import { useWorkspaceFile, type WorkspaceFileContextValue } from "../context/WorkspaceFileContext";
 import { Link } from "@/lib/router";
+import { WikiLink } from "./WikiLink";
 
 interface MarkdownBodyProps {
   children: string;
@@ -281,7 +283,7 @@ export function MarkdownBody({ children, className }: MarkdownBodyProps) {
       )}
     >
       <Markdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={[remarkGfm, [remarkWikiLink, { pathFormat: "obsidian-short" }]]}
         components={{
           pre: ({ node: _node, children: preChildren, ...preProps }) => {
             const mermaidSource = extractMermaidSource(preChildren);
@@ -290,7 +292,11 @@ export function MarkdownBody({ children, className }: MarkdownBodyProps) {
             }
             return <pre {...preProps}>{preChildren}</pre>;
           },
-          a: ({ href, children: linkChildren }) => {
+          a: ({ href, children: linkChildren, className: linkClassName }) => {
+            // Wikilinks are rendered by remark-wiki-link as <a class="internal ...">
+            if (typeof linkClassName === "string" && linkClassName.split(" ").includes("internal")) {
+              return <WikiLink href={href ?? ""}>{linkChildren}</WikiLink>;
+            }
             const parsed = href ? parseProjectMentionHref(href) : null;
             if (parsed) {
               const label = linkChildren;
