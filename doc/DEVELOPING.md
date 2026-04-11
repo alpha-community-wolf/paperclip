@@ -378,3 +378,5 @@ The board indexes Markdown (`.md`, `.mdx`, `.markdown`) under each agent’s ada
 **`.fileindex-ignore`** at the adapter `cwd` adds gitignore-style rules (one pattern per line, `#` comments, `dir/` or `dir/**` for trees). Paths are always relative to `cwd`.
 
 **Portable config:** if `cwd` is `…/something/workspace`, the server also reads **`.fileindex-ignore` from the parent directory** (agent home) first, then from `cwd`. You can keep a single ignore file next to `AGENT_HOME` even when the adapter uses `working-directory: workspace`.
+
+**Monorepo `cwd`:** if an adapter’s working directory is the **multi-agent repo root** (e.g. `community-wolf-paperclip`), indexed paths look like `agents/<name>/workspace/repos/…`. Those trees are excluded automatically (in addition to `workspace/repos/**` when `cwd` is a single agent home). **Terminated** agents are not indexed.

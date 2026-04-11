@@ -2,7 +2,20 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { isPathExcluded, loadIgnorePatterns } from "../services/file-index.ts";
+import {
+  isNestedAgentWorkspaceReposPath,
+  isPathExcluded,
+  loadIgnorePatterns,
+} from "../services/file-index.ts";
+
+describe("isNestedAgentWorkspaceReposPath", () => {
+  it("matches monorepo-root cwd layout (agents/<id>/workspace/repos/…)", () => {
+    expect(isNestedAgentWorkspaceReposPath("agents/tony/workspace/repos/wolf-website/a.md")).toBe(true);
+    expect(isNestedAgentWorkspaceReposPath("agents/tony/workspace/repositories/foo/a.md")).toBe(true);
+    expect(isNestedAgentWorkspaceReposPath("workspace/repos/wolf-website/a.md")).toBe(false);
+    expect(isNestedAgentWorkspaceReposPath("agents/tony/MEMORY.md")).toBe(false);
+  });
+});
 
 describe("isPathExcluded", () => {
   it("matches workspace/repos layout (agent cwd = agent home)", () => {

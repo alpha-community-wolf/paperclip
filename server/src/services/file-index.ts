@@ -153,6 +153,24 @@ export function isPathExcluded(relativePath: string, patterns: string[]): boolea
   return false;
 }
 
+/**
+ * When adapter cwd is a multi-agent checkout root (e.g. community-wolf-paperclip repo),
+ * markdown paths look like `agents/<agent>/workspace/repos/...`. Prefix patterns like
+ * `workspace/repos/**` do not match — exclude those clone trees explicitly.
+ */
+export function isNestedAgentWorkspaceReposPath(relativePath: string): boolean {
+  const n = relativePath.replace(/\\/g, "/");
+  return (
+    /^agents\/[^/]+\/workspace\/repos(\/|$)/.test(n) ||
+    /^agents\/[^/]+\/workspace\/repositories(\/|$)/.test(n)
+  );
+}
+
+function isFileIndexExcluded(relativePath: string, patterns: string[]): boolean {
+  if (isNestedAgentWorkspaceReposPath(relativePath)) return true;
+  return isPathExcluded(relativePath, patterns);
+}
+
 class FileIndexService {
   private cache = new Map<string, CompanyIndex>();
 
@@ -258,7 +276,7 @@ class FileIndexService {
 
   private async buildIndex(db: Db, companyId: string): Promise<CompanyIndex> {
     const agents = await db.query.agents.findMany({
-      where: (a, { eq }) => eq(a.companyId, companyId),
+      where: (a, { eq, and, ne }) => and(eq(a.companyId, companyId), ne(a.status, "terminated")),
     });
 
     const index: FileIndexMap = new Map();
@@ -385,12 +403,12 @@ async function collectMarkdownFiles(dir: string, ignorePatterns: string[] = []):
         const fullPath = path.join(current, entry.name);
         if (entry.isDirectory()) {
           if (entry.name.startsWith(".") || entry.name === "node_modules") return;
-          if (isPathExcluded(path.relative(dir, fullPath), ignorePatterns)) return;
+          if (isFileIndexExcluded(path.relative(dir, fullPath), ignorePatterns)) return;
           await walk(fullPath);
         } else if (entry.isFile()) {
           const ext = path.extname(entry.name).toLowerCase();
           if (!MARKDOWN_EXTENSIONS.has(ext)) return;
-          if (isPathExcluded(path.relative(dir, fullPath), ignorePatterns)) return;
+          if (isFileIndexExcluded(path.relative(dir, fullPath), ignorePatterns)) return;
           result.push(fullPath);
         }
       }),
@@ -424,7 +442,7 @@ async function scanAgentDirectory(
 
         if (entry.isDirectory()) {
           if (entry.name.startsWith(".") || entry.name === "node_modules") return;
-          if (isPathExcluded(path.relative(cwd, fullPath), ignorePatterns)) return;
+          if (isFileIndexExcluded(path.relative(cwd, fullPath), ignorePatterns)) return;
           await walk(fullPath);
           return;
         }
@@ -432,7 +450,7 @@ async function scanAgentDirectory(
         if (!entry.isFile()) return;
         const ext = path.extname(entry.name).toLowerCase();
         if (!MARKDOWN_EXTENSIONS.has(ext)) return;
-        if (isPathExcluded(path.relative(cwd, fullPath), ignorePatterns)) return;
+        if (isFileIndexExcluded(path.relative(cwd, fullPath), ignorePatterns)) return;
 
         const filenameNoExt = path.basename(entry.name, ext).toLowerCase();
         const relativePath = path.relative(cwd, fullPath);
