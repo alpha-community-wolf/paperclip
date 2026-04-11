@@ -7,6 +7,7 @@ import { isUuidLike } from "@paperclipai/shared";
 import { agentService } from "../services/index.js";
 import { badRequest, forbidden, notFound, unprocessable, conflict } from "../errors.js";
 import { assertCompanyAccess } from "./authz.js";
+import { fileIndexService } from "../services/file-index.js";
 
 const MAX_FILE_SIZE = 1024 * 1024; // 1 MB (text content API)
 const MAX_RAW_FILE_SIZE = 50 * 1024 * 1024; // 50 MB (raw binary streaming)
@@ -330,6 +331,9 @@ export function workspaceFileRoutes(db: Db) {
 
       await fs.writeFile(destPath, file.buffer);
 
+      // Invalidate file index so wikilinks pick up new file
+      fileIndexService.invalidateAgent(agent.companyId, agent.id);
+
       const stat = await fs.stat(destPath);
       res.status(201).json({
         name: file.originalname,
@@ -363,6 +367,9 @@ export function workspaceFileRoutes(db: Db) {
       const resolved = sanitizePath(cwd, filePath);
       await fs.mkdir(path.dirname(resolved), { recursive: true });
       await fs.writeFile(resolved, content, "utf-8");
+
+      // Invalidate file index so wikilinks pick up new/updated file
+      fileIndexService.invalidateAgent(agent.companyId, agent.id);
 
       const stat = await fs.stat(resolved);
       res.status(201).json({

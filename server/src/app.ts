@@ -40,6 +40,7 @@ import { telegramRoutes } from "./routes/telegram.js";
 import { sharedMemoryRoutes } from "./routes/shared-memories.js";
 import { systemChoreRoutes } from "./routes/system-chores.js";
 import { workflowTemplateRoutes } from "./routes/workflow-templates.js";
+import { fileIndexRoutes } from "./routes/file-index.js";
 import { applyUiBranding } from "./ui-branding.js";
 import type { BetterAuthSessionResult } from "./auth/better-auth.js";
 import { eventRoutingService } from "./services/event-routing.js";
@@ -155,6 +156,7 @@ export async function createApp(
   api.use(sharedMemoryRoutes(db));
   api.use(systemChoreRoutes(db));
   api.use(workflowTemplateRoutes(db));
+  api.use("/companies", fileIndexRoutes(db));
   api.use(
     accessRoutes(db, {
       deploymentMode: opts.deploymentMode,
