@@ -4,10 +4,18 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { workflowTemplatesApi, type WorkflowTemplate, type RunWorkflowResult } from "../api/workflowTemplates";
+import { agentsApi } from "../api/agents";
 import { queryKeys } from "../lib/queryKeys";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -71,6 +79,12 @@ function RunWorkflowDialog({
   const [bindings, setBindings] = useState<Record<string, string>>({});
   const variables = template.variables ?? {};
 
+  const { data: agents } = useQuery({
+    queryKey: queryKeys.agents.list(selectedCompanyId!),
+    queryFn: () => agentsApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId && open,
+  });
+
   useEffect(() => {
     if (open) {
       const defaults: Record<string, string> = {};
@@ -123,12 +137,30 @@ function RunWorkflowDialog({
                   {decl.description && (
                     <p className="text-xs text-muted-foreground">{decl.description}</p>
                   )}
-                  <Input
-                    id={`var-${name}`}
-                    placeholder={decl.type === "uuid" ? "UUID" : `Enter ${name}`}
-                    value={bindings[name] ?? ""}
-                    onChange={(e) => setBindings((prev) => ({ ...prev, [name]: e.target.value }))}
-                  />
+                  {decl.type === "uuid" && agents ? (
+                    <Select
+                      value={bindings[name] ?? ""}
+                      onValueChange={(v) => setBindings((prev) => ({ ...prev, [name]: v }))}
+                    >
+                      <SelectTrigger className="h-9">
+                        <SelectValue placeholder="Select an agent" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {agents.map((a) => (
+                          <SelectItem key={a.id} value={a.id}>
+                            {a.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Input
+                      id={`var-${name}`}
+                      placeholder={`Enter ${name}`}
+                      value={bindings[name] ?? ""}
+                      onChange={(e) => setBindings((prev) => ({ ...prev, [name]: e.target.value }))}
+                    />
+                  )}
                 </div>
               ))}
             </div>
