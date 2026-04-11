@@ -13,6 +13,9 @@ import path from "node:path";
 import type { Db } from "@paperclipai/db";
 import { normalizeAgentUrlKey } from "@paperclipai/shared";
 
+/** Directories excluded by convention (relative to agent cwd) */
+const DEFAULT_IGNORE_PATTERNS = ["workspace/repos/**", "workspace/repositories/**"];
+
 export interface FileEntry {
   agentId: string;
   agentName: string;
@@ -74,6 +77,56 @@ const MARKDOWN_EXTENSIONS = new Set([".md", ".mdx", ".markdown"]);
  * Capture group 1 = target (the filename portion before | or #)
  */
 const WIKILINK_RE = /\[\[([^\]|#\n]+)(?:[|#][^\]]*)?]]/g;
+
+/**
+ * Load ignore patterns from `.fileindex-ignore` at an agent's cwd root.
+ * Returns patterns merged with DEFAULT_IGNORE_PATTERNS.
+ *
+ * Supported pattern syntax:
+ * - `dir/` or `dir/**` — exclude a directory and all contents
+ * - `path/to/file.md` — exclude a specific file
+ * - Lines starting with `#` are comments; blank lines are ignored
+ */
+async function loadIgnorePatterns(cwd: string): Promise<string[]> {
+  const patterns = [...DEFAULT_IGNORE_PATTERNS];
+  try {
+    const raw = await fs.readFile(path.join(cwd, ".fileindex-ignore"), "utf-8");
+    for (const line of raw.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+      patterns.push(trimmed);
+    }
+  } catch {
+    // No .fileindex-ignore file — use defaults only
+  }
+  return patterns;
+}
+
+/**
+ * Check if a relative path should be excluded.
+ * Supports:
+ * - `dir/**` patterns (prefix match on directory)
+ * - `dir/` patterns (same as dir/**)
+ * - Exact file path matches
+ */
+function isPathExcluded(relativePath: string, patterns: string[]): boolean {
+  const normalized = relativePath.replace(/\\/g, "/");
+  for (const pattern of patterns) {
+    const p = pattern.replace(/\\/g, "/");
+    // "dir/**" or "dir/" → prefix match
+    if (p.endsWith("/**")) {
+      const prefix = p.slice(0, -3);
+      if (normalized === prefix || normalized.startsWith(prefix + "/")) return true;
+    } else if (p.endsWith("/")) {
+      const prefix = p.slice(0, -1);
+      if (normalized === prefix || normalized.startsWith(prefix + "/")) return true;
+    } else {
+      // Exact match or prefix-as-directory match
+      if (normalized === p || normalized.startsWith(p + "/")) return true;
+    }
+  }
+  return false;
+}
 
 class FileIndexService {
   private cache = new Map<string, CompanyIndex>();
@@ -194,6 +247,7 @@ class FileIndexService {
       agentUrlKey: string;
       cwd: string;
       files: Map<string, FileEntry[]>;
+      ignorePatterns: string[];
     }> = [];
 
     await Promise.all(
@@ -203,21 +257,22 @@ class FileIndexService {
 
         agentIds.add(agent.id);
         const agentUrlKey = normalizeAgentUrlKey(agent.name) ?? agent.id;
-        const files = await scanAgentDirectory(cwd, agent.id, agent.name, agentUrlKey);
+        const ignorePatterns = await loadIgnorePatterns(cwd);
+        const files = await scanAgentDirectory(cwd, agent.id, agent.name, agentUrlKey, ignorePatterns);
 
         for (const [filename, fileEntries] of files) {
           const existing = index.get(filename) ?? [];
           index.set(filename, [...existing, ...fileEntries]);
         }
 
-        agentScans.push({ agentId: agent.id, agentName: agent.name, agentUrlKey, cwd, files });
+        agentScans.push({ agentId: agent.id, agentName: agent.name, agentUrlKey, cwd, files, ignorePatterns });
       }),
     );
 
     // Phase 2: parse each markdown file for [[wikilinks]] and build backlinks map
     await Promise.all(
-      agentScans.map(async ({ agentId, agentName, agentUrlKey, cwd }) => {
-        const allFiles = await collectMarkdownFiles(cwd);
+      agentScans.map(async ({ agentId, agentName, agentUrlKey, cwd, ignorePatterns }) => {
+        const allFiles = await collectMarkdownFiles(cwd, ignorePatterns);
         await Promise.all(
           allFiles.map(async (fullPath) => {
             const sourceRelativePath = path.relative(cwd, fullPath);
@@ -289,8 +344,8 @@ function extractWikilinks(content: string): Array<{ target: string; contextSnipp
   return results;
 }
 
-/** Collect all markdown file paths under a directory (recursive) */
-async function collectMarkdownFiles(dir: string): Promise<string[]> {
+/** Collect all markdown file paths under a directory (recursive), respecting ignore patterns */
+async function collectMarkdownFiles(dir: string, ignorePatterns: string[] = []): Promise<string[]> {
   const result: string[] = [];
 
   async function walk(current: string): Promise<void> {
@@ -305,10 +360,13 @@ async function collectMarkdownFiles(dir: string): Promise<string[]> {
         const fullPath = path.join(current, entry.name);
         if (entry.isDirectory()) {
           if (entry.name.startsWith(".") || entry.name === "node_modules") return;
+          if (isPathExcluded(path.relative(dir, fullPath), ignorePatterns)) return;
           await walk(fullPath);
         } else if (entry.isFile()) {
           const ext = path.extname(entry.name).toLowerCase();
-          if (MARKDOWN_EXTENSIONS.has(ext)) result.push(fullPath);
+          if (!MARKDOWN_EXTENSIONS.has(ext)) return;
+          if (isPathExcluded(path.relative(dir, fullPath), ignorePatterns)) return;
+          result.push(fullPath);
         }
       }),
     );
@@ -323,6 +381,7 @@ async function scanAgentDirectory(
   agentId: string,
   agentName: string,
   agentUrlKey: string,
+  ignorePatterns: string[] = [],
 ): Promise<Map<string, FileEntry[]>> {
   const result: Map<string, FileEntry[]> = new Map();
 
@@ -340,6 +399,7 @@ async function scanAgentDirectory(
 
         if (entry.isDirectory()) {
           if (entry.name.startsWith(".") || entry.name === "node_modules") return;
+          if (isPathExcluded(path.relative(cwd, fullPath), ignorePatterns)) return;
           await walk(fullPath);
           return;
         }
@@ -347,6 +407,7 @@ async function scanAgentDirectory(
         if (!entry.isFile()) return;
         const ext = path.extname(entry.name).toLowerCase();
         if (!MARKDOWN_EXTENSIONS.has(ext)) return;
+        if (isPathExcluded(path.relative(cwd, fullPath), ignorePatterns)) return;
 
         const filenameNoExt = path.basename(entry.name, ext).toLowerCase();
         const relativePath = path.relative(cwd, fullPath);

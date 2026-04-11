@@ -846,6 +846,11 @@ export function KnowledgeGraph() {
                   </div>
                 ))}
           </div>
+          {graphMode === "files" && (
+            <p className="text-[10px] text-muted-foreground/60 mt-2 leading-snug max-w-[160px]">
+              Use <code className="text-[10px] bg-muted/60 px-0.5 rounded">.fileindex-ignore</code> in an agent root to exclude files and paths.
+            </p>
+          )}
         </div>
 
         {/* Zoom hint */}
