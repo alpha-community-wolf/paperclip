@@ -21,6 +21,7 @@ import {
   Brain,
   Cog,
   Command,
+  Workflow,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { SidebarSection } from "./SidebarSection";
@@ -133,6 +134,7 @@ export function Sidebar() {
           <SidebarNavItem to="/goals" label="Goals" icon={Target} />
           <SidebarNavItem to="/timeline" label="Timeline" icon={CalendarDays} />
           <SidebarNavItem to="/schedules" label="Schedules" icon={CalendarClock} />
+          <SidebarNavItem to="/workflow-templates" label="Workflows" icon={Workflow} />
         </SidebarSection>
 
         <SidebarSection label="Company">

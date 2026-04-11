@@ -137,6 +137,10 @@ export const queryKeys = {
     forIssue: (companyId: string, projectId: string, tags: string) =>
       ["memories", companyId, "for-issue", projectId, tags] as const,
   },
+  workflowTemplates: {
+    list: (companyId: string) => ["workflow-templates", companyId] as const,
+    detail: (id: string) => ["workflow-templates", "detail", id] as const,
+  },
   systemChores: {
     list: (companyId: string) => ["system-chores", companyId] as const,
     runs: (companyId: string, choreKey?: string) =>
