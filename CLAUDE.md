@@ -93,6 +93,10 @@ Agents don't run continuously — they wake on a schedule, check for work (assig
 
 Before an agent run, the server injects skill documents (from `skills/`) into the agent's context so it knows how to call the Paperclip API. The `paperclip` skill is always injected and gives agents access to the control plane.
 
+## Wikilink file index
+
+Markdown under each agent’s adapter `cwd` is indexed for `[[wikilink]]` and the file graph. Built-in ignores cover `workspace/repos/` and `repos/` (both agent-home and `…/workspace` cwd layouts). Add `.fileindex-ignore` at `cwd`; if `cwd` ends with `workspace`, the parent directory’s `.fileindex-ignore` is merged too. See `doc/DEVELOPING.md` → **Wikilinks & file index**.
+
 ## Local Dev Notes
 
 - **No external database needed.** Embedded PostgreSQL auto-initializes at `~/.paperclip/instances/default/db`.

@@ -365,3 +365,16 @@ Networking behavior for this smoke script:
 - auto-detects and prints a Paperclip host URL reachable from inside OpenClaw Docker
 - default container-side host alias is `host.docker.internal` (override with `PAPERCLIP_HOST_FROM_CONTAINER` / `PAPERCLIP_HOST_PORT`)
 - if Paperclip rejects container hostnames in authenticated/private mode, allow `host.docker.internal` via `pnpm paperclipai allowed-hostname host.docker.internal` and restart Paperclip
+
+## Wikilinks & file index
+
+The board indexes Markdown (`.md`, `.mdx`, `.markdown`) under each agent’s adapter **`cwd`** for `[[wikilink]]` resolution, backlinks, and the Knowledge Graph → Files view (`server/src/services/file-index.ts`).
+
+**Clone paths are excluded by default** so checked-out repositories do not flood the graph:
+
+- When `cwd` is the agent home directory, paths look like `workspace/repos/…` — those are ignored.
+- When `cwd` is a `workspace` subdirectory (common if the agent’s “working directory” is `$AGENT_HOME/workspace`), paths look like `repos/…` — those are ignored too.
+
+**`.fileindex-ignore`** at the adapter `cwd` adds gitignore-style rules (one pattern per line, `#` comments, `dir/` or `dir/**` for trees). Paths are always relative to `cwd`.
+
+**Portable config:** if `cwd` is `…/something/workspace`, the server also reads **`.fileindex-ignore` from the parent directory** (agent home) first, then from `cwd`. You can keep a single ignore file next to `AGENT_HOME` even when the adapter uses `working-directory: workspace`.

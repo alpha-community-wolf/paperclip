@@ -13,8 +13,16 @@ import path from "node:path";
 import type { Db } from "@paperclipai/db";
 import { normalizeAgentUrlKey } from "@paperclipai/shared";
 
-/** Directories excluded by convention (relative to agent cwd) */
-const DEFAULT_IGNORE_PATTERNS = ["workspace/repos/**", "workspace/repositories/**"];
+/**
+ * Directories excluded by convention (relative to agent cwd).
+ * Includes both layouts: cwd = `$AGENT_HOME` → `workspace/repos/…`, cwd = `$AGENT_HOME/workspace` → `repos/…`.
+ */
+const DEFAULT_IGNORE_PATTERNS = [
+  "workspace/repos/**",
+  "workspace/repositories/**",
+  "repos/**",
+  "repositories/**",
+];
 
 export interface FileEntry {
   agentId: string;
@@ -79,26 +87,43 @@ const MARKDOWN_EXTENSIONS = new Set([".md", ".mdx", ".markdown"]);
 const WIKILINK_RE = /\[\[([^\]|#\n]+)(?:[|#][^\]]*)?]]/g;
 
 /**
- * Load ignore patterns from `.fileindex-ignore` at an agent's cwd root.
- * Returns patterns merged with DEFAULT_IGNORE_PATTERNS.
- *
- * Supported pattern syntax:
- * - `dir/` or `dir/**` — exclude a directory and all contents
- * - `path/to/file.md` — exclude a specific file
- * - Lines starting with `#` are comments; blank lines are ignored
+ * Append non-comment lines from `dir/.fileindex-ignore` into `patterns` (if the file exists).
  */
-async function loadIgnorePatterns(cwd: string): Promise<string[]> {
-  const patterns = [...DEFAULT_IGNORE_PATTERNS];
+async function mergeIgnoreFile(patterns: string[], dir: string): Promise<void> {
   try {
-    const raw = await fs.readFile(path.join(cwd, ".fileindex-ignore"), "utf-8");
+    const raw = await fs.readFile(path.join(dir, ".fileindex-ignore"), "utf-8");
     for (const line of raw.split("\n")) {
       const trimmed = line.trim();
       if (!trimmed || trimmed.startsWith("#")) continue;
       patterns.push(trimmed);
     }
   } catch {
-    // No .fileindex-ignore file — use defaults only
+    // missing file — ok
   }
+}
+
+/**
+ * Load ignore patterns for wikilink file indexing (gitignore-style, relative to adapter `cwd`).
+ *
+ * **Built-in defaults** always exclude common clone locations for both layouts:
+ * - `cwd` = agent home (`$AGENT_HOME`): paths look like `workspace/repos/…`
+ * - `cwd` = working tree (`$AGENT_HOME/workspace`): paths look like `repos/…`
+ *
+ * **`.fileindex-ignore`** at the adapter `cwd` is merged next. If the last segment of `cwd` is
+ * exactly `workspace`, the parent directory’s `.fileindex-ignore` is merged first so one file at
+ * agent home stays portable when local adapters use `working-directory: workspace` (fork convention).
+ *
+ * Pattern syntax:
+ * - `dir/` or `dir/**` — exclude a directory and all contents
+ * - `path/to/file.md` — exclude a specific file
+ * - Lines starting with `#` are comments; blank lines are ignored
+ */
+export async function loadIgnorePatterns(cwd: string): Promise<string[]> {
+  const patterns = [...DEFAULT_IGNORE_PATTERNS];
+  if (path.basename(cwd) === "workspace") {
+    await mergeIgnoreFile(patterns, path.dirname(cwd));
+  }
+  await mergeIgnoreFile(patterns, cwd);
   return patterns;
 }
 
@@ -109,7 +134,7 @@ async function loadIgnorePatterns(cwd: string): Promise<string[]> {
  * - `dir/` patterns (same as dir/**)
  * - Exact file path matches
  */
-function isPathExcluded(relativePath: string, patterns: string[]): boolean {
+export function isPathExcluded(relativePath: string, patterns: string[]): boolean {
   const normalized = relativePath.replace(/\\/g, "/");
   for (const pattern of patterns) {
     const p = pattern.replace(/\\/g, "/");
