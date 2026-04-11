@@ -29,6 +29,7 @@ import {
   heartbeatService,
   reconcilePersistedRuntimeServicesOnStartup,
   seedBuiltInSkillsForAllCompanies,
+  seedWorkflowTemplatesForAllCompanies,
   sharedMemoryService,
   stopAllRuntimeServices,
   systemChoreRunnerService,
@@ -528,7 +529,17 @@ export async function startServer(): Promise<StartedServer> {
     .catch((err) => {
       logger.error({ err }, "startup seeding of built-in skills failed");
     });
-  
+
+  void seedWorkflowTemplatesForAllCompanies(db as any)
+    .then((result) => {
+      if (result.seeded > 0) {
+        logger.info({ templates: result.seeded }, "seeded workflow templates for companies");
+      }
+    })
+    .catch((err) => {
+      logger.error({ err }, "startup seeding of workflow templates failed");
+    });
+
   void (async () => {
     try {
       const telegram = telegramService(db as any);

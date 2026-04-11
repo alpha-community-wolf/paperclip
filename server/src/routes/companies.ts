@@ -10,7 +10,7 @@ import {
 import { forbidden } from "../errors.js";
 import { seedBuiltInSkillsForCompany } from "../services/skill-seeding.js";
 import { validate } from "../middleware/validate.js";
-import { accessService, companyPortabilityService, companyService, logActivity } from "../services/index.js";
+import { accessService, companyPortabilityService, companyService, logActivity, workflowTemplateService } from "../services/index.js";
 import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
 
 export function companyRoutes(db: Db) {
@@ -115,6 +115,7 @@ export function companyRoutes(db: Db) {
     const company = await svc.create(req.body);
     await access.ensureMembership(company.id, "user", req.actor.userId ?? "local-board", "owner", "active");
     await seedBuiltInSkillsForCompany(db, company.id);
+    await workflowTemplateService(db).seedForCompany(company.id);
     await logActivity(db, {
       companyId: company.id,
       actorType: "user",

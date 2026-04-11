@@ -677,8 +677,27 @@ export function issueRoutes(db: Db, storage: StorageService) {
             if (target.status === "done" || target.status === "cancelled") continue;
 
             // Transition target to "todo"
+            // For workflow steps, forward metadata from source (explore/plan outputs)
+            const updatePatch: Record<string, unknown> = {};
             if (target.status === "backlog" || target.status === "blocked") {
-              await svc.update(link.targetId, { status: "todo" });
+              updatePatch.status = "todo";
+            }
+            const targetMeta = (target.metadata ?? {}) as Record<string, unknown>;
+            if (targetMeta.workflowRootIssueId) {
+              const sourceMeta = (issue.metadata ?? {}) as Record<string, unknown>;
+              const forwardKeys = ["exploreDocumentPath", "planDocumentPath", "planIssueId", "planIssueIdentifier"];
+              const merged = { ...targetMeta };
+              for (const key of forwardKeys) {
+                if (sourceMeta[key] && !targetMeta[key]) {
+                  merged[key] = sourceMeta[key];
+                }
+              }
+              if (Object.keys(merged).length > Object.keys(targetMeta).length) {
+                updatePatch.metadata = merged;
+              }
+            }
+            if (Object.keys(updatePatch).length > 0) {
+              await svc.update(link.targetId, updatePatch);
             }
 
             await logActivity(db, {
