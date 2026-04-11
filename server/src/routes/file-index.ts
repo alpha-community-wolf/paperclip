@@ -96,6 +96,118 @@ export function fileIndexRoutes(db: Db) {
   });
 
   /**
+   * GET /companies/:companyId/file-index/graph?[agentId=&minLinks=]
+   * Returns D3-ready nodes + edges for the file graph visualization.
+   *
+   * FileNode: { id, label, type:"file", agentId, agentName, agentUrlKey, relativePath, backlinkCount }
+   * FileEdge: { id, source, target, edgeType:"wikilink" }
+   *
+   * Filters:
+   *   agentId  — only include files belonging to this agent
+   *   minLinks — only include nodes with at least N total connections (in+out)
+   */
+  router.get("/:companyId/file-index/graph", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+
+    const agentIdFilter = req.query.agentId as string | undefined;
+    const minLinksRaw = req.query.minLinks as string | undefined;
+    const minLinks = minLinksRaw ? Math.max(0, parseInt(minLinksRaw, 10)) : 0;
+
+    const { index, backlinks } = await fileIndexService.getIndex(db, companyId);
+
+    interface FileNode {
+      id: string;
+      label: string;
+      type: "file";
+      agentId: string;
+      agentName: string;
+      agentUrlKey: string;
+      relativePath: string;
+      backlinkCount: number;
+    }
+
+    interface FileEdge {
+      id: string;
+      source: string;
+      target: string;
+      edgeType: "wikilink";
+    }
+
+    // Build file nodes from index
+    const nodesMap = new Map<string, FileNode>();
+    for (const entries of index.values()) {
+      for (const entry of entries) {
+        if (agentIdFilter && entry.agentId !== agentIdFilter) continue;
+        const nodeId = `file:${entry.agentUrlKey}/${entry.relativePath}`;
+        if (nodesMap.has(nodeId)) continue;
+        nodesMap.set(nodeId, {
+          id: nodeId,
+          label: path.basename(entry.relativePath, path.extname(entry.relativePath)),
+          type: "file",
+          agentId: entry.agentId,
+          agentName: entry.agentName,
+          agentUrlKey: entry.agentUrlKey,
+          relativePath: entry.relativePath,
+          backlinkCount: 0,
+        });
+      }
+    }
+
+    // Build edges from backlinks + tally backlinkCount per target node
+    const rawEdges: FileEdge[] = [];
+    const edgeKeySet = new Set<string>();
+
+    for (const [targetFilename, backlinkEntries] of backlinks) {
+      const targetFiles = index.get(targetFilename) ?? [];
+      for (const bl of backlinkEntries) {
+        const sourceId = `file:${bl.sourceAgentUrlKey}/${bl.sourceRelativePath}`;
+        if (!nodesMap.has(sourceId)) continue;
+
+        for (const targetFile of targetFiles) {
+          const targetId = `file:${targetFile.agentUrlKey}/${targetFile.relativePath}`;
+          if (!nodesMap.has(targetId)) continue;
+          if (sourceId === targetId) continue;
+
+          const edgeKey = `${sourceId}→${targetId}`;
+          if (edgeKeySet.has(edgeKey)) continue;
+          edgeKeySet.add(edgeKey);
+
+          rawEdges.push({
+            id: `e-${rawEdges.length}`,
+            source: sourceId,
+            target: targetId,
+            edgeType: "wikilink",
+          });
+
+          // Increment incoming link count on target
+          const targetNode = nodesMap.get(targetId);
+          if (targetNode) targetNode.backlinkCount++;
+        }
+      }
+    }
+
+    // Apply minLinks filter — keep only nodes with enough total connections
+    let nodes = [...nodesMap.values()];
+    let edges = rawEdges;
+
+    if (minLinks > 0) {
+      const connCount = new Map<string, number>();
+      for (const e of edges) {
+        connCount.set(e.source, (connCount.get(e.source) ?? 0) + 1);
+        connCount.set(e.target, (connCount.get(e.target) ?? 0) + 1);
+      }
+      const includedIds = new Set(
+        nodes.filter((n) => (connCount.get(n.id) ?? 0) >= minLinks).map((n) => n.id),
+      );
+      nodes = nodes.filter((n) => includedIds.has(n.id));
+      edges = edges.filter((e) => includedIds.has(e.source) && includedIds.has(e.target));
+    }
+
+    res.json({ nodes, edges });
+  });
+
+  /**
    * POST /companies/:companyId/file-index/invalidate
    * Force-invalidate the index for a company (useful after bulk file operations).
    */

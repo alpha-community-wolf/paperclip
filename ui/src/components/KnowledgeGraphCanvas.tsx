@@ -18,7 +18,7 @@ import { drag as d3Drag } from "d3-drag";
 // Types
 // ---------------------------------------------------------------------------
 
-export type GraphNodeType = "agent" | "project" | "category" | "topic" | "memory";
+export type GraphNodeType = "agent" | "project" | "category" | "topic" | "memory" | "file";
 
 export interface GraphNode extends SimulationNodeDatum {
   id: string;
@@ -28,6 +28,8 @@ export interface GraphNode extends SimulationNodeDatum {
   weight: number;
   /** 0–1, used for memory nodes */
   confidence?: number;
+  /** Per-node color override (used by file graph for agent-based coloring) */
+  color?: string;
   /** extra payload shown in the detail panel */
   meta?: Record<string, unknown>;
 }
@@ -47,10 +49,20 @@ const NODE_COLORS: Record<GraphNodeType, { fill: string; glow: string; stroke: s
   category: { fill: "#60a5fa", glow: "#60a5fa80", stroke: "#93c5fd" },  // blue-400
   topic:    { fill: "#fb923c", glow: "#fb923c80", stroke: "#fdba74" },  // orange-400
   memory:   { fill: "#94a3b8", glow: "#94a3b840", stroke: "#cbd5e1" },  // slate-400
+  file:     { fill: "#a78bfa", glow: "#a78bfa80", stroke: "#c4b5fd" },  // violet-400 (default; overridden per-agent)
 };
+
+/** Resolve the display colors for a node, respecting per-node `color` overrides. */
+function nodeColors(d: GraphNode): { fill: string; glow: string; stroke: string } {
+  if (d.color) {
+    return { fill: d.color, glow: d.color + "80", stroke: d.color + "cc" };
+  }
+  return NODE_COLORS[d.type] ?? { fill: "#94a3b8", glow: "#94a3b840", stroke: "#cbd5e1" };
+}
 
 function nodeRadius(n: GraphNode): number {
   if (n.type === "memory") return 3 + Math.min(n.weight, 6);
+  if (n.type === "file") return 4 + Math.min(n.weight * 2.5, 18);
   return 8 + Math.min(n.weight * 1.5, 20);
 }
 
@@ -166,7 +178,7 @@ export function KnowledgeGraphCanvas({
     nodeG
       .append("circle")
       .attr("r", (d) => nodeRadius(d) + 4)
-      .attr("fill", (d) => NODE_COLORS[d.type].glow)
+      .attr("fill", (d) => nodeColors(d).glow)
       .attr("filter", "url(#glow)")
       .attr("opacity", 0.6);
 
@@ -175,13 +187,13 @@ export function KnowledgeGraphCanvas({
       .append("circle")
       .attr("class", "node-main")
       .attr("r", (d) => nodeRadius(d))
-      .attr("fill", (d) => NODE_COLORS[d.type].fill)
-      .attr("stroke", (d) => NODE_COLORS[d.type].stroke)
+      .attr("fill", (d) => nodeColors(d).fill)
+      .attr("stroke", (d) => nodeColors(d).stroke)
       .attr("stroke-width", 1.5);
 
-    // Label (skip for memory nodes to reduce clutter)
+    // Labels: skip memory nodes; skip file nodes with no connections (weight=0)
     nodeG
-      .filter((d) => d.type !== "memory")
+      .filter((d) => d.type !== "memory" && !(d.type === "file" && d.weight === 0))
       .append("text")
       .text((d) => d.label)
       .attr("dy", (d) => nodeRadius(d) + 14)
@@ -277,7 +289,7 @@ export function KnowledgeGraphCanvas({
 
       el.select("circle.node-main")
         .attr("stroke-width", isSelected ? 3 : isMatch ? 2.5 : 1.5)
-        .attr("stroke", isSelected ? "#facc15" : isMatch ? "#fbbf24" : NODE_COLORS[d.type].stroke);
+        .attr("stroke", isSelected ? "#facc15" : isMatch ? "#fbbf24" : nodeColors(d).stroke);
 
       el.attr("opacity", dimmed ? 0.2 : 1);
     });
