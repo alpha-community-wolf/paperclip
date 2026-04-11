@@ -232,17 +232,23 @@ export function workflowTemplateService(db: Db) {
       ? `${template.name} (${varSummary})`
       : template.name;
 
-    // Create root issue
+    // Determine root issue assignee — prefer explicit, fall back to actor
+    const rootAssigneeAgentId = data.assigneeAgentId ?? actor?.agentId ?? null;
+    const rootAssigneeUserId = !rootAssigneeAgentId ? (actor?.userId ?? null) : null;
+    const hasAssignee = !!rootAssigneeAgentId || !!rootAssigneeUserId;
+
+    // Create root issue — only in_progress if there's an assignee
     const rootIssue = await issueSvc.create(template.companyId, {
       title: rootTitle.slice(0, 500),
       description: template.description ?? `Workflow: ${template.name}`,
       type: "task",
-      status: "in_progress",
+      status: hasAssignee ? "in_progress" : "todo",
       priority: "medium",
       parentId: null,
       projectId: data.projectId ?? null,
       goalId: data.goalId ?? null,
-      assigneeAgentId: data.assigneeAgentId ?? actor?.agentId ?? null,
+      assigneeAgentId: rootAssigneeAgentId,
+      assigneeUserId: rootAssigneeUserId,
       metadata: {
         workflowTemplateId: template.id,
         workflowTemplateVersion: template.version,
