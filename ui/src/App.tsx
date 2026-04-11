@@ -330,6 +330,8 @@ export function App() {
           <Route path="commands" element={<UnprefixedBoardRedirect />} />
           <Route path="webhooks" element={<UnprefixedBoardRedirect />} />
           <Route path="system-chores" element={<UnprefixedBoardRedirect />} />
+          <Route path="workflow-templates" element={<UnprefixedBoardRedirect />} />
+          <Route path="workflow-templates/:templateId" element={<UnprefixedBoardRedirect />} />
           <Route path=":companyPrefix" element={<Layout />}>
             {boardRoutes()}
           </Route>
