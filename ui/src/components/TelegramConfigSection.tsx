@@ -321,8 +321,36 @@ export function TelegramConfigSection({ agentId, companyId }: TelegramConfigSect
               </Button>
             </div>
             {config.miniAppEnabled && (
-              <div className="mt-1.5 text-[10px] text-muted-foreground/60 font-mono bg-muted/30 rounded px-2 py-1">
-                URL: {window.location.origin}/mini-app
+              <div className="mt-2 space-y-1.5">
+                <label className="text-[10px] text-muted-foreground/60">
+                  Mini App URL (leave empty for default, or enter a tunnel URL like ngrok)
+                </label>
+                <div className="flex gap-1.5">
+                  <input
+                    type="url"
+                    className={cn(inputClass, "text-xs")}
+                    placeholder={`${window.location.origin}/mini-app`}
+                    defaultValue={config.miniAppUrl ?? ""}
+                    onBlur={(e) => {
+                      const value = e.target.value.trim() || null;
+                      if (value !== (config.miniAppUrl ?? null)) {
+                        toggleMiniApp.mutate(true, {
+                          onSuccess: () => {
+                            // Save URL separately since toggleMiniApp only sends miniAppEnabled
+                          },
+                        });
+                        api.patch(`/agents/${agentId}/telegram?companyId=${companyId}`, {
+                          miniAppUrl: value,
+                        }).then(() => {
+                          queryClient.invalidateQueries({ queryKey: queryKeys.telegram(agentId) });
+                        });
+                      }
+                    }}
+                  />
+                </div>
+                <p className="text-[10px] text-muted-foreground/40">
+                  Active: {config.miniAppUrl || `${window.location.origin}/mini-app`}
+                </p>
               </div>
             )}
           </div>

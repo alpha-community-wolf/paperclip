@@ -16,6 +16,7 @@ export const agentTelegramConfigs = pgTable(
     requireMention: boolean("require_mention").notNull().default(true),
     mentionPatterns: jsonb("mention_patterns").$type<string[]>().notNull().default([]),
     miniAppEnabled: boolean("mini_app_enabled").notNull().default(false),
+    miniAppUrl: text("mini_app_url"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

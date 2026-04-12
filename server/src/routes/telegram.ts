@@ -77,6 +77,7 @@ export function telegramRoutes(db: Db) {
         requireMention: req.body.requireMention,
         mentionPatterns: req.body.mentionPatterns,
         miniAppEnabled: req.body.miniAppEnabled,
+        miniAppUrl: req.body.miniAppUrl,
       });
 
       if (!config) {

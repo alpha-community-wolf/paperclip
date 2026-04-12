@@ -16,6 +16,7 @@ export const updateTelegramConfigSchema = z.object({
   requireMention: z.boolean().optional(),
   mentionPatterns: z.array(z.string().trim().min(1)).optional(),
   miniAppEnabled: z.boolean().optional(),
+  miniAppUrl: z.string().url().optional().nullable(),
 });
 
 export const telegramMediaTypeSchema = z.enum(["photo", "document"]);
