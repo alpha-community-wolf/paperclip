@@ -1,18 +1,26 @@
 import type { Db } from "@paperclipai/db";
-import { companies, heartbeatRuns, systemChoreConfigs } from "@paperclipai/db";
+import { agents, companies, heartbeatRuns, systemChoreConfigs } from "@paperclipai/db";
 import { and, eq, isNull, lte, or, sql } from "drizzle-orm";
-import { CronExpressionParser } from "cron-parser";
 import { logger } from "../middleware/logger.js";
 import { logActivity } from "./activity-log.js";
 import { getAllSystemChoreTypes, getSystemChoreType } from "../system-chores/registry.js";
 import { computeNextCronTrigger } from "./task-cron-schedules.js";
+import { issueService } from "./issues.js";
 
 const MAX_CONSECUTIVE_FAILURES = 5;
 
+/** Apply simple template variables to a string. */
+function applyTemplateVars(text: string, vars: Record<string, string>): string {
+  return text.replace(/\{\{(\w+)\}\}/g, (match, key) => vars[key] ?? match);
+}
+
 export function systemChoreRunnerService(db: Db) {
+  const issueSvc = issueService(db);
+
   /**
    * Seed system chore config rows for all companies.
    * Called on startup — ensures every registered chore type has a config row per company.
+   * Skips custom chores — they're user-created.
    */
   async function seedAllCompanies(): Promise<{ seeded: number }> {
     const choreTypes = getAllSystemChoreTypes();
@@ -70,6 +78,7 @@ export function systemChoreRunnerService(db: Db) {
       .where(
         and(
           eq(systemChoreConfigs.enabled, true),
+          isNull(systemChoreConfigs.deletedAt),
           or(
             lte(systemChoreConfigs.nextRunAt, now),
             isNull(systemChoreConfigs.nextRunAt),
@@ -100,15 +109,20 @@ export function systemChoreRunnerService(db: Db) {
 
   /**
    * Execute a single system chore for a company.
+   * Dispatches to built-in execute() or custom chore issue creation.
    */
   async function executeChore(
     config: typeof systemChoreConfigs.$inferSelect,
     now = new Date(),
   ): Promise<void> {
-    const choreType = getSystemChoreType(config.choreKey);
-    if (!choreType) {
-      logger.warn({ choreKey: config.choreKey }, "unknown system chore key — skipping");
-      return;
+    const isCustom = config.choreType === "custom";
+
+    if (!isCustom) {
+      const choreType = getSystemChoreType(config.choreKey);
+      if (!choreType) {
+        logger.warn({ choreKey: config.choreKey }, "unknown system chore key — skipping");
+        return;
+      }
     }
 
     // Create a run record (raw SQL because agent_id is NULL for system chores
@@ -120,13 +134,20 @@ export function systemChoreRunnerService(db: Db) {
     `)) as unknown as { id: string }[];
 
     try {
-      const result = await choreType.execute({
-        companyId: config.companyId,
-        choreKey: config.choreKey,
-        config: (config.config as Record<string, unknown>) ?? {},
-        db,
-        runId: run.id,
-      });
+      let result: { summary: string; details?: Record<string, unknown> };
+
+      if (isCustom) {
+        result = await executeCustomChore(config, now);
+      } else {
+        const choreType = getSystemChoreType(config.choreKey)!;
+        result = await choreType.execute({
+          companyId: config.companyId,
+          choreKey: config.choreKey,
+          config: (config.config as Record<string, unknown>) ?? {},
+          db,
+          runId: run.id,
+        });
+      }
 
       // Mark run completed
       const finishedAt = new Date();
@@ -141,8 +162,8 @@ export function systemChoreRunnerService(db: Db) {
         .where(eq(heartbeatRuns.id, run.id));
 
       // Update config: reset failures, set next run
-      const expression = config.expression ?? choreType.defaultExpression;
-      const timezone = config.timezone ?? choreType.defaultTimezone;
+      const expression = config.expression ?? (isCustom ? "0 9 * * *" : getSystemChoreType(config.choreKey)!.defaultExpression);
+      const timezone = config.timezone ?? (isCustom ? "UTC" : getSystemChoreType(config.choreKey)!.defaultTimezone);
       const nextRunAt = computeNextCronTrigger({ expression, timezone, from: now });
 
       await db
@@ -185,8 +206,8 @@ export function systemChoreRunnerService(db: Db) {
       // Update config: increment failures, set next run
       const newFailures = (config.consecutiveFailures ?? 0) + 1;
       const shouldDisable = newFailures >= MAX_CONSECUTIVE_FAILURES;
-      const expression = config.expression ?? choreType.defaultExpression;
-      const timezone = config.timezone ?? choreType.defaultTimezone;
+      const expression = config.expression ?? (isCustom ? "0 9 * * *" : getSystemChoreType(config.choreKey)!.defaultExpression);
+      const timezone = config.timezone ?? (isCustom ? "UTC" : getSystemChoreType(config.choreKey)!.defaultTimezone);
       const nextRunAt = computeNextCronTrigger({ expression, timezone, from: now });
 
       await db
@@ -223,9 +244,101 @@ export function systemChoreRunnerService(db: Db) {
   }
 
   /**
+   * Execute a custom (agent-delegated) chore by creating an issue from its template.
+   */
+  async function executeCustomChore(
+    config: typeof systemChoreConfigs.$inferSelect,
+    now: Date,
+  ): Promise<{ summary: string; details?: Record<string, unknown> }> {
+    const choreConfig = config.config as Record<string, unknown>;
+    const agentId = choreConfig.agentId as string;
+    const issueTemplate = choreConfig.issueTemplate as {
+      title: string;
+      description?: string;
+      priority?: string;
+      projectId?: string;
+    };
+
+    if (!agentId || !issueTemplate?.title) {
+      throw new Error("Custom chore missing agentId or issueTemplate.title in config");
+    }
+
+    // Resolve agent name for the summary
+    const [agent] = await db
+      .select({ name: agents.name })
+      .from(agents)
+      .where(eq(agents.id, agentId))
+      .limit(1);
+
+    const templateVars: Record<string, string> = {
+      date: now.toISOString().split("T")[0],
+      datetime: now.toISOString(),
+      chore_name: config.displayName ?? config.choreKey,
+    };
+
+    const title = applyTemplateVars(issueTemplate.title, templateVars);
+    const description = issueTemplate.description
+      ? applyTemplateVars(issueTemplate.description, templateVars)
+      : undefined;
+
+    const issue = await issueSvc.create(config.companyId, {
+      title,
+      description,
+      status: "todo",
+      priority: (issueTemplate.priority as "low" | "medium" | "high" | "critical") ?? "medium",
+      assigneeAgentId: agentId,
+      projectId: issueTemplate.projectId ?? null,
+    });
+
+    const summary = `Created issue ${issue.identifier} assigned to ${agent?.name ?? "agent"}`;
+    return {
+      summary,
+      details: {
+        issueId: issue.id,
+        issueIdentifier: issue.identifier,
+        agentId,
+        agentName: agent?.name ?? null,
+      },
+    };
+  }
+
+  /**
    * Manually trigger a system chore for a specific company.
    */
   async function triggerChore(companyId: string, choreKey: string): Promise<{ runId: string }> {
+    // Check if it's a custom chore first
+    const [customConfig] = await db
+      .select()
+      .from(systemChoreConfigs)
+      .where(
+        and(
+          eq(systemChoreConfigs.companyId, companyId),
+          eq(systemChoreConfigs.choreKey, choreKey),
+          eq(systemChoreConfigs.choreType, "custom"),
+          isNull(systemChoreConfigs.deletedAt),
+        ),
+      )
+      .limit(1);
+
+    if (customConfig) {
+      await executeChore(customConfig);
+
+      const [latestRun] = await db
+        .select({ id: heartbeatRuns.id })
+        .from(heartbeatRuns)
+        .where(
+          and(
+            eq(heartbeatRuns.companyId, companyId),
+            eq(heartbeatRuns.systemChoreKey, choreKey),
+          ),
+        )
+        .orderBy(heartbeatRuns.createdAt)
+        .limit(1);
+
+      return { runId: latestRun?.id ?? "unknown" };
+    }
+
+    // Built-in chore
     const choreType = getSystemChoreType(choreKey);
     if (!choreType) {
       throw new Error(`Unknown system chore key: ${choreKey}`);

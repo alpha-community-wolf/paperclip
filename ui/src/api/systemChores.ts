@@ -17,6 +17,7 @@ export interface SystemChoreType {
   key: string;
   name: string;
   description: string;
+  choreType: "built_in" | "custom";
   defaults: {
     expression: string;
     timezone: string;
@@ -42,17 +43,46 @@ export interface SystemChoreConfigUpdate {
   timezone?: string;
   model?: string | null;
   config?: Record<string, unknown>;
+  name?: string;
+  description?: string;
+  agentId?: string;
+  issueTemplate?: {
+    title: string;
+    description?: string;
+    priority?: "low" | "medium" | "high" | "critical";
+    projectId?: string | null;
+  };
+}
+
+export interface CreateCustomChoreInput {
+  name: string;
+  description?: string;
+  expression: string;
+  timezone?: string;
+  agentId: string;
+  issueTemplate: {
+    title: string;
+    description?: string;
+    priority?: "low" | "medium" | "high" | "critical";
+    projectId?: string | null;
+  };
 }
 
 export const systemChoresApi = {
   list: (companyId: string) =>
     api.get<SystemChoreType[]>(`/companies/${encodeURIComponent(companyId)}/system-chores`),
 
+  createCustom: (companyId: string, input: CreateCustomChoreInput) =>
+    api.post(`/companies/${encodeURIComponent(companyId)}/system-chores`, input),
+
   updateConfig: (companyId: string, choreKey: string, input: SystemChoreConfigUpdate) =>
     api.patch<SystemChoreConfig>(
       `/companies/${encodeURIComponent(companyId)}/system-chores/${encodeURIComponent(choreKey)}`,
       input,
     ),
+
+  deleteCustom: (companyId: string, choreKey: string) =>
+    api.delete(`/companies/${encodeURIComponent(companyId)}/system-chores/${encodeURIComponent(choreKey)}`),
 
   trigger: (companyId: string, choreKey: string) =>
     api.post<{ runId: string }>(
