@@ -199,9 +199,17 @@ Submitted CTO hire request and linked it for board review.
 - The work involves 3+ files, a new feature, a database migration, or architectural changes
 - You are unsure about the right approach and would benefit from alignment before coding
 
-### Plan Issue Type
+### Issue Types
 
-Issues have a `type` field — either `"task"` (default) or `"plan"`. When an issue is a plan, Paperclip injects **Plan Mode Instructions** into the agent's heartbeat context and enables the **Build button** in the UI after the plan is complete.
+Issues have a `type` field with three valid values:
+
+| Type | Default | Purpose |
+|------|---------|---------|
+| `task` | Yes | Standard work item — code, fix, chore, any actionable work |
+| `plan` | No | Structured planning → execution lifecycle with a separate Build phase |
+| `explore` | No | Open-ended investigation, research, or feasibility study — no deliverable expected, just findings |
+
+**When to use `type: "explore"`:** Use explore-type issues for research spikes, feasibility studies, architecture exploration, or any work where the outcome is knowledge/findings rather than a deliverable. Examples: "Explore: Telegram Mini App feasibility", "Explore: evaluate vector search options".
 
 **When to use `type: "plan"`:** Use plan-type issues when you want a structured planning → execution lifecycle with a separate execution phase. This is the recommended approach for non-trivial plans that will be handed off for execution.
 
