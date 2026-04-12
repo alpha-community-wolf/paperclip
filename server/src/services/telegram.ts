@@ -299,6 +299,7 @@ export function telegramService(db: Db) {
     allowedUserIds?: string[];
     requireMention?: boolean;
     mentionPatterns?: string[];
+    miniAppEnabled?: boolean;
   }): Promise<AgentTelegramConfig | null> {
     const existing = await getConfig(input.agentId);
     if (!existing) return null;
@@ -310,6 +311,7 @@ export function telegramService(db: Db) {
     if (input.allowedUserIds !== undefined) patch.allowedUserIds = input.allowedUserIds;
     if (input.requireMention !== undefined) patch.requireMention = input.requireMention;
     if (input.mentionPatterns !== undefined) patch.mentionPatterns = input.mentionPatterns;
+    if (input.miniAppEnabled !== undefined) patch.miniAppEnabled = input.miniAppEnabled;
 
     const [updated] = await db
       .update(agentTelegramConfigs)

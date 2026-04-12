@@ -96,6 +96,14 @@ export function TelegramConfigSection({ agentId, companyId }: TelegramConfigSect
     },
   });
 
+  const toggleMiniApp = useMutation({
+    mutationFn: (miniAppEnabled: boolean) =>
+      api.patch<TelegramResponse>(`/agents/${agentId}/telegram?companyId=${companyId}`, { miniAppEnabled }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.telegram(agentId) });
+    },
+  });
+
   const deleteMutation = useMutation({
     mutationFn: () => api.delete(`/agents/${agentId}/telegram?companyId=${companyId}`),
     onSuccess: () => {
@@ -287,6 +295,37 @@ export function TelegramConfigSection({ agentId, companyId }: TelegramConfigSect
               )}
             </div>
           )}
+
+          {/* Mini App toggle */}
+          <div className="border-t border-border pt-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-xs text-muted-foreground">Mini App</span>
+                <p className="text-[10px] text-muted-foreground/60 mt-0.5">
+                  Menu button in Telegram for quick issue management
+                </p>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs"
+                onClick={() => toggleMiniApp.mutate(!config.miniAppEnabled)}
+                disabled={toggleMiniApp.isPending}
+              >
+                {config.miniAppEnabled ? (
+                  <ToggleRight className="h-3.5 w-3.5 mr-1 text-emerald-500" />
+                ) : (
+                  <ToggleLeft className="h-3.5 w-3.5 mr-1" />
+                )}
+                {config.miniAppEnabled ? "On" : "Off"}
+              </Button>
+            </div>
+            {config.miniAppEnabled && (
+              <div className="mt-1.5 text-[10px] text-muted-foreground/60 font-mono bg-muted/30 rounded px-2 py-1">
+                URL: {window.location.origin}/mini-app
+              </div>
+            )}
+          </div>
 
           <div className="pt-1">
             <Button

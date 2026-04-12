@@ -180,6 +180,19 @@ export async function createApp(
     const uiDist = candidates.find((p) => fs.existsSync(path.join(p, "index.html")));
     if (uiDist) {
       const indexHtml = applyUiBranding(fs.readFileSync(path.join(uiDist, "index.html"), "utf-8"));
+      // Serve Mini App SPA from /mini-app path
+      const miniAppHtmlPath = path.join(uiDist, "mini-app.html");
+      const miniAppHtml = fs.existsSync(miniAppHtmlPath)
+        ? fs.readFileSync(miniAppHtmlPath, "utf-8")
+        : null;
+      if (miniAppHtml) {
+        app.get("/mini-app", (_req, res) => {
+          res.status(200).set("Content-Type", "text/html").end(miniAppHtml);
+        });
+        app.get("/mini-app/*", (_req, res) => {
+          res.status(200).set("Content-Type", "text/html").end(miniAppHtml);
+        });
+      }
       app.use(express.static(uiDist));
       app.get(/.*/, (_req, res) => {
         res.status(200).set("Content-Type", "text/html").end(indexHtml);
@@ -208,6 +221,23 @@ export async function createApp(
     });
 
     app.use(vite.middlewares);
+
+    // Serve Mini App entry in dev mode
+    app.get("/mini-app", async (req, res, next) => {
+      try {
+        const templatePath = path.resolve(uiRoot, "mini-app.html");
+        if (fs.existsSync(templatePath)) {
+          const template = fs.readFileSync(templatePath, "utf-8");
+          const html = await vite.transformIndexHtml(req.originalUrl, template);
+          res.status(200).set({ "Content-Type": "text/html" }).end(html);
+        } else {
+          next();
+        }
+      } catch (err) {
+        next(err);
+      }
+    });
+
     app.get(/.*/, async (req, res, next) => {
       try {
         const templatePath = path.resolve(uiRoot, "index.html");
