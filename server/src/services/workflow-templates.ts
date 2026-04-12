@@ -9,20 +9,12 @@ import { unprocessable } from "../errors.js";
 
 interface StepDef {
   key: string;
-  title: string;
   type: "explore" | "plan" | "task";
   description?: string;
   assigneeAgentId?: string;
   priority?: "critical" | "high" | "medium" | "low";
   dependsOn?: string[];
   metadata?: Record<string, unknown>;
-}
-
-interface VariableDecl {
-  type: "string" | "uuid";
-  required?: boolean;
-  default?: string;
-  description?: string;
 }
 
 /**
@@ -86,27 +78,6 @@ function validateStepKeys(steps: StepDef[]) {
   }
 }
 
-/**
- * Interpolate {{ variable }} placeholders in a string.
- */
-function interpolate(template: string, bindings: Record<string, string>): string {
-  return template.replace(/\{\{\s*(\w+)\s*\}\}/g, (_match, varName) => {
-    return bindings[varName] ?? _match;
-  });
-}
-
-/**
- * Interpolate all string fields in a step definition.
- */
-function interpolateStep(step: StepDef, bindings: Record<string, string>): StepDef {
-  return {
-    ...step,
-    title: interpolate(step.title, bindings),
-    description: step.description ? interpolate(step.description, bindings) : undefined,
-    assigneeAgentId: step.assigneeAgentId ? interpolate(step.assigneeAgentId, bindings) : undefined,
-  };
-}
-
 export function workflowTemplateService(db: Db) {
   const issueSvc = issueService(db);
   const linkSvc = issueLinkService(db);
@@ -148,7 +119,6 @@ export function workflowTemplateService(db: Db) {
         name: data.name.trim(),
         description: data.description?.trim() ?? null,
         steps: data.steps,
-        variables: data.variables ?? {},
         createdByAgentId: actor?.agentId ?? null,
         createdByUserId: actor?.userId ?? null,
       })
@@ -169,15 +139,6 @@ export function workflowTemplateService(db: Db) {
     if (data.steps !== undefined) {
       patch.steps = data.steps;
       // Bump version when steps change
-      patch.version = db
-        .select({ v: workflowTemplates.version })
-        .from(workflowTemplates)
-        .where(eq(workflowTemplates.id, id));
-    }
-    if (data.variables !== undefined) patch.variables = data.variables;
-
-    // For version bump, use raw SQL
-    if (data.steps !== undefined) {
       const existing = await getById(id);
       if (!existing) return null;
       patch.version = existing.version + 1;
@@ -210,24 +171,12 @@ export function workflowTemplateService(db: Db) {
     if (!template.isActive) throw unprocessable("Workflow template is archived");
 
     const steps = template.steps as StepDef[];
-    const variableDecls = (template.variables ?? {}) as Record<string, VariableDecl>;
-    const bindings = data.variables ?? {};
-
-    // Validate required variables
-    for (const [name, decl] of Object.entries(variableDecls)) {
-      if (decl.required !== false && !bindings[name] && !decl.default) {
-        throw unprocessable(`Required variable "${name}" is missing`);
-      }
-      if (!bindings[name] && decl.default) {
-        bindings[name] = decl.default;
-      }
-    }
 
     // Sort steps in topological order
     const sortedSteps = topologicalSort(steps);
 
     // B1: When rootIssueId is provided, use an existing issue as root
-    let rootIssue: { id: string; identifier: string };
+    let rootIssue: { id: string; identifier: string; title: string };
 
     if (data.rootIssueId) {
       const existing = await issueSvc.getById(data.rootIssueId);
@@ -249,19 +198,13 @@ export function workflowTemplateService(db: Db) {
           ...existingMeta,
           workflowTemplateId: template.id,
           workflowTemplateVersion: template.version,
-          workflowVariableBindings: bindings,
         },
       });
 
-      rootIssue = { id: existing.id, identifier: existing.identifier! };
+      rootIssue = { id: existing.id, identifier: existing.identifier!, title: existing.title };
     } else {
       // Original behavior: create a new root issue from template
-      const varSummary = Object.entries(bindings)
-        .map(([k, v]) => `${k}=${v}`)
-        .join(", ");
-      const rootTitle = varSummary
-        ? `${template.name} (${varSummary})`
-        : template.name;
+      const rootTitle = template.name;
 
       const rootAssigneeAgentId = data.assigneeAgentId ?? actor?.agentId ?? null;
       const rootAssigneeUserId = !rootAssigneeAgentId ? (actor?.userId ?? null) : null;
@@ -281,32 +224,39 @@ export function workflowTemplateService(db: Db) {
         metadata: {
           workflowTemplateId: template.id,
           workflowTemplateVersion: template.version,
-          workflowVariableBindings: bindings,
         },
       });
 
-      rootIssue = { id: created.id, identifier: created.identifier! };
+      rootIssue = { id: created.id, identifier: created.identifier!, title: rootTitle };
     }
 
-    // Create step issues
+    // Create step issues with auto-generated titles
     const stepIssues: Array<{ key: string; issueId: string; status: string }> = [];
     const keyToIssueId = new Map<string, string>();
 
-    for (const step of sortedSteps) {
-      const interpolated = interpolateStep(step, bindings);
+    for (let i = 0; i < sortedSteps.length; i++) {
+      const step = sortedSteps[i];
       const hasDependencies = step.dependsOn && step.dependsOn.length > 0;
       const status = hasDependencies ? "backlog" : "todo";
 
+      // Auto-generate step title: "{RootIssueTitle}: {StepType} (Step {N})"
+      const stepTitle = `${rootIssue.title}: ${step.type.charAt(0).toUpperCase() + step.type.slice(1)} (Step ${i + 1})`;
+
+      // Pass model override from step metadata to assigneeAdapterOverrides if present
+      const stepMetadata = step.metadata as Record<string, unknown> | undefined;
+      const modelOverride = stepMetadata?.modelOverride as Record<string, unknown> | undefined;
+
       const stepIssue = await issueSvc.create(template.companyId, {
-        title: interpolated.title,
-        description: interpolated.description ?? null,
-        type: interpolated.type,
+        title: stepTitle,
+        description: step.description ?? null,
+        type: step.type,
         status,
-        priority: interpolated.priority ?? "medium",
+        priority: step.priority ?? "medium",
         parentId: rootIssue.id,
         projectId: data.projectId ?? null,
         goalId: data.goalId ?? null,
-        assigneeAgentId: interpolated.assigneeAgentId ?? data.assigneeAgentId ?? null,
+        assigneeAgentId: step.assigneeAgentId ?? data.assigneeAgentId ?? null,
+        ...(modelOverride ? { assigneeAdapterOverrides: modelOverride } : {}),
         metadata: {
           workflowTemplateId: template.id,
           workflowStepKey: step.key,
@@ -340,8 +290,7 @@ export function workflowTemplateService(db: Db) {
       const stepIssueId = keyToIssueId.get(step.key);
       if (!stepIssueId) continue;
 
-      const interpolated = interpolateStep(step, bindings);
-      const assigneeAgentId = interpolated.assigneeAgentId ?? data.assigneeAgentId ?? null;
+      const assigneeAgentId = step.assigneeAgentId ?? data.assigneeAgentId ?? null;
       if (!assigneeAgentId) continue;
 
       heartbeat
@@ -375,45 +324,32 @@ export function workflowTemplateService(db: Db) {
     const existing = await list(companyId, true);
     const existingNames = new Set(existing.map((t) => t.name));
 
-    const builtInTemplates: Array<{ name: string; description: string; steps: StepDef[]; variables: Record<string, VariableDecl> }> = [
+    const builtInTemplates: Array<{ name: string; description: string; steps: StepDef[] }> = [
       {
         name: "Explore → Plan → Build",
         description: "Standard research-to-implementation pipeline: explore a topic, create an implementation plan, then execute it.",
         steps: [
-          { key: "explore", title: "Explore: {{ topic }}", type: "explore", assigneeAgentId: "{{ agentId }}", priority: "medium" },
-          { key: "plan", title: "Plan: {{ topic }}", type: "plan", assigneeAgentId: "{{ agentId }}", priority: "medium", dependsOn: ["explore"] },
-          { key: "build", title: "Build: {{ topic }}", type: "task", assigneeAgentId: "{{ agentId }}", priority: "medium", dependsOn: ["plan"] },
+          { key: "explore", type: "explore", priority: "medium" },
+          { key: "plan", type: "plan", priority: "medium", dependsOn: ["explore"] },
+          { key: "build", type: "task", priority: "medium", dependsOn: ["plan"] },
         ],
-        variables: {
-          topic: { type: "string", required: true, description: "The topic or feature to explore, plan, and build" },
-          agentId: { type: "uuid", required: false, description: "Agent to assign all steps to" },
-        },
       },
       {
         name: "Explore → Report",
         description: "Research-only pipeline: explore a topic, then write up a findings report.",
         steps: [
-          { key: "explore", title: "Explore: {{ topic }}", type: "explore", assigneeAgentId: "{{ agentId }}", priority: "medium" },
-          { key: "report", title: "Report: {{ topic }}", type: "task", assigneeAgentId: "{{ agentId }}", priority: "medium", dependsOn: ["explore"], description: "Write up findings from the exploration into a clear report." },
+          { key: "explore", type: "explore", priority: "medium" },
+          { key: "report", type: "task", priority: "medium", dependsOn: ["explore"], description: "Write up findings from the exploration into a clear report." },
         ],
-        variables: {
-          topic: { type: "string", required: true, description: "The topic to research and report on" },
-          agentId: { type: "uuid", required: false, description: "Agent to assign all steps to" },
-        },
       },
       {
         name: "Plan → Build → Review",
         description: "Implementation with a review gate: create a plan, execute it, then review the work.",
         steps: [
-          { key: "plan", title: "Plan: {{ topic }}", type: "plan", assigneeAgentId: "{{ agentId }}", priority: "medium" },
-          { key: "build", title: "Build: {{ topic }}", type: "task", assigneeAgentId: "{{ agentId }}", priority: "medium", dependsOn: ["plan"] },
-          { key: "review", title: "Review: {{ topic }}", type: "task", assigneeAgentId: "{{ reviewerAgentId }}", priority: "medium", dependsOn: ["build"], description: "Review the implementation and verify it meets the plan requirements." },
+          { key: "plan", type: "plan", priority: "medium" },
+          { key: "build", type: "task", priority: "medium", dependsOn: ["plan"] },
+          { key: "review", type: "task", priority: "medium", dependsOn: ["build"], description: "Review the implementation and verify it meets the plan requirements." },
         ],
-        variables: {
-          topic: { type: "string", required: true, description: "The feature or task to plan, build, and review" },
-          agentId: { type: "uuid", required: false, description: "Agent to assign plan and build steps to" },
-          reviewerAgentId: { type: "uuid", required: false, description: "Agent to assign the review step to" },
-        },
       },
     ];
 
@@ -424,7 +360,6 @@ export function workflowTemplateService(db: Db) {
         name: tmpl.name,
         description: tmpl.description,
         steps: tmpl.steps,
-        variables: tmpl.variables as CreateWorkflowTemplate["variables"],
       });
       seeded++;
     }

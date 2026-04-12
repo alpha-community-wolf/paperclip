@@ -7,15 +7,6 @@ import { workflowTemplatesApi, type WorkflowTemplate, type RunWorkflowResult } f
 import { agentsApi } from "../api/agents";
 import { queryKeys } from "../lib/queryKeys";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -32,8 +23,8 @@ import {
   ChevronRight,
   Loader2,
   GitBranch,
-  Layers,
   Pencil,
+  Bot,
 } from "lucide-react";
 
 const TYPE_COLORS: Record<string, string> = {
@@ -50,12 +41,22 @@ function StepBadge({ type }: { type: string }) {
   );
 }
 
-function StepChain({ steps }: { steps: WorkflowTemplate["steps"] }) {
+function StepChain({ steps, agents }: { steps: WorkflowTemplate["steps"]; agents?: Array<{ id: string; name: string }> }) {
+  const agentMap = new Map(agents?.map((a) => [a.id, a.name]) ?? []);
+
   return (
     <div className="flex items-center gap-1 flex-wrap">
       {steps.map((step, i) => (
         <div key={step.key} className="flex items-center gap-1">
-          <StepBadge type={step.type} />
+          <div className="flex items-center gap-1">
+            <StepBadge type={step.type} />
+            {step.assigneeAgentId && agentMap.has(step.assigneeAgentId) && (
+              <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
+                <Bot className="h-2.5 w-2.5" />
+                {agentMap.get(step.assigneeAgentId)}
+              </span>
+            )}
+          </div>
           {i < steps.length - 1 && (
             <ChevronRight className="h-3 w-3 text-muted-foreground/40" />
           )}
@@ -76,8 +77,6 @@ function RunWorkflowDialog({
 }) {
   const navigate = useNavigate();
   const { selectedCompanyId } = useCompany();
-  const [bindings, setBindings] = useState<Record<string, string>>({});
-  const variables = template.variables ?? {};
 
   const { data: agents } = useQuery({
     queryKey: queryKeys.agents.list(selectedCompanyId!),
@@ -85,26 +84,13 @@ function RunWorkflowDialog({
     enabled: !!selectedCompanyId && open,
   });
 
-  useEffect(() => {
-    if (open) {
-      const defaults: Record<string, string> = {};
-      for (const [name, decl] of Object.entries(variables)) {
-        if (decl.default) defaults[name] = decl.default;
-      }
-      setBindings(defaults);
-    }
-  }, [open]);
-
   const runMutation = useMutation({
-    mutationFn: () => workflowTemplatesApi.run(template.id, { variables: bindings }),
+    mutationFn: () => workflowTemplatesApi.run(template.id, {}),
     onSuccess: (result: RunWorkflowResult) => {
       onOpenChange(false);
       navigate(`/issues/${result.rootIssueIdentifier}`);
     },
   });
-
-  const requiredVars = Object.entries(variables).filter(([, d]) => d.required !== false);
-  const allRequiredFilled = requiredVars.every(([name]) => !!bindings[name]?.trim());
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -122,49 +108,28 @@ function RunWorkflowDialog({
         <div className="space-y-3 py-2">
           <div>
             <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Pipeline</div>
-            <StepChain steps={template.steps} />
+            <StepChain steps={template.steps} agents={agents} />
           </div>
 
-          {Object.keys(variables).length > 0 && (
-            <div className="space-y-3">
-              <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Variables</div>
-              {Object.entries(variables).map(([name, decl]) => (
-                <div key={name} className="space-y-1">
-                  <Label htmlFor={`var-${name}`} className="text-sm">
-                    {name}
-                    {decl.required !== false && <span className="text-destructive ml-0.5">*</span>}
-                  </Label>
-                  {decl.description && (
-                    <p className="text-xs text-muted-foreground">{decl.description}</p>
-                  )}
-                  {decl.type === "uuid" && agents ? (
-                    <Select
-                      value={bindings[name] ?? ""}
-                      onValueChange={(v) => setBindings((prev) => ({ ...prev, [name]: v }))}
-                    >
-                      <SelectTrigger className="h-9">
-                        <SelectValue placeholder="Select an agent" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {agents.map((a) => (
-                          <SelectItem key={a.id} value={a.id}>
-                            {a.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <Input
-                      id={`var-${name}`}
-                      placeholder={`Enter ${name}`}
-                      value={bindings[name] ?? ""}
-                      onChange={(e) => setBindings((prev) => ({ ...prev, [name]: e.target.value }))}
-                    />
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
+          <div className="space-y-1.5">
+            <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Steps</div>
+            {template.steps.map((step, i) => (
+              <div key={step.key} className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span className="font-mono w-4 text-right">{i + 1}.</span>
+                <StepBadge type={step.type} />
+                <span className="font-mono">{step.key}</span>
+                {step.assigneeAgentId && agents && (
+                  <span className="flex items-center gap-0.5">
+                    <Bot className="h-2.5 w-2.5" />
+                    {agents.find((a) => a.id === step.assigneeAgentId)?.name ?? "Unknown"}
+                  </span>
+                )}
+                {step.priority && step.priority !== "medium" && (
+                  <span className="text-[10px] uppercase">{step.priority}</span>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
 
         {runMutation.error && (
@@ -179,7 +144,7 @@ function RunWorkflowDialog({
           </Button>
           <Button
             onClick={() => runMutation.mutate()}
-            disabled={runMutation.isPending || !allRequiredFilled}
+            disabled={runMutation.isPending}
           >
             {runMutation.isPending ? (
               <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
@@ -196,11 +161,13 @@ function RunWorkflowDialog({
 
 function TemplateCard({
   template,
+  agents,
   onRun,
   onEdit,
   onArchive,
 }: {
   template: WorkflowTemplate;
+  agents?: Array<{ id: string; name: string }>;
   onRun: () => void;
   onEdit: () => void;
   onArchive: () => void;
@@ -233,19 +200,8 @@ function TemplateCard({
         </div>
 
         <div className="flex items-center gap-2 ml-6">
-          <StepChain steps={template.steps} />
+          <StepChain steps={template.steps} agents={agents} />
         </div>
-
-        {Object.keys(template.variables ?? {}).length > 0 && (
-          <div className="flex items-center gap-1.5 ml-6 text-xs text-muted-foreground">
-            <Layers className="h-3 w-3" />
-            {Object.keys(template.variables).length} variable{Object.keys(template.variables).length !== 1 ? "s" : ""}
-            <span className="text-muted-foreground/40">·</span>
-            {Object.entries(template.variables)
-              .map(([k]) => k)
-              .join(", ")}
-          </div>
-        )}
 
         <div className="flex items-center gap-2 ml-6 pt-1">
           <Button size="sm" variant="default" className="h-7 text-xs gap-1.5" onClick={onRun}>
@@ -292,6 +248,12 @@ export function WorkflowTemplates() {
     enabled: !!companyId,
   });
 
+  const { data: agents } = useQuery({
+    queryKey: queryKeys.agents.list(companyId),
+    queryFn: () => agentsApi.list(companyId),
+    enabled: !!companyId,
+  });
+
   if (!selectedCompanyId) {
     return (
       <div className="text-sm text-muted-foreground">
@@ -318,7 +280,7 @@ export function WorkflowTemplates() {
       </div>
 
       <p className="text-xs text-muted-foreground -mt-2">
-        Reusable multi-step agent pipelines. Define steps, variables, and dependencies, then run with one click.
+        Reusable multi-step agent pipelines. Define steps, assign agents, set dependencies, then run with one click.
       </p>
 
       {isLoading && (
@@ -340,6 +302,7 @@ export function WorkflowTemplates() {
             <TemplateCard
               key={tmpl.id}
               template={tmpl}
+              agents={agents}
               onRun={() => setRunTemplate(tmpl)}
               onEdit={() => navigate(`/workflow-templates/${tmpl.id}`)}
               onArchive={() => {}}

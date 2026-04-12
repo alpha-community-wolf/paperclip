@@ -6,7 +6,6 @@ export interface WorkflowTemplate {
   name: string;
   description: string | null;
   steps: WorkflowStep[];
-  variables: Record<string, VariableDeclaration>;
   version: number;
   isActive: boolean;
   createdByAgentId: string | null;
@@ -17,20 +16,12 @@ export interface WorkflowTemplate {
 
 export interface WorkflowStep {
   key: string;
-  title: string;
   type: "explore" | "plan" | "task";
   description?: string;
   assigneeAgentId?: string;
   priority?: "critical" | "high" | "medium" | "low";
   dependsOn?: string[];
   metadata?: Record<string, unknown>;
-}
-
-export interface VariableDeclaration {
-  type: "string" | "uuid";
-  required: boolean;
-  default?: string;
-  description?: string;
 }
 
 export interface RunWorkflowResult {
@@ -50,15 +41,15 @@ export const workflowTemplatesApi = {
   get: (id: string) =>
     api.get<WorkflowTemplate>(`/workflow-templates/${encodeURIComponent(id)}`),
 
-  create: (companyId: string, data: { name: string; description?: string | null; steps: WorkflowStep[]; variables?: Record<string, VariableDeclaration> }) =>
+  create: (companyId: string, data: { name: string; description?: string | null; steps: WorkflowStep[] }) =>
     api.post<WorkflowTemplate>(`/companies/${encodeURIComponent(companyId)}/workflow-templates`, data),
 
-  update: (id: string, data: Partial<{ name: string; description: string | null; steps: WorkflowStep[]; variables: Record<string, VariableDeclaration> }>) =>
+  update: (id: string, data: Partial<{ name: string; description: string | null; steps: WorkflowStep[] }>) =>
     api.patch<WorkflowTemplate>(`/workflow-templates/${encodeURIComponent(id)}`, data),
 
   archive: (id: string) =>
     api.delete<{ ok: boolean }>(`/workflow-templates/${encodeURIComponent(id)}`),
 
-  run: (id: string, data: { variables?: Record<string, string>; projectId?: string; goalId?: string; assigneeAgentId?: string; rootIssueId?: string }) =>
+  run: (id: string, data: { projectId?: string; goalId?: string; assigneeAgentId?: string; rootIssueId?: string }) =>
     api.post<RunWorkflowResult>(`/workflow-templates/${encodeURIComponent(id)}/run`, data),
 };
