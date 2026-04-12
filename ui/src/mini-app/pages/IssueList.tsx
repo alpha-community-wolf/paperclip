@@ -28,9 +28,7 @@ export function IssueList({ companyId, onIssueClick }: IssueListProps) {
   const { data, isLoading } = useQuery({
     queryKey: ["mini-app", "issues", companyId, statusFilter],
     queryFn: () =>
-      miniAppApi.get<{ issues: Issue[] }>(
-        `/companies/${companyId}/issues?status=${statusQuery}&limit=50`,
-      ),
+      miniAppApi.get<Issue[]>(`/companies/${companyId}/issues?status=${statusQuery}`),
   });
 
   return (
@@ -58,7 +56,7 @@ export function IssueList({ companyId, onIssueClick }: IssueListProps) {
 
       {!isLoading && (
         <div className="space-y-1.5">
-          {(data?.issues ?? []).map((issue) => (
+          {(data ?? []).map((issue) => (
             <button
               key={issue.id}
               onClick={() => onIssueClick(issue.id)}
@@ -80,7 +78,7 @@ export function IssueList({ companyId, onIssueClick }: IssueListProps) {
             </button>
           ))}
 
-          {(data?.issues ?? []).length === 0 && (
+          {(data ?? []).length === 0 && (
             <div className="text-center py-8 text-[var(--tg-theme-hint-color)] text-sm">
               No issues found
             </div>
