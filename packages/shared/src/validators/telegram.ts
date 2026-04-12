@@ -38,6 +38,12 @@ export const sendTelegramMessageSchema = z
     { message: "Either text or mediaType with mediaUrl/mediaPath is required" },
   );
 
+export const miniAppAuthSchema = z.object({
+  initData: z.string().trim().min(1, "initData is required"),
+  botId: z.string().trim().min(1, "botId is required"),
+});
+
+export type MiniAppAuth = z.infer<typeof miniAppAuthSchema>;
 export type UpsertTelegramConfig = z.infer<typeof upsertTelegramConfigSchema>;
 export type UpdateTelegramConfig = z.infer<typeof updateTelegramConfigSchema>;
 export type SendTelegramMessage = z.infer<typeof sendTelegramMessageSchema>;

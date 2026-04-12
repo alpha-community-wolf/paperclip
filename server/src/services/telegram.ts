@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHmac } from "node:crypto";
 import { createWriteStream } from "node:fs";
 import fs from "node:fs/promises";
 import https from "node:https";
@@ -7,8 +7,8 @@ import { Bot, InputFile } from "grammy";
 import { run as grammyRun, type RunnerHandle } from "@grammyjs/runner";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { agents, agentTelegramConfigs, chatMessages, chatSessions, heartbeatRuns } from "@paperclipai/db";
-import type { AgentTelegramConfig, AgentTelegramTestResult, SendTelegramNotificationOptions } from "@paperclipai/shared";
+import { agents, agentTelegramConfigs, authUsers, chatMessages, chatSessions, heartbeatRuns } from "@paperclipai/db";
+import type { AgentTelegramConfig, AgentTelegramTestResult, SendTelegramNotificationOptions, MiniAppAuthResponse } from "@paperclipai/shared";
 import { logger } from "../middleware/logger.js";
 import { resolvePaperclipInstanceRoot } from "../home-paths.js";
 import { subscribeCompanyLiveEvents } from "./live-events.js";
@@ -148,6 +148,7 @@ function toApiConfig(row: ConfigRow): AgentTelegramConfig {
     allowedUserIds: (row.allowedUserIds as string[]) ?? [],
     requireMention: row.requireMention,
     mentionPatterns: (row.mentionPatterns as string[]) ?? [],
+    miniAppEnabled: row.miniAppEnabled,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -1207,6 +1208,136 @@ export function telegramService(db: Db) {
     return true;
   }
 
+  /**
+   * Validate Telegram Mini App initData using HMAC-SHA256.
+   * See: https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app
+   */
+  function validateInitData(initData: string, botToken: string): { valid: boolean; data: Record<string, string> } {
+    const params = new URLSearchParams(initData);
+    const hash = params.get("hash");
+    if (!hash) return { valid: false, data: {} };
+
+    // Check auth_date is within 1 hour
+    const authDate = params.get("auth_date");
+    if (authDate) {
+      const authTimestamp = parseInt(authDate, 10);
+      const now = Math.floor(Date.now() / 1000);
+      if (now - authTimestamp > 3600) return { valid: false, data: {} };
+    }
+
+    // Build the data-check-string (sorted key=value pairs, excluding hash)
+    const entries: [string, string][] = [];
+    for (const [key, value] of params.entries()) {
+      if (key !== "hash") entries.push([key, value]);
+    }
+    entries.sort(([a], [b]) => a.localeCompare(b));
+    const dataCheckString = entries.map(([k, v]) => `${k}=${v}`).join("\n");
+
+    // HMAC validation: secret_key = HMAC-SHA256("WebAppData", bot_token)
+    const secretKey = createHmac("sha256", "WebAppData").update(botToken).digest();
+    const computedHash = createHmac("sha256", secretKey).update(dataCheckString).digest("hex");
+
+    if (computedHash !== hash) return { valid: false, data: {} };
+
+    const data: Record<string, string> = {};
+    for (const [key, value] of entries) {
+      data[key] = value;
+    }
+    return { valid: true, data };
+  }
+
+  /**
+   * Authenticate a Telegram Mini App user.
+   * Validates initData, maps telegram user to board user (auto-linking if needed).
+   */
+  async function miniAppAuth(initData: string, botId: string): Promise<MiniAppAuthResponse | { error: string; status: number }> {
+    // Find the telegram config by matching bot token prefix (bot ID is the part before ':')
+    const configs = await db.select().from(agentTelegramConfigs).where(eq(agentTelegramConfigs.enabled, true));
+    const config = configs.find((c) => c.botToken.startsWith(`${botId}:`));
+    if (!config) {
+      return { error: "No matching bot configuration found", status: 404 };
+    }
+
+    if (!config.miniAppEnabled) {
+      return { error: "Mini App is not enabled for this bot", status: 403 };
+    }
+
+    // Validate the initData HMAC
+    const { valid, data } = validateInitData(initData, config.botToken);
+    if (!valid) {
+      return { error: "Invalid initData signature", status: 401 };
+    }
+
+    // Extract telegram user from initData
+    const userJson = data.user;
+    if (!userJson) {
+      return { error: "No user data in initData", status: 400 };
+    }
+
+    let telegramUser: { id: number; first_name: string; last_name?: string; username?: string };
+    try {
+      telegramUser = JSON.parse(userJson);
+    } catch {
+      return { error: "Invalid user data in initData", status: 400 };
+    }
+
+    const telegramUserId = String(telegramUser.id);
+
+    // Check if this telegram user is in the allowed list
+    const allowedUserIds = (config.allowedUserIds as string[]) ?? [];
+    if (allowedUserIds.length > 0 && !allowedUserIds.includes(telegramUserId)) {
+      return { error: "Telegram user not authorized", status: 403 };
+    }
+
+    // Find or auto-link the board user
+    let boardUser = await db
+      .select()
+      .from(authUsers)
+      .where(eq(authUsers.telegramUserId, telegramUserId))
+      .then((rows) => rows[0] ?? null);
+
+    if (!boardUser) {
+      // Auto-link: find first board user and link their telegram ID
+      // In a multi-user deployment, this would need a more sophisticated linking flow
+      const allUsers = await db.select().from(authUsers).limit(1);
+      if (allUsers.length === 0) {
+        return { error: "No board users available for linking", status: 404 };
+      }
+      boardUser = allUsers[0];
+      await db
+        .update(authUsers)
+        .set({ telegramUserId, updatedAt: new Date() })
+        .where(eq(authUsers.id, boardUser.id));
+      boardUser = { ...boardUser, telegramUserId };
+    }
+
+    // Create a JWT for the mini app session using the existing JWT infrastructure
+    const { createLocalAgentJwt } = await import("../agent-auth-jwt.js");
+    // We'll create a mini-app specific JWT — reuse the same HMAC infrastructure
+    // but with a special "mini-app" adapter type so the auth middleware can distinguish
+    const token = createLocalAgentJwt(
+      boardUser.id, // sub = board user id (not agent id)
+      config.companyId,
+      "mini-app",
+      `mini-app-${Date.now()}`, // pseudo run id
+    );
+
+    if (!token) {
+      return { error: "JWT signing not configured (PAPERCLIP_AGENT_JWT_SECRET missing)", status: 500 };
+    }
+
+    return {
+      token,
+      user: {
+        id: boardUser.id,
+        name: boardUser.name,
+        email: boardUser.email,
+        telegramUserId,
+      },
+      companyId: config.companyId,
+    };
+  }
+
   return {
     getConfig: getConfigApi,
     upsertConfig,
@@ -1222,5 +1353,7 @@ export function telegramService(db: Db) {
     getActiveBotCount,
     getTelemetry,
     sendNotification,
+    validateInitData,
+    miniAppAuth,
   };
 }

@@ -8,6 +8,7 @@ export interface AgentTelegramConfig {
   allowedUserIds: string[];
   requireMention: boolean;
   mentionPatterns: string[];
+  miniAppEnabled: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -20,6 +21,22 @@ export interface AgentTelegramTestResult {
 }
 
 export type TelegramMediaType = "photo" | "document";
+
+export interface MiniAppAuthRequest {
+  initData: string;
+  botId: string;
+}
+
+export interface MiniAppAuthResponse {
+  token: string;
+  user: {
+    id: string;
+    name: string;
+    email: string;
+    telegramUserId: string;
+  };
+  companyId: string;
+}
 
 export interface SendTelegramNotificationOptions {
   sessionId?: string;
