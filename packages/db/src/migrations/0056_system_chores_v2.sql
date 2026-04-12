@@ -5,6 +5,6 @@ ALTER TABLE "system_chore_configs" ADD COLUMN "display_name" text;
 --> statement-breakpoint
 ALTER TABLE "system_chore_configs" ADD COLUMN "display_description" text;
 --> statement-breakpoint
-ALTER TABLE "system_chore_configs" ADD COLUMN "created_by_user_id" uuid REFERENCES "auth_users"("id");
+ALTER TABLE "system_chore_configs" ADD COLUMN "created_by_user_id" text REFERENCES "user"("id");
 --> statement-breakpoint
 ALTER TABLE "system_chore_configs" ADD COLUMN "deleted_at" timestamptz;

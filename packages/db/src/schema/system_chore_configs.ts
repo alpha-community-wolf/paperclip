@@ -17,7 +17,7 @@ export const systemChoreConfigs = pgTable(
     displayName: text("display_name"),
     displayDescription: text("display_description"),
     config: jsonb("config").notNull().default({}),
-    createdByUserId: uuid("created_by_user_id").references(() => authUsers.id),
+    createdByUserId: text("created_by_user_id").references(() => authUsers.id),
     lastRunAt: timestamp("last_run_at", { withTimezone: true }),
     nextRunAt: timestamp("next_run_at", { withTimezone: true }),
     consecutiveFailures: integer("consecutive_failures").notNull().default(0),
