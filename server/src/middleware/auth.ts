@@ -94,6 +94,42 @@ export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHa
         return;
       }
 
+      // Telegram Mini App: `sub` is the Better Auth user id, not an agent row id (see telegramService.miniAppAuth).
+      if (claims.adapter_type === "mini-app") {
+        const userId = claims.sub;
+        const [roleRow, memberships] = await Promise.all([
+          db
+            .select({ id: instanceUserRoles.id })
+            .from(instanceUserRoles)
+            .where(and(eq(instanceUserRoles.userId, userId), eq(instanceUserRoles.role, "instance_admin")))
+            .then((rows) => rows[0] ?? null),
+          db
+            .select({ companyId: companyMemberships.companyId })
+            .from(companyMemberships)
+            .where(
+              and(
+                eq(companyMemberships.principalType, "user"),
+                eq(companyMemberships.principalId, userId),
+                eq(companyMemberships.status, "active"),
+              ),
+            ),
+        ]);
+        let companyIds = memberships.map((row) => row.companyId);
+        if (!companyIds.includes(claims.company_id)) {
+          companyIds = [...companyIds, claims.company_id];
+        }
+        req.actor = {
+          type: "board",
+          userId,
+          companyIds,
+          isInstanceAdmin: Boolean(roleRow),
+          runId: runIdHeader ?? claims.run_id ?? undefined,
+          source: "mini_app_jwt",
+        };
+        next();
+        return;
+      }
+
       const agentRecord = await db
         .select()
         .from(agents)

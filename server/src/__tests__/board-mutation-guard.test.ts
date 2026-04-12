@@ -3,7 +3,10 @@ import express from "express";
 import request from "supertest";
 import { boardMutationGuard } from "../middleware/board-mutation-guard.js";
 
-function createApp(actorType: "board" | "agent", boardSource: "session" | "local_implicit" = "session") {
+function createApp(
+  actorType: "board" | "agent",
+  boardSource: "session" | "local_implicit" | "mini_app_jwt" = "session",
+) {
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
@@ -38,6 +41,12 @@ describe("boardMutationGuard", () => {
 
   it("allows local implicit board mutations without origin", async () => {
     const app = createApp("board", "local_implicit");
+    const res = await request(app).post("/mutate").send({ ok: true });
+    expect(res.status).toBe(204);
+  });
+
+  it("allows Telegram mini app JWT board mutations without browser origin", async () => {
+    const app = createApp("board", "mini_app_jwt");
     const res = await request(app).post("/mutate").send({ ok: true });
     expect(res.status).toBe(204);
   });
