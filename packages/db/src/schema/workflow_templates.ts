@@ -10,7 +10,6 @@ export const workflowTemplates = pgTable(
     name: text("name").notNull(),
     description: text("description"),
     steps: jsonb("steps").notNull(),
-    variables: jsonb("variables").notNull().default({}),
     version: integer("version").notNull().default(1),
     isActive: boolean("is_active").notNull().default(true),
     createdByAgentId: uuid("created_by_agent_id").references(() => agents.id, { onDelete: "set null" }),

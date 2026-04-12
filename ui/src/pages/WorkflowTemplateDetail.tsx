@@ -6,7 +6,6 @@ import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import {
   workflowTemplatesApi,
   type WorkflowStep,
-  type VariableDeclaration,
 } from "../api/workflowTemplates";
 import { agentsApi } from "../api/agents";
 import type { Agent } from "@paperclipai/shared";
@@ -30,20 +29,21 @@ import {
   Loader2,
   Save,
   GripVertical,
-  ChevronRight,
   AlertTriangle,
+  AlertCircle,
+  Bot,
 } from "lucide-react";
 
 const EMPTY_STEP: WorkflowStep = {
   key: "",
-  title: "",
   type: "task",
   priority: "medium",
 };
 
-const EMPTY_VARIABLE: VariableDeclaration = {
-  type: "string",
-  required: true,
+const TYPE_COLORS: Record<string, string> = {
+  explore: "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20",
+  plan: "bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/20",
+  task: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
 };
 
 function detectCycle(steps: WorkflowStep[]): string | null {
@@ -95,12 +95,23 @@ function StepEditor({
   onRemove: () => void;
 }) {
   const otherKeys = allStepKeys.filter((k) => k !== step.key && k !== "");
+  const selectedAgent = agents?.find((a) => a.id === step.assigneeAgentId);
+  const hasAdapter = selectedAgent ? !!(selectedAgent as unknown as Record<string, unknown>).adapterType : true;
 
   return (
     <div className="rounded-md border border-border p-3 space-y-3">
       <div className="flex items-center gap-2">
         <GripVertical className="h-4 w-4 text-muted-foreground/40 shrink-0" />
-        <span className="text-xs font-medium text-muted-foreground w-5">#{index + 1}</span>
+        <span className={`inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded border ${TYPE_COLORS[step.type] ?? "bg-muted text-muted-foreground border-border"}`}>
+          {step.type}
+        </span>
+        <span className="text-xs font-medium text-muted-foreground">Step {index + 1}</span>
+        {selectedAgent && (
+          <span className="text-xs text-muted-foreground flex items-center gap-1">
+            <Bot className="h-3 w-3" />
+            {selectedAgent.name}
+          </span>
+        )}
         <div className="flex-1" />
         <Button
           size="sm"
@@ -112,16 +123,7 @@ function StepEditor({
         </Button>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1">
-          <Label className="text-xs">Key</Label>
-          <Input
-            placeholder="e.g. explore"
-            className="h-8 text-sm"
-            value={step.key}
-            onChange={(e) => onChange({ ...step, key: e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, "") })}
-          />
-        </div>
+      <div className="grid grid-cols-3 gap-3">
         <div className="space-y-1">
           <Label className="text-xs">Type</Label>
           <Select value={step.type} onValueChange={(v) => onChange({ ...step, type: v as WorkflowStep["type"] })}>
@@ -135,19 +137,28 @@ function StepEditor({
             </SelectContent>
           </Select>
         </div>
-      </div>
-
-      <div className="space-y-1">
-        <Label className="text-xs">Title</Label>
-        <Input
-          placeholder='e.g. Explore: {{ topic }}'
-          className="h-8 text-sm"
-          value={step.title}
-          onChange={(e) => onChange({ ...step, title: e.target.value })}
-        />
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1">
+          <Label className="text-xs">Assignee</Label>
+          <Select
+            value={step.assigneeAgentId ?? "__none__"}
+            onValueChange={(v) => {
+              if (v === "__none__") onChange({ ...step, assigneeAgentId: undefined });
+              else onChange({ ...step, assigneeAgentId: v });
+            }}
+          >
+            <SelectTrigger className="h-8 text-sm">
+              <SelectValue placeholder="Unassigned" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none__">Unassigned</SelectItem>
+              {agents?.map((a) => (
+                <SelectItem key={a.id} value={a.id}>
+                  {a.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         <div className="space-y-1">
           <Label className="text-xs">Priority</Label>
           <Select value={step.priority ?? "medium"} onValueChange={(v) => onChange({ ...step, priority: v as WorkflowStep["priority"] })}>
@@ -162,52 +173,24 @@ function StepEditor({
             </SelectContent>
           </Select>
         </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1">
-          <Label className="text-xs">Assignee</Label>
-          {step.assigneeAgentId?.includes("{{") ? (
-            <div className="flex gap-1.5">
-              <Input
-                placeholder='{{ variable }}'
-                className="h-8 text-sm font-mono flex-1"
-                value={step.assigneeAgentId}
-                onChange={(e) => onChange({ ...step, assigneeAgentId: e.target.value || undefined })}
-              />
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                className="h-8 text-xs px-2"
-                onClick={() => onChange({ ...step, assigneeAgentId: undefined })}
-              >
-                Clear
-              </Button>
-            </div>
-          ) : (
-            <Select
-              value={step.assigneeAgentId ?? "__none__"}
-              onValueChange={(v) => {
-                if (v === "__none__") onChange({ ...step, assigneeAgentId: undefined });
-                else if (v === "__variable__") onChange({ ...step, assigneeAgentId: "{{ }}" });
-                else onChange({ ...step, assigneeAgentId: v });
-              }}
-            >
-              <SelectTrigger className="h-8 text-sm">
-                <SelectValue placeholder="Unassigned" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__none__">Unassigned</SelectItem>
-                {agents?.map((a) => (
-                  <SelectItem key={a.id} value={a.id}>
-                    {a.name}
-                  </SelectItem>
-                ))}
-                <SelectItem value="__variable__">
-                  <span className="font-mono text-muted-foreground">{"{{ variable }}"}</span>
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          )}
+          <Label className="text-xs">Key</Label>
+          <Input
+            placeholder="e.g. explore"
+            className="h-8 text-sm font-mono"
+            value={step.key}
+            onChange={(e) => onChange({ ...step, key: e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, "") })}
+          />
         </div>
+        {step.assigneeAgentId && !hasAdapter && (
+          <div className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400 self-end pb-1">
+            <AlertCircle className="h-3.5 w-3.5" />
+            Adapter not configured
+          </div>
+        )}
       </div>
 
       {otherKeys.length > 0 && (
@@ -238,85 +221,10 @@ function StepEditor({
       <div className="space-y-1">
         <Label className="text-xs">Description (optional)</Label>
         <Textarea
-          placeholder="Step description..."
+          placeholder="Instructions for the agent..."
           className="text-sm min-h-[60px]"
           value={step.description ?? ""}
           onChange={(e) => onChange({ ...step, description: e.target.value || undefined })}
-        />
-      </div>
-    </div>
-  );
-}
-
-function VariableEditor({
-  name,
-  decl,
-  onChangeName: onNameChange,
-  onChangeDecl: onDeclChange,
-  onRemove,
-}: {
-  name: string;
-  decl: VariableDeclaration;
-  onChangeName: (name: string) => void;
-  onChangeDecl: (decl: VariableDeclaration) => void;
-  onRemove: () => void;
-}) {
-  return (
-    <div className="rounded-md border border-border p-3 space-y-2">
-      <div className="flex items-center gap-2">
-        <div className="flex-1 grid grid-cols-3 gap-2">
-          <div className="space-y-1">
-            <Label className="text-xs">Name</Label>
-            <Input
-              className="h-8 text-sm font-mono"
-              value={name}
-              onChange={(e) => onNameChange(e.target.value.replace(/[^a-zA-Z0-9_]/g, ""))}
-            />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs">Type</Label>
-            <Select value={decl.type} onValueChange={(v) => onDeclChange({ ...decl, type: v as "string" | "uuid" })}>
-              <SelectTrigger className="h-8 text-sm">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="string">String</SelectItem>
-                <SelectItem value="uuid">UUID</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs">Default</Label>
-            <Input
-              className="h-8 text-sm"
-              placeholder="Optional"
-              value={decl.default ?? ""}
-              onChange={(e) => onDeclChange({ ...decl, default: e.target.value || undefined })}
-            />
-          </div>
-        </div>
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive mt-5"
-          onClick={onRemove}
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-        </Button>
-      </div>
-      <div className="flex items-center gap-4">
-        <label className="flex items-center gap-1.5 text-xs cursor-pointer">
-          <Checkbox
-            checked={decl.required !== false}
-            onCheckedChange={(checked) => onDeclChange({ ...decl, required: !!checked })}
-          />
-          Required
-        </label>
-        <Input
-          className="h-7 text-xs flex-1"
-          placeholder="Description (optional)"
-          value={decl.description ?? ""}
-          onChange={(e) => onDeclChange({ ...decl, description: e.target.value || undefined })}
         />
       </div>
     </div>
@@ -335,7 +243,6 @@ export function WorkflowTemplateDetail() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [steps, setSteps] = useState<WorkflowStep[]>([{ ...EMPTY_STEP }]);
-  const [variables, setVariables] = useState<Array<{ name: string; decl: VariableDeclaration }>>([]);
   const [validationError, setValidationError] = useState<string | null>(null);
 
   const { data: existing, isLoading } = useQuery({
@@ -355,9 +262,6 @@ export function WorkflowTemplateDetail() {
       setName(existing.name);
       setDescription(existing.description ?? "");
       setSteps(existing.steps);
-      setVariables(
-        Object.entries(existing.variables ?? {}).map(([name, decl]) => ({ name, decl })),
-      );
     }
   }, [existing]);
 
@@ -387,15 +291,10 @@ export function WorkflowTemplateDetail() {
 
   const saveMutation = useMutation({
     mutationFn: async () => {
-      const varsObj: Record<string, VariableDeclaration> = {};
-      for (const v of variables) {
-        if (v.name) varsObj[v.name] = v.decl;
-      }
       const payload = {
         name: name.trim(),
         description: description.trim() || null,
         steps,
-        variables: varsObj,
       };
       if (isNew) {
         return workflowTemplatesApi.create(companyId, payload);
@@ -412,7 +311,7 @@ export function WorkflowTemplateDetail() {
   const canSave =
     name.trim() &&
     steps.length > 0 &&
-    steps.every((s) => s.key && s.title) &&
+    steps.every((s) => s.key) &&
     !validationError;
 
   if (!isNew && isLoading) {
@@ -453,39 +352,6 @@ export function WorkflowTemplateDetail() {
             onChange={(e) => setDescription(e.target.value)}
           />
         </div>
-      </div>
-
-      {/* Variables */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-medium">Variables</h2>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7 text-xs gap-1"
-            onClick={() => setVariables((prev) => [...prev, { name: "", decl: { ...EMPTY_VARIABLE } }])}
-          >
-            <Plus className="h-3 w-3" />
-            Add Variable
-          </Button>
-        </div>
-        {variables.length === 0 && (
-          <p className="text-xs text-muted-foreground">No variables. Add variables to make the template reusable.</p>
-        )}
-        {variables.map((v, i) => (
-          <VariableEditor
-            key={i}
-            name={v.name}
-            decl={v.decl}
-            onChangeName={(newName) => {
-              setVariables((prev) => prev.map((item, j) => (j === i ? { ...item, name: newName } : item)));
-            }}
-            onChangeDecl={(newDecl) => {
-              setVariables((prev) => prev.map((item, j) => (j === i ? { ...item, decl: newDecl } : item)));
-            }}
-            onRemove={() => setVariables((prev) => prev.filter((_, j) => j !== i))}
-          />
-        ))}
       </div>
 
       {/* Steps */}

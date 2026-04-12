@@ -8,7 +8,7 @@ import { projectsApi } from "../api/projects";
 import { agentsApi } from "../api/agents";
 import { authApi } from "../api/auth";
 import { assetsApi } from "../api/assets";
-import { workflowTemplatesApi, type WorkflowTemplate, type VariableDeclaration } from "../api/workflowTemplates";
+import { workflowTemplatesApi, type WorkflowTemplate } from "../api/workflowTemplates";
 import { queryKeys } from "../lib/queryKeys";
 import { useProjectOrder } from "../hooks/useProjectOrder";
 import { getRecentAssigneeIds, sortAgentsByRecency, trackRecentAssignee } from "../lib/recent-assignees";
@@ -214,7 +214,6 @@ export function NewIssueDialog() {
   const [recurringTimezone, setRecurringTimezone] = useState("UTC");
   const [recurringIssueMode, setRecurringIssueMode] = useState<"create_new" | "reuse_existing" | "reopen_existing">("reopen_existing");
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
-  const [templateVariables, setTemplateVariables] = useState<Record<string, string>>({});
   const [expanded, setExpanded] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [clientError, setClientError] = useState<string | null>(null);
@@ -320,7 +319,6 @@ export function NewIssueDialog() {
       };
       workflow?: {
         templateId: string;
-        variables: Record<string, string>;
       };
     } & Record<string, unknown>) => {
       const issue = await issuesApi.create(companyId, data);
@@ -339,7 +337,6 @@ export function NewIssueDialog() {
       if (workflow) {
         await workflowTemplatesApi.run(workflow.templateId, {
           rootIssueId: issue.id,
-          variables: workflow.variables,
         });
       }
       return issue;
@@ -536,7 +533,6 @@ export function NewIssueDialog() {
     setRecurringTimezone("UTC");
     setRecurringIssueMode("reopen_existing");
     setSelectedTemplateId(null);
-    setTemplateVariables({});
     setExpanded(false);
     setAdvancedOpen(false);
     setDialogCompanyId(null);
@@ -551,7 +547,6 @@ export function NewIssueDialog() {
     setAssigneeId("");
     setProjectId("");
     setSelectedTemplateId(null);
-    setTemplateVariables({});
     setAssigneeModelOverride("");
     setAssigneeThinkingEffort("");
     setAssigneeChrome(false);
@@ -615,7 +610,7 @@ export function NewIssueDialog() {
         }
         : undefined,
       workflow: selectedTemplateId
-        ? { templateId: selectedTemplateId, variables: templateVariables }
+        ? { templateId: selectedTemplateId }
         : undefined,
     });
   }
@@ -1376,7 +1371,7 @@ export function NewIssueDialog() {
                       <button
                         type="button"
                         className="text-muted-foreground hover:text-foreground transition-colors"
-                        onClick={() => { setSelectedTemplateId(null); setTemplateVariables({}); }}
+                        onClick={() => { setSelectedTemplateId(null); }}
                       >
                         <X className="h-3 w-3" />
                       </button>
@@ -1398,37 +1393,6 @@ export function NewIssueDialog() {
                         </div>
                       ))}
                     </div>
-                    {Object.keys(selectedTemplate.variables ?? {}).length > 0 && (
-                      <div className="space-y-2 pt-1">
-                        {Object.entries(selectedTemplate.variables ?? {}).map(([name, decl]) => (
-                          <div key={name} className="space-y-0.5">
-                            <div className="text-[11px] text-muted-foreground">
-                              {name}
-                              {(decl as VariableDeclaration).required !== false && <span className="text-destructive ml-0.5">*</span>}
-                            </div>
-                            {(decl as VariableDeclaration).type === "uuid" && agents ? (
-                              <select
-                                className="w-full rounded-md border border-border bg-transparent px-2 py-1 text-xs"
-                                value={templateVariables[name] ?? ""}
-                                onChange={(e) => setTemplateVariables((prev) => ({ ...prev, [name]: e.target.value }))}
-                              >
-                                <option value="">Select an agent</option>
-                                {agents.map((a) => (
-                                  <option key={a.id} value={a.id}>{a.name}</option>
-                                ))}
-                              </select>
-                            ) : (
-                              <input
-                                className="w-full rounded-md border border-border bg-transparent px-2 py-1 text-xs"
-                                placeholder={`Enter ${name}`}
-                                value={templateVariables[name] ?? ""}
-                                onChange={(e) => setTemplateVariables((prev) => ({ ...prev, [name]: e.target.value }))}
-                              />
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
                   </div>
                 ) : (
                   <select
@@ -1438,12 +1402,7 @@ export function NewIssueDialog() {
                       const tmpl = workflowTemplates.find((t) => t.id === e.target.value);
                       if (tmpl) {
                         setSelectedTemplateId(tmpl.id);
-                        const defaults: Record<string, string> = {};
-                        for (const [name, decl] of Object.entries(tmpl.variables ?? {})) {
-                          if ((decl as VariableDeclaration).default) defaults[name] = (decl as VariableDeclaration).default!;
-                        }
-                        setTemplateVariables(defaults);
-                      }
+                                          }
                     }}
                   >
                     <option value="">None (no workflow)</option>
