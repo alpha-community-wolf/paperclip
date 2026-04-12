@@ -44,7 +44,11 @@ export const sendTelegramMessageSchema = z
 
 export const miniAppAuthSchema = z.object({
   initData: z.string().trim().min(1, "initData is required"),
-  botId: z.string().trim().min(1, "botId is required"),
+  /** Numeric Telegram bot id (token prefix). Optional: server can match initData HMAC against all Mini App–enabled bots. */
+  botId: z
+    .string()
+    .optional()
+    .transform((s) => (s == null || String(s).trim() === "" ? undefined : String(s).trim())),
 });
 
 export type MiniAppAuth = z.infer<typeof miniAppAuthSchema>;

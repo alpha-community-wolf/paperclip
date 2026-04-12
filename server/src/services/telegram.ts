@@ -1278,19 +1278,38 @@ export function telegramService(db: Db) {
    * Authenticate a Telegram Mini App user.
    * Validates initData, maps telegram user to board user (auto-linking if needed).
    */
-  async function miniAppAuth(initData: string, botId: string): Promise<MiniAppAuthResponse | { error: string; status: number }> {
-    // Find the telegram config by matching bot token prefix (bot ID is the part before ':')
+  async function miniAppAuth(
+    initData: string,
+    botId: string | undefined,
+  ): Promise<MiniAppAuthResponse | { error: string; status: number }> {
     const configs = await db.select().from(agentTelegramConfigs).where(eq(agentTelegramConfigs.enabled, true));
-    const config = configs.find((c) => c.botToken.startsWith(`${botId}:`));
+    const miniConfigs = configs.filter((c) => c.miniAppEnabled);
+
+    let config: (typeof miniConfigs)[number] | undefined;
+
+    if (botId) {
+      config = miniConfigs.find((c) => c.botToken.startsWith(`${botId}:`));
+    } else {
+      // No bot_id in URL (common for Telegram WebApp): find the bot whose secret validates this initData.
+      for (const c of miniConfigs) {
+        const { valid } = validateInitData(initData, c.botToken);
+        if (valid) {
+          config = c;
+          break;
+        }
+      }
+    }
+
     if (!config) {
-      return { error: "No matching bot configuration found", status: 404 };
+      return {
+        error: botId
+          ? "No matching bot configuration found"
+          : "No Mini App–enabled bot matched this initData (enable Mini App on your bot or pass bot_id).",
+        status: 404,
+      };
     }
 
-    if (!config.miniAppEnabled) {
-      return { error: "Mini App is not enabled for this bot", status: 403 };
-    }
-
-    // Validate the initData HMAC
+    // Validate the initData HMAC (again when botId was set — ensures same result)
     const { valid, data } = validateInitData(initData, config.botToken);
     if (!valid) {
       return { error: "Invalid initData signature", status: 401 };
