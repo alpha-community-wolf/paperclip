@@ -1,12 +1,13 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { NavLink, Link, useLocation } from "@/lib/router";
 import { useQuery } from "@tanstack/react-query";
-import { MessageCircle, PanelRightClose, PanelRightOpen, Plus, Settings } from "lucide-react";
+import { MessageCircle, PanelRightClose, PanelRightOpen, Plus, Search, Settings } from "lucide-react";
 import { useCompany } from "../context/CompanyContext";
 import { useDialog } from "../context/DialogContext";
 import { useSidebar } from "../context/SidebarContext";
 import { useAgentsSidebar } from "../context/AgentsSidebarContext";
 import { agentsApi } from "../api/agents";
+import { authApi } from "../api/auth";
 import { chatApi } from "../api/chat";
 import { heartbeatsApi } from "../api/heartbeats";
 import { queryKeys } from "../lib/queryKeys";
@@ -27,40 +28,29 @@ import {
   toolColor,
 } from "../context/AgentActivityContext";
 import { useChatSidePanel } from "../context/ChatSidePanelContext";
-
-/** BFS sort: roots first (no reportsTo), then their direct reports, etc. */
-function sortByHierarchy(agents: Agent[]): Agent[] {
-  const byId = new Map(agents.map((a) => [a.id, a]));
-  const childrenOf = new Map<string | null, Agent[]>();
-  for (const a of agents) {
-    const parent = a.reportsTo && byId.has(a.reportsTo) ? a.reportsTo : null;
-    const list = childrenOf.get(parent) ?? [];
-    list.push(a);
-    childrenOf.set(parent, list);
-  }
-  const sorted: Agent[] = [];
-  const queue = childrenOf.get(null) ?? [];
-  while (queue.length > 0) {
-    const agent = queue.shift()!;
-    sorted.push(agent);
-    const children = childrenOf.get(agent.id);
-    if (children) queue.push(...children);
-  }
-  return sorted;
-}
+import { useAgentOrder } from "../hooks/useAgentOrder";
+import { Input } from "@/components/ui/input";
+import {
+  getSidebarVisibleAgents,
+  groupAgentsByRoot,
+  sortAgentsByHierarchy,
+  type AgentsSidebarFilter,
+} from "./agents-sidebar-utils";
 
 /** Collapsed strip showing agent icon + status dot */
 function CollapsedStrip({
   agents,
   liveCountByAgent,
   unreadByAgent,
-  onExpand,
+  activeAgentId,
 }: {
   agents: Agent[];
   liveCountByAgent: Map<string, number>;
   unreadByAgent: Map<string, number>;
-  onExpand: () => void;
+  activeAgentId: string | null;
 }) {
+  const location = useLocation();
+
   return (
     <div className="flex flex-col items-center gap-1 py-2 w-full">
       {agents.map((agent) => {
@@ -70,11 +60,15 @@ function CollapsedStrip({
         return (
           <Tooltip key={agent.id} delayDuration={200}>
             <TooltipTrigger asChild>
-              <button
-                type="button"
-                onClick={onExpand}
-                className="relative flex items-center justify-center w-8 h-7 rounded-md hover:bg-accent/50 transition-colors"
-                aria-label={`${agent.name} — ${dotStatus}`}
+              <NavLink
+                to={agentSwitchUrl(location.pathname, agent)}
+                className={cn(
+                  "relative flex items-center justify-center w-8 h-7 rounded-md transition-colors",
+                  activeAgentId === agentRouteRef(agent)
+                    ? "bg-accent text-foreground"
+                    : "hover:bg-accent/50",
+                )}
+                aria-label={`${agent.name} - ${dotStatus}`}
               >
                 <AgentIcon
                   icon={agent.icon}
@@ -88,7 +82,7 @@ function CollapsedStrip({
                     {unread > 9 ? "9+" : unread}
                   </span>
                 )}
-              </button>
+              </NavLink>
             </TooltipTrigger>
             <TooltipContent side="left" sideOffset={8}>
               <p className="text-xs">
@@ -217,6 +211,14 @@ export function AgentsSidebar() {
   const { isMobile } = useSidebar();
   const { agentsSidebarOpen, toggleAgentsSidebar } = useAgentsSidebar();
   const location = useLocation();
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filter, setFilter] = useState<AgentsSidebarFilter>("all");
+
+  const { data: session } = useQuery({
+    queryKey: queryKeys.auth.session,
+    queryFn: () => authApi.getSession(),
+  });
+  const currentUserId = session?.user?.id ?? session?.session?.userId ?? null;
 
   const { data: agents } = useQuery({
     queryKey: queryKeys.agents.list(selectedCompanyId!),
@@ -254,12 +256,29 @@ export function AgentsSidebar() {
     return counts;
   }, [unreadSummary]);
 
-  const visibleAgents = useMemo(() => {
-    const filtered = (agents ?? []).filter(
-      (a: Agent) => a.status !== "terminated",
-    );
-    return sortByHierarchy(filtered);
-  }, [agents]);
+  const hierarchyAgents = useMemo(
+    () => sortAgentsByHierarchy((agents ?? []).filter((agent: Agent) => agent.status !== "terminated")),
+    [agents],
+  );
+
+  const { orderedAgents } = useAgentOrder({
+    agents: hierarchyAgents,
+    companyId: selectedCompanyId,
+    userId: currentUserId,
+  });
+
+  const visibleAgents = useMemo(
+    () => getSidebarVisibleAgents({
+      agents: orderedAgents,
+      searchQuery,
+      filter,
+      liveCountByAgent,
+      unreadByAgent,
+    }),
+    [filter, liveCountByAgent, orderedAgents, searchQuery, unreadByAgent],
+  );
+
+  const groupedAgents = useMemo(() => groupAgentsByRoot(visibleAgents), [visibleAgents]);
 
   const agentActivity = useAgentActivity();
 
@@ -298,7 +317,7 @@ export function AgentsSidebar() {
             agents={visibleAgents}
             liveCountByAgent={liveCountByAgent}
             unreadByAgent={unreadByAgent}
-            onExpand={toggleAgentsSidebar}
+            activeAgentId={activeAgentId}
           />
         </ScrollArea>
       </aside>
@@ -345,22 +364,67 @@ export function AgentsSidebar() {
         </Tooltip>
       </div>
 
+      <div className="border-b border-border px-2.5 py-2 space-y-2">
+        <div className="relative">
+          <Search className="h-3.5 w-3.5 text-muted-foreground absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <Input
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder="Search agents"
+            className="h-8 pl-7 text-xs"
+          />
+        </div>
+        <div className="flex items-center gap-1">
+          {([
+            ["all", "All"],
+            ["active", "Active"],
+            ["needs-attention", "Needs"],
+          ] as const).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setFilter(value)}
+              className={cn(
+                "h-6 px-2 rounded-md text-[11px] font-medium transition-colors",
+                filter === value
+                  ? "bg-accent text-foreground"
+                  : "text-muted-foreground hover:text-foreground hover:bg-accent/60",
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <ScrollArea className="flex-1">
-        <div className="flex flex-col gap-0.5 p-2">
-          {visibleAgents.map((agent: Agent) => {
-            const runCount = liveCountByAgent.get(agent.id) ?? 0;
-            const activity = agentActivity.get(agent.id);
-            return (
-              <AgentRow
-                key={agent.id}
-                agent={agent}
-                runCount={runCount}
-                activity={activity ?? null}
-                isActive={activeAgentId === agentRouteRef(agent)}
-                unreadCount={unreadByAgent.get(agent.id) ?? 0}
-              />
-            );
-          })}
+        <div className="flex flex-col gap-2 p-2">
+          {groupedAgents.map((group) => (
+            <div key={group.key} className="space-y-1">
+              <p className="px-2 text-[10px] uppercase tracking-wider text-muted-foreground/60 truncate">
+                {group.label}
+              </p>
+              <div className="flex flex-col gap-0.5">
+                {group.agents.map((agent: Agent) => {
+                  const runCount = liveCountByAgent.get(agent.id) ?? 0;
+                  const activity = agentActivity.get(agent.id);
+                  return (
+                    <AgentRow
+                      key={agent.id}
+                      agent={agent}
+                      runCount={runCount}
+                      activity={activity ?? null}
+                      isActive={activeAgentId === agentRouteRef(agent)}
+                      unreadCount={unreadByAgent.get(agent.id) ?? 0}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+          {groupedAgents.length === 0 && (
+            <p className="px-2 py-3 text-xs text-muted-foreground">No agents match your filters.</p>
+          )}
         </div>
       </ScrollArea>
     </aside>
