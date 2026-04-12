@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link } from "@/lib/router";
-import type { Issue } from "@paperclipai/shared";
+import type { Issue, IssueType } from "@paperclipai/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { agentsApi } from "../api/agents";
 import { authApi } from "../api/auth";
@@ -19,7 +19,8 @@ import { timeAgo } from "../lib/timeAgo";
 import { resolveEffectiveReviewBundleMode } from "../lib/review-bundles";
 import { Separator } from "@/components/ui/separator";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { User, Hexagon, ArrowUpRight, Tag, Plus, Trash2, ListChecks, Map, Settings2 } from "lucide-react";
+import { User, Hexagon, ArrowUpRight, Tag, Plus, Trash2, ListChecks, Map, Search, Settings2 } from "lucide-react";
+import { isWorkflowManagedIssue } from "@/lib/issue-flow-ui";
 import { AgentIcon } from "./AgentIconPicker";
 
 // TODO(issue-worktree-support): re-enable this UI once the workflow is ready to ship.
@@ -61,6 +62,12 @@ function getThinkingKey(adapterType: string): string {
   if (adapterType === "codex_local") return "modelReasoningEffort";
   if (adapterType === "opencode_local") return "variant";
   return "effort";
+}
+
+function cycleIssueType(current: IssueType): IssueType {
+  if (current === "task") return "plan";
+  if (current === "plan") return "explore";
+  return "task";
 }
 
 interface IssuePropertiesProps {
@@ -589,18 +596,38 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
 
         <PropertyRow label="Type">
           <button
-            onClick={() => onUpdate({ type: issue.type === "plan" ? "task" : "plan" })}
-            className="flex items-center gap-1.5 text-xs text-foreground hover:text-foreground/80 transition-colors"
+            type="button"
+            disabled={isWorkflowManagedIssue(issue)}
+            title={
+              isWorkflowManagedIssue(issue)
+                ? "Type cannot be changed while this issue is part of a workflow."
+                : "Cycle type: Build → Plan → Explore"
+            }
+            onClick={() => {
+              if (isWorkflowManagedIssue(issue)) return;
+              onUpdate({ type: cycleIssueType(issue.type) });
+            }}
+            className={cn(
+              "flex items-center gap-1.5 text-xs text-foreground transition-colors",
+              isWorkflowManagedIssue(issue)
+                ? "opacity-60 cursor-not-allowed"
+                : "hover:text-foreground/80",
+            )}
           >
             {issue.type === "plan" ? (
               <>
                 <Map className="h-3.5 w-3.5 text-violet-500" />
                 <span>Plan</span>
               </>
+            ) : issue.type === "explore" ? (
+              <>
+                <Search className="h-3.5 w-3.5 text-blue-500" />
+                <span>Explore</span>
+              </>
             ) : (
               <>
-                <ListChecks className="h-3.5 w-3.5 text-muted-foreground" />
-                <span>Task</span>
+                <ListChecks className="h-3.5 w-3.5 text-emerald-600" />
+                <span>Build</span>
               </>
             )}
           </button>

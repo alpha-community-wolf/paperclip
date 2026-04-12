@@ -31,6 +31,7 @@ import { PriorityIcon } from "../components/PriorityIcon";
 import { RecurringScheduleCard } from "../components/RecurringScheduleCard";
 import { StatusBadge } from "../components/StatusBadge";
 import { Identity } from "../components/Identity";
+import { IssueTypePills } from "../components/IssueTypePills";
 import { Separator } from "@/components/ui/separator";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
@@ -790,17 +791,7 @@ export function IssueDetail() {
           />
           <span className="text-sm font-mono text-muted-foreground shrink-0">{issue.identifier ?? issue.id.slice(0, 8)}</span>
 
-          {issue.type === "plan" && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-violet-500/10 border border-violet-500/30 px-2 py-0.5 text-[10px] font-medium text-violet-600 dark:text-violet-400 shrink-0">
-              Plan
-            </span>
-          )}
-          {issue.type === "explore" && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 border border-blue-500/30 px-2 py-0.5 text-[10px] font-medium text-blue-600 dark:text-blue-400 shrink-0">
-              <Search className="h-3 w-3" />
-              Explore
-            </span>
-          )}
+          <IssueTypePills issue={issue} className="inline-flex items-center gap-1.5 flex-wrap" />
 
           {isTemplateIssue && (
             <span className="inline-flex items-center gap-1 rounded-full bg-teal-500/10 border border-teal-500/30 px-2 py-0.5 text-[10px] font-medium text-teal-600 dark:text-teal-400 shrink-0">
@@ -995,7 +986,7 @@ export function IssueDetail() {
                     child.type === "plan" ? "bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/20" :
                     "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20"
                   )}>
-                    {child.type}
+                    {child.type === "task" ? "Build" : child.type}
                   </span>
                   {assignee && (
                     <span className="text-[10px] text-muted-foreground truncate max-w-[80px]">{assignee.name}</span>

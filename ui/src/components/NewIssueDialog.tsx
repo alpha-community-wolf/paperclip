@@ -183,7 +183,7 @@ const priorities = [
 ];
 
 const issueTypes = [
-  { value: "task", label: "Task", icon: ListChecks },
+  { value: "task", label: "Build", icon: ListChecks },
   { value: "plan", label: "Plan", icon: Map },
   { value: "explore", label: "Explore", icon: Search },
 ] as const;
@@ -989,7 +989,7 @@ export function NewIssueDialog() {
                   ) : (
                     <ListChecks className="h-3 w-3 text-muted-foreground" />
                   )}
-                  {issueTypes.find((t) => t.value === type)?.label ?? "Task"}
+                  {issueTypes.find((t) => t.value === type)?.label ?? "Build"}
                 </button>
               </PopoverTrigger>
               <PopoverContent className="w-36 p-1" align="start">
