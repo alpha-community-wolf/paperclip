@@ -149,6 +149,7 @@ function toApiConfig(row: ConfigRow): AgentTelegramConfig {
     requireMention: row.requireMention,
     mentionPatterns: (row.mentionPatterns as string[]) ?? [],
     miniAppEnabled: row.miniAppEnabled,
+    miniAppUrl: row.miniAppUrl,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -300,6 +301,7 @@ export function telegramService(db: Db) {
     requireMention?: boolean;
     mentionPatterns?: string[];
     miniAppEnabled?: boolean;
+    miniAppUrl?: string | null;
   }): Promise<AgentTelegramConfig | null> {
     const existing = await getConfig(input.agentId);
     if (!existing) return null;
@@ -312,6 +314,7 @@ export function telegramService(db: Db) {
     if (input.requireMention !== undefined) patch.requireMention = input.requireMention;
     if (input.mentionPatterns !== undefined) patch.mentionPatterns = input.mentionPatterns;
     if (input.miniAppEnabled !== undefined) patch.miniAppEnabled = input.miniAppEnabled;
+    if (input.miniAppUrl !== undefined) patch.miniAppUrl = input.miniAppUrl;
 
     const [updated] = await db
       .update(agentTelegramConfigs)
@@ -1027,6 +1030,29 @@ export function telegramService(db: Db) {
             .set({ botUsername: info.botUsername, updatedAt: new Date() })
             .where(eq(agentTelegramConfigs.agentId, agentId));
         }
+
+        // Register/remove Mini App menu button based on config
+        try {
+          if (config.miniAppEnabled) {
+            const miniAppUrl = config.miniAppUrl || `${process.env.PAPERCLIP_PUBLIC_URL || "http://localhost:3100"}/mini-app`;
+            await bot.api.setChatMenuButton({
+              menu_button: {
+                type: "web_app",
+                text: "Open App",
+                web_app: { url: miniAppUrl },
+              },
+            });
+            logger.info({ agentId, miniAppUrl }, "telegram: mini app menu button registered");
+          } else {
+            // Reset to default menu button when mini app is disabled
+            await bot.api.setChatMenuButton({
+              menu_button: { type: "default" },
+            });
+          }
+        } catch (menuErr) {
+          logger.warn({ err: menuErr, agentId }, "telegram: failed to set menu button");
+        }
+
         logger.info({ agentId, botUsername: info.botUsername }, "telegram: bot started");
       })
       .catch((err) => {

@@ -9,6 +9,7 @@ export interface AgentTelegramConfig {
   requireMention: boolean;
   mentionPatterns: string[];
   miniAppEnabled: boolean;
+  miniAppUrl: string | null;
   createdAt: string;
   updatedAt: string;
 }
