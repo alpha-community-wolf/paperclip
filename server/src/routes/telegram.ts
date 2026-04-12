@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import type { Db } from "@paperclipai/db";
-import { upsertTelegramConfigSchema, updateTelegramConfigSchema, sendTelegramMessageSchema } from "@paperclipai/shared";
+import { upsertTelegramConfigSchema, updateTelegramConfigSchema, sendTelegramMessageSchema, miniAppAuthSchema } from "@paperclipai/shared";
 import { validate } from "../middleware/validate.js";
 import { agentService } from "../services/index.js";
 import { telegramService } from "../services/telegram.js";
@@ -76,6 +76,7 @@ export function telegramRoutes(db: Db) {
         allowedUserIds: req.body.allowedUserIds,
         requireMention: req.body.requireMention,
         mentionPatterns: req.body.mentionPatterns,
+        miniAppEnabled: req.body.miniAppEnabled,
       });
 
       if (!config) {
@@ -155,6 +156,25 @@ export function telegramRoutes(db: Db) {
       res.status(400).json({ error: message });
     }
   });
+
+  // Mini App auth endpoint — no agent context required, validates via initData HMAC
+  router.post(
+    "/telegram/mini-app/auth",
+    validate(miniAppAuthSchema),
+    async (req, res) => {
+      try {
+        const result = await telegram.miniAppAuth(req.body.initData, req.body.botId);
+        if ("error" in result) {
+          res.status(result.status).json({ error: result.error });
+          return;
+        }
+        res.json(result);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Mini App authentication failed";
+        res.status(500).json({ error: message });
+      }
+    },
+  );
 
   return router;
 }

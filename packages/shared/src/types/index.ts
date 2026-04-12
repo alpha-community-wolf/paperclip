@@ -125,5 +125,5 @@ export type {
 } from "./webhook.js";
 export type { TaskCronSchedule, TaskCronIssueMode } from "./task-cron.js";
 export type { McpServerConfig, McpServersConfig } from "./mcp.js";
-export type { AgentTelegramConfig, AgentTelegramTestResult, SendTelegramNotificationOptions } from "./telegram.js";
+export type { AgentTelegramConfig, AgentTelegramTestResult, SendTelegramNotificationOptions, MiniAppAuthRequest, MiniAppAuthResponse } from "./telegram.js";
 export type { InboxFeedItem, InboxFeedActivity } from "./inbox-feed.js";

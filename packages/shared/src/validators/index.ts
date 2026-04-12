@@ -242,6 +242,8 @@ export {
   upsertTelegramConfigSchema,
   updateTelegramConfigSchema,
   sendTelegramMessageSchema,
+  miniAppAuthSchema,
+  type MiniAppAuth,
   type UpsertTelegramConfig,
   type UpdateTelegramConfig,
   type SendTelegramMessage,
