@@ -1,10 +1,18 @@
 import { Router, type Request, type Response } from "express";
 import type { Db } from "@paperclipai/db";
-import { upsertTelegramConfigSchema, updateTelegramConfigSchema, sendTelegramMessageSchema, miniAppAuthSchema } from "@paperclipai/shared";
+import {
+  hostnameFromHttpUrl,
+  upsertTelegramConfigSchema,
+  updateTelegramConfigSchema,
+  sendTelegramMessageSchema,
+  miniAppAuthSchema,
+} from "@paperclipai/shared";
 import { validate } from "../middleware/validate.js";
 import { agentService } from "../services/index.js";
 import { telegramService } from "../services/telegram.js";
+import { mergeHostnameIntoFileAllowedHostnames } from "../services/instance-network-file.js";
 import { assertCompanyAccess } from "./authz.js";
+import { logger } from "../middleware/logger.js";
 
 export function telegramRoutes(db: Db) {
   const router = Router();
@@ -85,10 +93,36 @@ export function telegramRoutes(db: Db) {
         return;
       }
 
+      let miniAppHostnameMerge: { ok: true; hostname: string; added: boolean } | { ok: false; error: string } | null =
+        null;
+      const mergeAllowed = req.body.mergeMiniAppHostnameToAllowedHosts !== false;
+      // Only merge when the client explicitly sends miniAppUrl in this request (avoid re-merge on unrelated PATCHes).
+      const urlToMerge = req.body.miniAppUrl !== undefined ? req.body.miniAppUrl : null;
+      if (mergeAllowed && urlToMerge) {
+        const host = hostnameFromHttpUrl(urlToMerge);
+        if (host && req.actor.type === "board" && (req.actor.source === "local_implicit" || req.actor.isInstanceAdmin)) {
+          const mergeResult = mergeHostnameIntoFileAllowedHostnames(host);
+          if (mergeResult.ok) {
+            miniAppHostnameMerge = {
+              ok: true,
+              hostname: mergeResult.hostname,
+              added: mergeResult.added,
+            };
+          } else {
+            miniAppHostnameMerge = { ok: false, error: mergeResult.error };
+            logger.warn(
+              { err: mergeResult.error, host, agentId: agent.id },
+              "telegram: could not merge mini app hostname into allowed hostnames",
+            );
+          }
+        }
+      }
+
       const botInstance = telegram.getActiveBot(agent.id);
       res.json({
         config,
         status: botInstance ? "connected" : config.enabled ? "starting" : "disabled",
+        miniAppHostnameMerge,
       });
     },
   );

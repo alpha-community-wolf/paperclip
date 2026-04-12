@@ -22,6 +22,7 @@ import {
   Cog,
   Command,
   Workflow,
+  Globe,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { SidebarSection } from "./SidebarSection";
@@ -146,6 +147,7 @@ export function Sidebar() {
           <SidebarNavItem to="/commands" label="Commands" icon={Command} />
           <SidebarNavItem to="/webhooks" label="Webhooks" icon={Webhook} />
           <SidebarNavItem to="/system-chores" label="System Chores" icon={Cog} />
+          <SidebarNavItem to="/system-network" label="Server & network" icon={Globe} />
           <SidebarNavItem to="/company/settings" label="Settings" icon={Settings} />
         </SidebarSection>
       </nav>

@@ -27,6 +27,7 @@ import { Webhooks } from "./pages/Webhooks";
 import { Activity } from "./pages/Activity";
 import { Inbox } from "./pages/Inbox";
 import { CompanySettings } from "./pages/CompanySettings";
+import { InstanceNetworkSettings } from "./pages/InstanceNetworkSettings";
 import { DesignGuide } from "./pages/DesignGuide";
 import { OrgChart } from "./pages/OrgChart";
 import { Timeline } from "./pages/Timeline";
@@ -125,6 +126,7 @@ function boardRoutes() {
       <Route path="my-work" element={<MyWork />} />
       <Route path="companies" element={<Companies />} />
       <Route path="company/settings" element={<CompanySettings />} />
+      <Route path="system-network" element={<InstanceNetworkSettings />} />
       <Route path="org" element={<OrgChart />} />
       <Route path="agents" element={<Navigate to="/agents/all" replace />} />
       <Route path="agents/all" element={<Agents />} />
@@ -330,6 +332,7 @@ export function App() {
           <Route path="commands" element={<UnprefixedBoardRedirect />} />
           <Route path="webhooks" element={<UnprefixedBoardRedirect />} />
           <Route path="system-chores" element={<UnprefixedBoardRedirect />} />
+          <Route path="system-network" element={<UnprefixedBoardRedirect />} />
           <Route path="workflow-templates" element={<UnprefixedBoardRedirect />} />
           <Route path="workflow-templates/:templateId" element={<UnprefixedBoardRedirect />} />
           <Route path=":companyPrefix" element={<Layout />}>

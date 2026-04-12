@@ -21,6 +21,8 @@ const BOARD_ROUTE_ROOTS = new Set([
   "commands",
   "webhooks",
   "design-guide",
+  /** Instance-wide server / allowed hostnames (not company-scoped) */
+  "system-network",
 ]);
 
 const GLOBAL_ROUTE_ROOTS = new Set(["auth", "invite", "board-claim", "docs"]);

@@ -41,6 +41,14 @@ interface TelegramResponse {
   config: AgentTelegramConfig | null;
   status: "connected" | "disconnected" | "disabled" | "starting";
   telemetry?: TelegramTelemetry;
+  miniAppHostnameMerge?: {
+    ok: true;
+    hostname: string;
+    added: boolean;
+  } | {
+    ok: false;
+    error: string;
+  } | null;
 }
 
 const inputClass =
@@ -67,6 +75,8 @@ export function TelegramConfigSection({ agentId, companyId }: TelegramConfigSect
   const [testError, setTestError] = useState<string | null>(null);
   const [requireMentionInput, setRequireMentionInput] = useState(true);
   const [mentionPatternsInput, setMentionPatternsInput] = useState("");
+  const [mergeTunnelHostname, setMergeTunnelHostname] = useState(true);
+  const [mergeHostnameNotice, setMergeHostnameNotice] = useState<string | null>(null);
 
   const {
     data,
@@ -334,20 +344,43 @@ export function TelegramConfigSection({ agentId, companyId }: TelegramConfigSect
                     onBlur={(e) => {
                       const value = e.target.value.trim() || null;
                       if (value !== (config.miniAppUrl ?? null)) {
-                        toggleMiniApp.mutate(true, {
-                          onSuccess: () => {
-                            // Save URL separately since toggleMiniApp only sends miniAppEnabled
-                          },
-                        });
-                        api.patch(`/agents/${agentId}/telegram?companyId=${companyId}`, {
-                          miniAppUrl: value,
-                        }).then(() => {
-                          queryClient.invalidateQueries({ queryKey: queryKeys.telegram(agentId) });
-                        });
+                        setMergeHostnameNotice(null);
+                        void api
+                          .patch<TelegramResponse>(`/agents/${agentId}/telegram?companyId=${companyId}`, {
+                            miniAppUrl: value,
+                            mergeMiniAppHostnameToAllowedHosts: mergeTunnelHostname,
+                          })
+                          .then((res) => {
+                            queryClient.invalidateQueries({ queryKey: queryKeys.telegram(agentId) });
+                            queryClient.invalidateQueries({ queryKey: queryKeys.instance.network });
+                            if (res.miniAppHostnameMerge?.ok) {
+                              setMergeHostnameNotice(
+                                res.miniAppHostnameMerge.added
+                                  ? `Added ${res.miniAppHostnameMerge.hostname} to server allowed hostnames (restart Paperclip to apply).`
+                                  : `${res.miniAppHostnameMerge.hostname} was already in allowed hostnames.`,
+                              );
+                            } else if (res.miniAppHostnameMerge && !res.miniAppHostnameMerge.ok) {
+                              setMergeHostnameNotice(
+                                `Could not update allowed hostnames: ${res.miniAppHostnameMerge.error}`,
+                              );
+                            }
+                          });
                       }
                     }}
                   />
                 </div>
+                <label className="flex items-center gap-2 text-[10px] text-muted-foreground cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    className="rounded border-border"
+                    checked={mergeTunnelHostname}
+                    onChange={(e) => setMergeTunnelHostname(e.target.checked)}
+                  />
+                  Add tunnel hostname to Server &amp; network (config file)
+                </label>
+                {mergeHostnameNotice && (
+                  <p className="text-[10px] text-muted-foreground">{mergeHostnameNotice}</p>
+                )}
                 <p className="text-[10px] text-muted-foreground/40">
                   Active: {config.miniAppUrl || `${window.location.origin}/mini-app`}
                 </p>

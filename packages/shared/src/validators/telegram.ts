@@ -17,6 +17,8 @@ export const updateTelegramConfigSchema = z.object({
   mentionPatterns: z.array(z.string().trim().min(1)).optional(),
   miniAppEnabled: z.boolean().optional(),
   miniAppUrl: z.string().url().optional().nullable(),
+  /** When saving miniAppUrl, also append its hostname to server.allowedHostnames in config.json (instance admin / local dev). */
+  mergeMiniAppHostnameToAllowedHosts: z.boolean().optional().default(true),
 });
 
 export const telegramMediaTypeSchema = z.enum(["photo", "document"]);

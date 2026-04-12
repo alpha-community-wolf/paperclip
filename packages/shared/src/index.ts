@@ -395,7 +395,11 @@ export {
   type CreateWorkflowTemplate,
   type UpdateWorkflowTemplate,
   type RunWorkflowTemplate,
+  patchInstanceNetworkSchema,
+  type PatchInstanceNetwork,
 } from "./validators/index.js";
+
+export { normalizeHostnameInput, parseHostnameCsv, hostnameFromHttpUrl } from "./hostnames.js";
 
 export { sanitizeCommentBody } from "./sanitize-comment.js";
 export { API_PREFIX, API } from "./api.js";

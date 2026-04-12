@@ -151,4 +151,7 @@ export const queryKeys = {
   org: (companyId: string) => ["org", companyId] as const,
   timeline: (companyId: string, from: string, to: string, agentId?: string) =>
     ["timeline", companyId, from, to, agentId ?? "__all__"] as const,
+  instance: {
+    network: ["instance", "network"] as const,
+  },
 };

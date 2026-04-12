@@ -41,6 +41,7 @@ import { sharedMemoryRoutes } from "./routes/shared-memories.js";
 import { systemChoreRoutes } from "./routes/system-chores.js";
 import { workflowTemplateRoutes } from "./routes/workflow-templates.js";
 import { fileIndexRoutes } from "./routes/file-index.js";
+import { instanceNetworkRoutes } from "./routes/instance-network.js";
 import { applyUiBranding } from "./ui-branding.js";
 import type { BetterAuthSessionResult } from "./auth/better-auth.js";
 import { eventRoutingService } from "./services/event-routing.js";
@@ -153,6 +154,8 @@ export async function createApp(
   api.use(memorySearchRoutes(db));
   api.use(mcpServerRoutes(db));
   api.use(telegramRoutes(db));
+  /** Instance-wide allowed hostnames (board / instance admin). Path aligns with UI /system-network. */
+  api.use("/system", instanceNetworkRoutes(db));
   api.use(sharedMemoryRoutes(db));
   api.use(systemChoreRoutes(db));
   api.use(workflowTemplateRoutes(db));

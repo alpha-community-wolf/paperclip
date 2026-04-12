@@ -272,3 +272,8 @@ export {
   type UpdateWorkflowTemplate,
   type RunWorkflowTemplate,
 } from "./workflow-template.js";
+
+export {
+  patchInstanceNetworkSchema,
+  type PatchInstanceNetwork,
+} from "./instance-network.js";

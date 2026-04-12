@@ -10,7 +10,7 @@ import {
 export const configMetaSchema = z.object({
   version: z.literal(1),
   updatedAt: z.string(),
-  source: z.enum(["onboard", "configure", "doctor"]),
+  source: z.enum(["onboard", "configure", "doctor", "board_ui"]),
 });
 
 export const llmConfigSchema = z.object({
