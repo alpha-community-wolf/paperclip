@@ -163,10 +163,13 @@ export function loadConfig(): Config {
   const allowedHostnamesFromEnvRaw = process.env.PAPERCLIP_ALLOWED_HOSTNAMES;
   const allowedHostnamesFromEnv = allowedHostnamesFromEnvRaw
     ? allowedHostnamesFromEnvRaw
-      .split(",")
-      .map((value) => value.trim().toLowerCase())
-      .filter((value) => value.length > 0)
-    : null;
+        .split(",")
+        .map((value) => value.trim().toLowerCase())
+        .filter((value) => value.length > 0)
+    : [];
+  const allowedHostnamesFromFile = (fileConfig?.server.allowedHostnames ?? [])
+    .map((value) => String(value).trim().toLowerCase())
+    .filter((value) => value.length > 0);
   const publicUrlHostname = authPublicBaseUrl
     ? (() => {
       try {
@@ -176,10 +179,12 @@ export function loadConfig(): Config {
       }
     })()
     : null;
+  /** Merge env, config file (e.g. UI / CLI), and auth public URL — do not let env replace file-only entries. */
   const allowedHostnames = Array.from(
     new Set(
       [
-        ...(allowedHostnamesFromEnv ?? fileConfig?.server.allowedHostnames ?? []),
+        ...allowedHostnamesFromEnv,
+        ...allowedHostnamesFromFile,
         ...(publicUrlHostname ? [publicUrlHostname] : []),
       ]
         .map((value) => value.trim().toLowerCase())

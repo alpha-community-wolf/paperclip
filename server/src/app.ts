@@ -219,7 +219,10 @@ export async function createApp(
           port: hmrPort,
           clientPort: hmrPort,
         },
-        allowedHosts: privateHostnameGateEnabled ? Array.from(privateHostnameAllowSet) : undefined,
+        // Vite 6+ rejects unknown Host headers in middleware mode. When private hostname gate is off,
+        // Express does not enforce host allowlist — allow any host for Vite so tunnels (ngrok) work.
+        // When gate is on, use the same allow set as privateHostnameGuard + configured hostnames.
+        allowedHosts: privateHostnameGateEnabled ? Array.from(privateHostnameAllowSet) : true,
       },
     });
 
