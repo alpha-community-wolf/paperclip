@@ -1,8 +1,11 @@
+import { Loader2 } from "lucide-react";
+import { cn } from "@/lib/utils";
+
 export function LoadingSpinner({ size = "md" }: { size?: "sm" | "md" | "lg" }) {
-  const sizeClass = { sm: "h-4 w-4", md: "h-6 w-6", lg: "h-8 w-8" }[size];
+  const sizeClass = { sm: "size-4", md: "size-6", lg: "size-8" }[size];
   return (
     <div className="flex items-center justify-center p-8">
-      <div className={`${sizeClass} animate-spin rounded-full border-2 border-[var(--tg-theme-hint-color)] border-t-[var(--tg-theme-button-color)]`} />
+      <Loader2 className={cn(sizeClass, "animate-spin text-muted-foreground")} />
     </div>
   );
 }
@@ -10,7 +13,7 @@ export function LoadingSpinner({ size = "md" }: { size?: "sm" | "md" | "lg" }) {
 export function ScreenLoader() {
   return (
     <div className="flex-1 flex items-center justify-center">
-      <LoadingSpinner size="lg" />
+      <Loader2 className="size-8 animate-spin text-muted-foreground" />
     </div>
   );
 }

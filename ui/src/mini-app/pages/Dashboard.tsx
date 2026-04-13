@@ -1,8 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
+import { RefreshCw } from "lucide-react";
 import type { DashboardSummary } from "@paperclipai/shared";
 import { miniAppApi } from "../api/client";
 import { StatusBadge } from "../components/StatusBadge";
 import { LoadingSpinner } from "../components/LoadingSpinner";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 
 interface DashboardProps {
   companyId: string;
@@ -53,14 +56,10 @@ export function Dashboard({ companyId, onIssueClick }: DashboardProps) {
     return (
       <div className="p-4 space-y-2">
         <h1 className="text-lg font-semibold">Dashboard</h1>
-        <p className="text-sm text-red-400">{message}</p>
-        <button
-          type="button"
-          onClick={() => refetch()}
-          className="text-sm text-[var(--tg-theme-button-color)]"
-        >
+        <p className="text-sm text-destructive">{message}</p>
+        <Button variant="ghost" size="sm" onClick={() => refetch()}>
           Retry
-        </button>
+        </Button>
       </div>
     );
   }
@@ -72,23 +71,23 @@ export function Dashboard({ companyId, onIssueClick }: DashboardProps) {
     <div className="p-4 space-y-4">
       <header className="flex items-center justify-between">
         <h1 className="text-lg font-semibold">Dashboard</h1>
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="icon-xs"
           onClick={() => {
             void refetch();
             void agentsQuery.refetch();
             void issuesQuery.refetch();
           }}
-          className="text-sm text-[var(--tg-theme-button-color)] active:opacity-70"
         >
-          Refresh
-        </button>
+          <RefreshCw className="size-4" />
+        </Button>
       </header>
 
       <div className="grid grid-cols-3 gap-2">
         <StatCard label="Running" value={summary.agents.running} />
         <StatCard label="In progress" value={summary.tasks.inProgress} />
-        <StatCard label="Blocked" value={summary.tasks.blocked} accent="red" />
+        <StatCard label="Blocked" value={summary.tasks.blocked} accent="destructive" />
       </div>
 
       <div className="grid grid-cols-3 gap-2">
@@ -101,54 +100,55 @@ export function Dashboard({ companyId, onIssueClick }: DashboardProps) {
       </div>
 
       <section>
-        <h2 className="text-sm font-medium text-[var(--tg-theme-hint-color)] mb-2">Agents</h2>
+        <h2 className="text-sm font-medium text-muted-foreground mb-2">Agents</h2>
         {agentsQuery.isLoading && <LoadingSpinner />}
         {!agentsQuery.isLoading && (
           <div className="space-y-2">
             {agentRows.map((agent) => (
-              <div
-                key={agent.id}
-                className="bg-[var(--tg-theme-secondary-bg-color)] rounded-lg p-3 flex items-center justify-between"
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-sm truncate">{agent.name}</span>
-                    <StatusBadge status={agent.status} />
+              <Card key={agent.id} className="py-3 gap-0">
+                <CardContent className="px-3 py-0">
+                  <div className="flex items-center justify-between">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-sm truncate">{agent.name}</span>
+                        <StatusBadge status={agent.status} />
+                      </div>
+                      {agent.title && (
+                        <p className="text-xs text-muted-foreground mt-0.5 truncate">{agent.title}</p>
+                      )}
+                    </div>
                   </div>
-                  {agent.title && (
-                    <p className="text-xs text-[var(--tg-theme-hint-color)] mt-0.5 truncate">{agent.title}</p>
-                  )}
-                </div>
-              </div>
+                </CardContent>
+              </Card>
             ))}
             {agentRows.length === 0 && (
-              <p className="text-sm text-[var(--tg-theme-hint-color)]">No agents</p>
+              <p className="text-sm text-muted-foreground">No agents</p>
             )}
           </div>
         )}
       </section>
 
       <section>
-        <h2 className="text-sm font-medium text-[var(--tg-theme-hint-color)] mb-2">Recent issues</h2>
+        <h2 className="text-sm font-medium text-muted-foreground mb-2">Recent issues</h2>
         {issuesQuery.isLoading && <LoadingSpinner />}
         {!issuesQuery.isLoading && (
-          <div className="space-y-1">
+          <div className="space-y-1.5">
             {recentIssues.map((issue) => (
               <button
                 key={issue.id}
                 type="button"
                 onClick={() => onIssueClick(issue.id)}
-                className="w-full bg-[var(--tg-theme-secondary-bg-color)] rounded-lg p-3 text-left active:opacity-70 transition-opacity"
+                className="w-full bg-card border border-border rounded-md p-3 text-left active:opacity-70 transition-opacity"
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs text-[var(--tg-theme-hint-color)] shrink-0">{issue.identifier}</span>
+                  <span className="text-xs text-muted-foreground shrink-0">{issue.identifier}</span>
                   <StatusBadge status={issue.status} />
                 </div>
                 <p className="text-sm mt-1 truncate">{issue.title}</p>
               </button>
             ))}
             {recentIssues.length === 0 && (
-              <p className="text-sm text-[var(--tg-theme-hint-color)]">No open issues</p>
+              <p className="text-sm text-muted-foreground">No open issues</p>
             )}
           </div>
         )}
@@ -159,11 +159,13 @@ export function Dashboard({ companyId, onIssueClick }: DashboardProps) {
 
 function StatCard({ label, value, accent }: { label: string; value: number; accent?: string }) {
   return (
-    <div className="bg-[var(--tg-theme-secondary-bg-color)] rounded-lg p-3 text-center">
-      <div className={`text-xl font-bold ${accent === "red" && value > 0 ? "text-red-400" : ""}`}>
-        {value}
-      </div>
-      <div className="text-[10px] text-[var(--tg-theme-hint-color)] mt-0.5">{label}</div>
-    </div>
+    <Card className="py-3 gap-0">
+      <CardContent className="px-3 py-0 text-center">
+        <div className={`text-xl font-bold ${accent === "destructive" && value > 0 ? "text-destructive" : ""}`}>
+          {value}
+        </div>
+        <div className="text-[10px] text-muted-foreground mt-0.5">{label}</div>
+      </CardContent>
+    </Card>
   );
 }

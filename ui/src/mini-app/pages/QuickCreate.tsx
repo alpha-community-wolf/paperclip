@@ -1,6 +1,18 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { miniAppApi } from "../api/client";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { cn } from "@/lib/utils";
 
 interface QuickCreateProps {
   companyId: string;
@@ -18,7 +30,7 @@ const PRIORITIES = ["critical", "high", "medium", "low"] as const;
 
 export function QuickCreate({ companyId, onCreated }: QuickCreateProps) {
   const [title, setTitle] = useState("");
-  const [assigneeAgentId, setAssigneeAgentId] = useState<string>("");
+  const [assigneeAgentId, setAssigneeAgentId] = useState<string>("__none__");
   const [priority, setPriority] = useState<string>("medium");
   const [description, setDescription] = useState("");
   const queryClient = useQueryClient();
@@ -32,7 +44,6 @@ export function QuickCreate({ companyId, onCreated }: QuickCreateProps) {
     mutationFn: (body: Record<string, unknown>) =>
       miniAppApi.post<{ id: string; identifier: string }>(`/companies/${companyId}/issues`, body),
     onSuccess: (data) => {
-      // Haptic feedback
       window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred("success");
       queryClient.invalidateQueries({ queryKey: ["mini-app"] });
       onCreated(data.id);
@@ -57,7 +68,7 @@ export function QuickCreate({ companyId, onCreated }: QuickCreateProps) {
         title: title.trim(),
         description: description.trim() || undefined,
         priority,
-        assigneeAgentId: assigneeAgentId || undefined,
+        assigneeAgentId: assigneeAgentId === "__none__" ? undefined : assigneeAgentId,
         status: "todo",
       });
     };
@@ -70,96 +81,95 @@ export function QuickCreate({ companyId, onCreated }: QuickCreateProps) {
     };
   }, [title, description, priority, assigneeAgentId]);
 
+  const agents = (agentsData?.agents ?? (agentsData as unknown as Agent[]) ?? [])
+    .filter((a) => a.status !== "terminated");
+
   return (
     <div className="p-4 space-y-4">
       <h1 className="text-lg font-semibold">Quick Create</h1>
 
       {/* Title */}
-      <div>
-        <label className="block text-xs text-[var(--tg-theme-hint-color)] mb-1">Title *</label>
-        <input
-          type="text"
+      <div className="space-y-1.5">
+        <Label htmlFor="issue-title">Title *</Label>
+        <Input
+          id="issue-title"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="What needs to be done?"
-          className="w-full bg-[var(--tg-theme-secondary-bg-color)] rounded-lg px-3 py-2.5 text-sm outline-none placeholder:text-[var(--tg-theme-hint-color)]/50 focus:ring-1 focus:ring-[var(--tg-theme-button-color)]"
           autoFocus
         />
       </div>
 
       {/* Assignee */}
-      <div>
-        <label className="block text-xs text-[var(--tg-theme-hint-color)] mb-1">Assignee</label>
-        <select
-          value={assigneeAgentId}
-          onChange={(e) => setAssigneeAgentId(e.target.value)}
-          className="w-full bg-[var(--tg-theme-secondary-bg-color)] rounded-lg px-3 py-2.5 text-sm outline-none"
-        >
-          <option value="">Unassigned</option>
-          {(agentsData?.agents ?? [])
-            .filter((a) => a.status !== "terminated")
-            .map((agent) => (
-              <option key={agent.id} value={agent.id}>
+      <div className="space-y-1.5">
+        <Label>Assignee</Label>
+        <Select value={assigneeAgentId} onValueChange={setAssigneeAgentId}>
+          <SelectTrigger className="w-full">
+            <SelectValue placeholder="Unassigned" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__none__">Unassigned</SelectItem>
+            {agents.map((agent) => (
+              <SelectItem key={agent.id} value={agent.id}>
                 {agent.name}{agent.title ? ` — ${agent.title}` : ""}
-              </option>
+              </SelectItem>
             ))}
-        </select>
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Priority */}
-      <div>
-        <label className="block text-xs text-[var(--tg-theme-hint-color)] mb-1">Priority</label>
+      <div className="space-y-1.5">
+        <Label>Priority</Label>
         <div className="flex gap-1.5">
           {PRIORITIES.map((p) => (
-            <button
+            <Button
               key={p}
+              variant={priority === p ? "default" : "secondary"}
+              size="sm"
+              className={cn("flex-1 capitalize")}
               onClick={() => setPriority(p)}
-              className={`flex-1 py-2 rounded-lg text-xs font-medium transition-colors ${
-                priority === p
-                  ? "bg-[var(--tg-theme-button-color)] text-[var(--tg-theme-button-text-color)]"
-                  : "bg-[var(--tg-theme-secondary-bg-color)] text-[var(--tg-theme-hint-color)]"
-              }`}
             >
               {p}
-            </button>
+            </Button>
           ))}
         </div>
       </div>
 
       {/* Description */}
-      <div>
-        <label className="block text-xs text-[var(--tg-theme-hint-color)] mb-1">Description</label>
-        <textarea
+      <div className="space-y-1.5">
+        <Label htmlFor="issue-desc">Description</Label>
+        <Textarea
+          id="issue-desc"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           placeholder="Optional details..."
           rows={3}
-          className="w-full bg-[var(--tg-theme-secondary-bg-color)] rounded-lg px-3 py-2.5 text-sm outline-none placeholder:text-[var(--tg-theme-hint-color)]/50 resize-none focus:ring-1 focus:ring-[var(--tg-theme-button-color)]"
         />
       </div>
 
       {/* Fallback create button for non-Telegram contexts */}
       {!window.Telegram?.WebApp && (
-        <button
+        <Button
+          className="w-full"
           onClick={() => {
             if (!title.trim()) return;
             createMutation.mutate({
               title: title.trim(),
               description: description.trim() || undefined,
               priority,
-              assigneeAgentId: assigneeAgentId || undefined,
+              assigneeAgentId: assigneeAgentId === "__none__" ? undefined : assigneeAgentId,
               status: "todo",
             });
           }}
           disabled={!title.trim() || createMutation.isPending}
-          className="w-full bg-[var(--tg-theme-button-color)] text-[var(--tg-theme-button-text-color)] rounded-lg py-3 text-sm font-medium disabled:opacity-50"
         >
           {createMutation.isPending ? "Creating..." : "Create Issue"}
-        </button>
+        </Button>
       )}
 
       {createMutation.isError && (
-        <p className="text-red-400 text-sm text-center">
+        <p className="text-destructive text-sm text-center">
           {(createMutation.error as Error).message}
         </p>
       )}

@@ -3,6 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { miniAppApi } from "../api/client";
 import { StatusBadge, PriorityBadge } from "../components/StatusBadge";
 import { LoadingSpinner } from "../components/LoadingSpinner";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 interface IssueListProps {
   companyId: string;
@@ -38,17 +40,15 @@ export function IssueList({ companyId, onIssueClick }: IssueListProps) {
       {/* Status filter pills */}
       <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1">
         {STATUS_FILTERS.map((s) => (
-          <button
+          <Button
             key={s}
+            variant={statusFilter === s ? "default" : "secondary"}
+            size="xs"
+            className={cn("shrink-0 rounded-full")}
             onClick={() => setStatusFilter(s)}
-            className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-              statusFilter === s
-                ? "bg-[var(--tg-theme-button-color)] text-[var(--tg-theme-button-text-color)]"
-                : "bg-[var(--tg-theme-secondary-bg-color)] text-[var(--tg-theme-hint-color)]"
-            }`}
           >
             {s === "all" ? "All Active" : s.replace(/_/g, " ")}
-          </button>
+          </Button>
         ))}
       </div>
 
@@ -60,10 +60,10 @@ export function IssueList({ companyId, onIssueClick }: IssueListProps) {
             <button
               key={issue.id}
               onClick={() => onIssueClick(issue.id)}
-              className="w-full bg-[var(--tg-theme-secondary-bg-color)] rounded-lg p-3 text-left active:opacity-70 transition-opacity"
+              className="w-full bg-card border border-border rounded-md p-3 text-left active:opacity-70 transition-opacity"
             >
               <div className="flex items-center justify-between gap-2 mb-1">
-                <span className="text-xs text-[var(--tg-theme-hint-color)]">{issue.identifier}</span>
+                <span className="text-xs text-muted-foreground">{issue.identifier}</span>
                 <div className="flex items-center gap-1.5">
                   <PriorityBadge priority={issue.priority} />
                   <StatusBadge status={issue.status} />
@@ -71,15 +71,15 @@ export function IssueList({ companyId, onIssueClick }: IssueListProps) {
               </div>
               <p className="text-sm truncate">{issue.title}</p>
               {issue.assigneeAgent && (
-                <p className="text-xs text-[var(--tg-theme-hint-color)] mt-1">
-                  → {issue.assigneeAgent.name}
+                <p className="text-xs text-muted-foreground mt-1">
+                  {issue.assigneeAgent.name}
                 </p>
               )}
             </button>
           ))}
 
           {(data ?? []).length === 0 && (
-            <div className="text-center py-8 text-[var(--tg-theme-hint-color)] text-sm">
+            <div className="text-center py-8 text-muted-foreground text-sm">
               No issues found
             </div>
           )}
