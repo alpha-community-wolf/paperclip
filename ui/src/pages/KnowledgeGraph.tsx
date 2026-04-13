@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef, Fragment } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@/lib/router";
 import {
@@ -16,6 +16,8 @@ import {
   Building2,
   FileText,
   Network,
+  ChevronRight,
+  SlidersHorizontal,
 } from "lucide-react";
 import { memoriesApi } from "../api/memories";
 import type { SharedMemory } from "../api/memories";
@@ -28,6 +30,7 @@ import { queryKeys } from "../lib/queryKeys";
 import { cn } from "../lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -40,6 +43,8 @@ import {
   KnowledgeGraphCanvas,
   type GraphNode,
   type GraphEdge,
+  DEFAULT_KNOWLEDGE_GRAPH_LAYOUT,
+  type KnowledgeGraphLayoutParams,
 } from "../components/KnowledgeGraphCanvas";
 
 // ---------------------------------------------------------------------------
@@ -293,6 +298,91 @@ const MEMORY_LEGEND_ICON: Record<string, typeof Brain> = {
   memory: Circle,
 };
 
+/** Human-readable edge types for the connection list (undirected — both ends see the same label). */
+const EDGE_TYPE_SHORT_LABEL: Record<string, string> = {
+  created_by: "Authored by agent",
+  scoped_to: "Project scope",
+  categorized_as: "Category",
+  tagged_with: "Tag",
+  supersedes: "Supersedes / superseded",
+  "co-occurrence": "Co-occurring topic",
+};
+
+const NEIGHBOR_SECTION_LABEL: Record<GraphNode["type"], string> = {
+  memory: "Memories",
+  agent: "Agents",
+  project: "Projects",
+  category: "Categories",
+  topic: "Topics",
+  file: "Files",
+};
+
+const NEIGHBOR_TYPE_ORDER: GraphNode["type"][] = [
+  "memory",
+  "agent",
+  "project",
+  "category",
+  "topic",
+  "file",
+];
+
+function edgeEndpointId(ref: string | GraphNode): string {
+  return typeof ref === "string" ? ref : ref.id;
+}
+
+/** Unique neighbors of a node from the current graph edge list (no extra API data). */
+function getNeighborRows(
+  nodeId: string,
+  graphNodes: GraphNode[],
+  graphEdges: GraphEdge[],
+): { neighbor: GraphNode; edgeLabels: string[] }[] {
+  const idMap = new Map(graphNodes.map((n) => [n.id, n]));
+  const merged = new Map<string, { neighbor: GraphNode; edgeTypes: Set<string> }>();
+
+  for (const e of graphEdges) {
+    const src = edgeEndpointId(e.source as string | GraphNode);
+    const tgt = edgeEndpointId(e.target as string | GraphNode);
+    if (src === nodeId) {
+      const n = idMap.get(tgt);
+      if (n) {
+        let row = merged.get(n.id);
+        if (!row) {
+          row = { neighbor: n, edgeTypes: new Set() };
+          merged.set(n.id, row);
+        }
+        row.edgeTypes.add(e.edgeType);
+      }
+    }
+    if (tgt === nodeId) {
+      const n = idMap.get(src);
+      if (n) {
+        let row = merged.get(n.id);
+        if (!row) {
+          row = { neighbor: n, edgeTypes: new Set() };
+          merged.set(n.id, row);
+        }
+        row.edgeTypes.add(e.edgeType);
+      }
+    }
+  }
+
+  const typeRank = (t: GraphNode["type"]) => {
+    const i = NEIGHBOR_TYPE_ORDER.indexOf(t);
+    return i === -1 ? 99 : i;
+  };
+
+  return [...merged.values()]
+    .map((v) => ({
+      neighbor: v.neighbor,
+      edgeLabels: [...v.edgeTypes].map((et) => EDGE_TYPE_SHORT_LABEL[et] ?? et.replace(/_/g, " ")),
+    }))
+    .sort((a, b) => {
+      const tr = typeRank(a.neighbor.type) - typeRank(b.neighbor.type);
+      if (tr !== 0) return tr;
+      return a.neighbor.label.localeCompare(b.neighbor.label);
+    });
+}
+
 // ---------------------------------------------------------------------------
 // Detail panel
 // ---------------------------------------------------------------------------
@@ -301,11 +391,17 @@ function DetailPanel({
   node,
   agentMap,
   prefix,
+  graphNodes,
+  graphEdges,
+  onSelectNeighbor,
   onClose,
 }: {
   node: GraphNode;
   agentMap: Map<string, { name: string }>;
   prefix: string;
+  graphNodes: GraphNode[];
+  graphEdges: GraphEdge[];
+  onSelectNeighbor: (n: GraphNode) => void;
   onClose: () => void;
 }) {
   const isFile = node.type === "file";
@@ -329,6 +425,21 @@ function DetailPanel({
     relativePath?: string;
     backlinkCount?: number;
   };
+
+  const neighborRows = useMemo(
+    () => getNeighborRows(node.id, graphNodes, graphEdges),
+    [node.id, graphNodes, graphEdges],
+  );
+
+  const neighborsByType = useMemo(() => {
+    const m = new Map<GraphNode["type"], typeof neighborRows>();
+    for (const row of neighborRows) {
+      const t = row.neighbor.type;
+      if (!m.has(t)) m.set(t, []);
+      m.get(t)!.push(row);
+    }
+    return m;
+  }, [neighborRows]);
 
   return (
     <div className="absolute right-4 top-4 bottom-4 w-80 bg-popover/95 backdrop-blur-md border border-border rounded-xl shadow-2xl flex flex-col overflow-hidden z-20 animate-in slide-in-from-right-4 duration-200">
@@ -450,8 +561,66 @@ function DetailPanel({
           </Link>
         )}
 
+        {neighborRows.length > 0 && (
+          <div className="space-y-3 pt-2 border-t border-border/30">
+            <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+              Connected in this graph
+            </div>
+            <div className="space-y-3 max-h-[min(50vh,22rem)] overflow-y-auto pr-1 -mr-1">
+              {NEIGHBOR_TYPE_ORDER.filter((t) => neighborsByType.has(t)).map((t) => (
+                <div key={t}>
+                  <div className="text-[10px] font-semibold text-muted-foreground/90 mb-1.5">
+                    {NEIGHBOR_SECTION_LABEL[t]}{" "}
+                    <span className="tabular-nums font-normal">({neighborsByType.get(t)!.length})</span>
+                  </div>
+                  <div className="space-y-1">
+                    {neighborsByType.get(t)!.map((row) => {
+                      const rawContent =
+                        row.neighbor.type === "memory" &&
+                        typeof row.neighbor.meta === "object" &&
+                        row.neighbor.meta &&
+                        "content" in row.neighbor.meta &&
+                        typeof (row.neighbor.meta as { content?: unknown }).content === "string"
+                          ? (row.neighbor.meta as { content: string }).content
+                          : null;
+                      const sub =
+                        rawContent && rawContent.length > 80
+                          ? `${rawContent.slice(0, 120)}…`
+                          : rawContent;
+                      return (
+                        <button
+                          key={row.neighbor.id}
+                          type="button"
+                          onClick={() => onSelectNeighbor(row.neighbor)}
+                          className="w-full text-left rounded-lg border border-border/60 bg-muted/20 px-2.5 py-2 hover:bg-muted/45 transition-colors"
+                        >
+                          <div className="text-[13px] font-medium text-foreground leading-snug break-words">
+                            {row.neighbor.label}
+                          </div>
+                          {sub && (
+                            <div className="text-[11px] text-muted-foreground mt-0.5 line-clamp-2">
+                              {sub}
+                            </div>
+                          )}
+                          {row.edgeLabels.length > 0 && (
+                            <div className="text-[10px] text-muted-foreground/85 mt-1">
+                              {row.edgeLabels.join(" · ")}
+                            </div>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="text-[11px] text-muted-foreground pt-2 border-t border-border/30 tabular-nums">
-          {node.weight} connection{node.weight !== 1 ? "s" : ""}
+          {neighborRows.length > 0
+            ? `${neighborRows.length} linked node${neighborRows.length !== 1 ? "s" : ""}`
+            : `${node.weight} connection${node.weight !== 1 ? "s" : ""}`}
         </div>
       </div>
     </div>
@@ -462,12 +631,134 @@ function DetailPanel({
 // Main Page
 // ---------------------------------------------------------------------------
 
+const LAYOUT_STORAGE_KEY = "paperclip:knowledge-graph-layout-v2";
+
+function clampLayoutNumber(n: number, lo: number, hi: number, fallback: number): number {
+  if (typeof n !== "number" || Number.isNaN(n)) return fallback;
+  return Math.min(hi, Math.max(lo, n));
+}
+
+function loadStoredGraphLayout(): KnowledgeGraphLayoutParams {
+  try {
+    const raw = localStorage.getItem(LAYOUT_STORAGE_KEY);
+    if (!raw) return { ...DEFAULT_KNOWLEDGE_GRAPH_LAYOUT };
+    const p = JSON.parse(raw) as Record<string, unknown>;
+    const d = DEFAULT_KNOWLEDGE_GRAPH_LAYOUT;
+    return {
+      linkDistance: clampLayoutNumber(Number(p.linkDistance), 20, 140, d.linkDistance),
+      chargeMemory: clampLayoutNumber(Number(p.chargeMemory), 5, 160, d.chargeMemory),
+      chargeHub: clampLayoutNumber(Number(p.chargeHub), 30, 400, d.chargeHub),
+      collidePadding: clampLayoutNumber(Number(p.collidePadding), 0, 28, d.collidePadding),
+      centerGravity: clampLayoutNumber(Number(p.centerGravity), 0, 0.12, d.centerGravity),
+    };
+  } catch {
+    return { ...DEFAULT_KNOWLEDGE_GRAPH_LAYOUT };
+  }
+}
+
+const GRAPH_UI_SESSION_VERSION = 1;
+
+type StoredGraphUISession = {
+  v: typeof GRAPH_UI_SESSION_VERSION;
+  graphMode: GraphMode;
+  searchQuery: string;
+  currentId: string | null;
+  trailIds: string[];
+  scopeFilter: string;
+  categoryFilter: string;
+  agentFilter: string;
+  fileAgentFilter: string;
+  fileHideOrphans: boolean;
+};
+
+function graphUISessionKey(companyId: string) {
+  return `paperclip:knowledge-graph-ui:${companyId}`;
+}
+
+const VALID_SCOPES = new Set(["__all__", "company", "project"]);
+
+function safeSessionScope(v: unknown): string {
+  const s = typeof v === "string" ? v : "__all__";
+  return VALID_SCOPES.has(s) ? s : "__all__";
+}
+
+const MEMORY_CATEGORY_VALUES = new Set([
+  "__all__",
+  "fact",
+  "decision",
+  "procedure",
+  "preference",
+  "lesson_learned",
+  "context",
+]);
+
+function safeSessionCategory(v: unknown): string {
+  const s = typeof v === "string" ? v : "__all__";
+  return MEMORY_CATEGORY_VALUES.has(s) ? s : "__all__";
+}
+
+function loadGraphUISession(companyId: string): StoredGraphUISession | null {
+  try {
+    const raw = sessionStorage.getItem(graphUISessionKey(companyId));
+    if (!raw) return null;
+    const p = JSON.parse(raw) as Partial<StoredGraphUISession>;
+    if (p.v !== GRAPH_UI_SESSION_VERSION) return null;
+    const trailIds = Array.isArray(p.trailIds)
+      ? p.trailIds.filter((x): x is string => typeof x === "string").slice(0, 48)
+      : [];
+    return {
+      v: GRAPH_UI_SESSION_VERSION,
+      graphMode: p.graphMode === "files" ? "files" : "memories",
+      searchQuery: typeof p.searchQuery === "string" ? p.searchQuery.slice(0, 500) : "",
+      currentId: typeof p.currentId === "string" ? p.currentId : null,
+      trailIds,
+      scopeFilter: safeSessionScope(p.scopeFilter),
+      categoryFilter: safeSessionCategory(p.categoryFilter),
+      agentFilter: typeof p.agentFilter === "string" ? p.agentFilter : "__all__",
+      fileAgentFilter: typeof p.fileAgentFilter === "string" ? p.fileAgentFilter : "__all__",
+      fileHideOrphans: Boolean(p.fileHideOrphans),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function saveGraphUISession(companyId: string, payload: Omit<StoredGraphUISession, "v">) {
+  try {
+    const data: StoredGraphUISession = { v: GRAPH_UI_SESSION_VERSION, ...payload };
+    sessionStorage.setItem(graphUISessionKey(companyId), JSON.stringify(data));
+  } catch {
+    /* quota / private mode */
+  }
+}
+
+function breadcrumbSnippet(n: GraphNode, maxLen = 32): string {
+  if (n.type === "memory" && n.meta && typeof n.meta === "object" && "content" in n.meta) {
+    const c = (n.meta as { content?: unknown }).content;
+    if (typeof c === "string" && c.length > 0) {
+      const t = c.replace(/\s+/g, " ").trim();
+      return t.length > maxLen ? `${t.slice(0, maxLen)}…` : t;
+    }
+  }
+  return n.label.length > maxLen ? `${n.label.slice(0, maxLen)}…` : n.label;
+}
+
 export function KnowledgeGraph() {
   const { selectedCompanyId, selectedCompany } = useCompany();
   const [graphMode, setGraphMode] = useState<GraphMode>("memories");
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
+  const [graphSelection, setGraphSelection] = useState<{
+    current: GraphNode | null;
+    trail: GraphNode[];
+  }>({ current: null, trail: [] });
+
+  const [graphLayout, setGraphLayout] = useState<KnowledgeGraphLayoutParams>(() =>
+    typeof localStorage !== "undefined" ? loadStoredGraphLayout() : { ...DEFAULT_KNOWLEDGE_GRAPH_LAYOUT },
+  );
+
+  const selectedNode = graphSelection.current;
+  const selectedNodeId = selectedNode?.id ?? null;
+  const selectionTrail = graphSelection.trail;
 
   // Memories mode filters
   const [scopeFilter, setScopeFilter] = useState<string>("__all__");
@@ -477,6 +768,12 @@ export function KnowledgeGraph() {
   // Files mode filters
   const [fileAgentFilter, setFileAgentFilter] = useState<string>("__all__");
   const [fileHideOrphans, setFileHideOrphans] = useState(false);
+
+  /** `undefined` = company session not loaded yet; `null` = nothing to restore; object = pending id resolution */
+  const restoreSelectionRef = useRef<
+    { currentId: string | null; trailIds: string[] } | null | undefined
+  >(undefined);
+  const [sessionPersistReady, setSessionPersistReady] = useState(false);
 
   const prefix = selectedCompany?.issuePrefix ?? "";
 
@@ -566,6 +863,17 @@ export function KnowledgeGraph() {
   const nodes = graphMode === "files" ? fileNodes : memoryNodes;
   const edges = graphMode === "files" ? fileEdges : memoryEdges;
 
+  const linkedNodeIds = useMemo(() => {
+    if (!selectedNodeId) return null;
+    return new Set(getNeighborRows(selectedNodeId, nodes, edges).map((r) => r.neighbor.id));
+  }, [selectedNodeId, nodes, edges]);
+
+  /** Nodes in the focused 1-hop ring (for the chip); the canvas still draws the full graph faded behind them. */
+  const neighborhoodNodeCount = useMemo(() => {
+    if (!selectedNodeId || !linkedNodeIds) return 0;
+    return 1 + linkedNodeIds.size;
+  }, [selectedNodeId, linkedNodeIds]);
+
   // ---------------------------------------------------------------------------
   // File graph agent legend (agent name + color)
   // ---------------------------------------------------------------------------
@@ -584,16 +892,127 @@ export function KnowledgeGraph() {
   }, [fileGraphData, agents, agentMap]);
 
   const handleSelectNode = useCallback((node: GraphNode | null) => {
-    setSelectedNode(node);
-    setSelectedNodeId(node?.id ?? null);
+    setGraphSelection((s) => {
+      if (!node) return { current: null, trail: [] };
+      if (s.current?.id === node.id) return s;
+      const trail =
+        s.current && s.current.id !== node.id ? [...s.trail, s.current] : !s.current ? [] : s.trail;
+      return { current: node, trail };
+    });
+  }, []);
+
+  const jumpToBreadcrumbIndex = useCallback((index: number) => {
+    setGraphSelection((s) => {
+      if (!s.current) return s;
+      const path = [...s.trail, s.current];
+      const target = path[index];
+      if (!target) return s;
+      return { current: target, trail: path.slice(0, index) };
+    });
   }, []);
 
   const handleModeChange = useCallback((mode: GraphMode) => {
     setGraphMode(mode);
-    setSelectedNode(null);
-    setSelectedNodeId(null);
+    setGraphSelection({ current: null, trail: [] });
     setSearchQuery("");
   }, []);
+
+  // Restore tab session (filters, mode, search, selection ids) when company or remount changes
+  useEffect(() => {
+    if (!selectedCompanyId) return;
+    setGraphSelection({ current: null, trail: [] });
+    setSessionPersistReady(false);
+    const saved = loadGraphUISession(selectedCompanyId);
+    if (saved) {
+      setGraphMode(saved.graphMode);
+      setSearchQuery(saved.searchQuery);
+      setScopeFilter(saved.scopeFilter);
+      setCategoryFilter(saved.categoryFilter);
+      setAgentFilter(saved.agentFilter);
+      setFileAgentFilter(saved.fileAgentFilter);
+      setFileHideOrphans(saved.fileHideOrphans);
+      restoreSelectionRef.current = { currentId: saved.currentId, trailIds: saved.trailIds };
+    } else {
+      setGraphMode("memories");
+      setSearchQuery("");
+      setScopeFilter("__all__");
+      setCategoryFilter("__all__");
+      setAgentFilter("__all__");
+      setFileAgentFilter("__all__");
+      setFileHideOrphans(false);
+      restoreSelectionRef.current = null;
+    }
+  }, [selectedCompanyId]);
+
+  // Resolve saved node ids to graph nodes once `nodes` matches current mode / data
+  useEffect(() => {
+    if (!selectedCompanyId) return;
+    const pending = restoreSelectionRef.current;
+    if (pending === undefined) return;
+
+    if (pending === null) {
+      setGraphSelection({ current: null, trail: [] });
+      restoreSelectionRef.current = undefined;
+      setSessionPersistReady(true);
+      return;
+    }
+
+    if (nodes.length === 0) return;
+
+    const map = new Map(nodes.map((n) => [n.id, n]));
+    const current = pending.currentId ? map.get(pending.currentId) ?? null : null;
+    const trail = pending.trailIds
+      .map((id) => map.get(id))
+      .filter((n): n is GraphNode => n != null);
+
+    if (current) {
+      setGraphSelection({ current, trail });
+    } else {
+      setGraphSelection({ current: null, trail: [] });
+    }
+    restoreSelectionRef.current = undefined;
+    setSessionPersistReady(true);
+  }, [selectedCompanyId, nodes, graphMode]);
+
+  useEffect(() => {
+    if (!selectedCompanyId || !sessionPersistReady) return;
+    saveGraphUISession(selectedCompanyId, {
+      graphMode,
+      searchQuery,
+      currentId: selectedNode?.id ?? null,
+      trailIds: selectionTrail.map((n) => n.id),
+      scopeFilter,
+      categoryFilter,
+      agentFilter,
+      fileAgentFilter,
+      fileHideOrphans,
+    });
+  }, [
+    selectedCompanyId,
+    sessionPersistReady,
+    graphMode,
+    searchQuery,
+    selectedNodeId,
+    selectionTrail,
+    scopeFilter,
+    categoryFilter,
+    agentFilter,
+    fileAgentFilter,
+    fileHideOrphans,
+  ]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(graphLayout));
+    } catch {
+      /* quota / private mode */
+    }
+  }, [graphLayout]);
+
+  const layoutIsCustom = useMemo(
+    () => JSON.stringify(graphLayout) !== JSON.stringify(DEFAULT_KNOWLEDGE_GRAPH_LAYOUT),
+    [graphLayout],
+  );
 
   // Stats
   const memCount = filteredMemories.length;
@@ -695,6 +1114,141 @@ export function KnowledgeGraph() {
             </button>
           )}
         </div>
+
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1.5 text-xs shrink-0 border-dashed"
+              aria-label="Graph layout settings"
+            >
+              <SlidersHorizontal className="h-3.5 w-3.5" />
+              Layout
+              {layoutIsCustom ? (
+                <span className="ml-0.5 h-1.5 w-1.5 rounded-full bg-primary shrink-0" aria-hidden />
+              ) : null}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-80 p-3 space-y-3">
+            <div className="text-sm font-semibold text-foreground">Force layout</div>
+            <p className="text-[11px] text-muted-foreground leading-snug">
+              Tune how tightly the simulation packs nodes. Changes apply after the graph re-runs.
+            </p>
+            <div className="space-y-3 max-h-[min(70vh,26rem)] overflow-y-auto pr-1">
+              <div className="space-y-1.5">
+                <div className="flex justify-between gap-2 text-xs">
+                  <span className="text-muted-foreground">Link distance</span>
+                  <span className="tabular-nums font-medium text-foreground">{graphLayout.linkDistance}px</span>
+                </div>
+                <input
+                  type="range"
+                  min={20}
+                  max={140}
+                  step={5}
+                  value={graphLayout.linkDistance}
+                  onChange={(e) =>
+                    setGraphLayout((L) => ({ ...L, linkDistance: Number(e.target.value) }))
+                  }
+                  className="w-full h-2 accent-primary cursor-pointer"
+                />
+                <p className="text-[10px] text-muted-foreground leading-snug">
+                  Target edge length. Higher spreads linked nodes apart.
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <div className="flex justify-between gap-2 text-xs">
+                  <span className="text-muted-foreground">Repulsion · memories</span>
+                  <span className="tabular-nums font-medium text-foreground">{graphLayout.chargeMemory}</span>
+                </div>
+                <input
+                  type="range"
+                  min={5}
+                  max={160}
+                  step={5}
+                  value={graphLayout.chargeMemory}
+                  onChange={(e) =>
+                    setGraphLayout((L) => ({ ...L, chargeMemory: Number(e.target.value) }))
+                  }
+                  className="w-full h-2 accent-primary cursor-pointer"
+                />
+                <p className="text-[10px] text-muted-foreground leading-snug">
+                  Higher pushes memory dots apart (less overlap).
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <div className="flex justify-between gap-2 text-xs">
+                  <span className="text-muted-foreground">Repulsion · hubs</span>
+                  <span className="tabular-nums font-medium text-foreground">{graphLayout.chargeHub}</span>
+                </div>
+                <input
+                  type="range"
+                  min={30}
+                  max={400}
+                  step={10}
+                  value={graphLayout.chargeHub}
+                  onChange={(e) =>
+                    setGraphLayout((L) => ({ ...L, chargeHub: Number(e.target.value) }))
+                  }
+                  className="w-full h-2 accent-primary cursor-pointer"
+                />
+                <p className="text-[10px] text-muted-foreground leading-snug">
+                  Agents, topics, projects, categories, files — higher = more spread.
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <div className="flex justify-between gap-2 text-xs">
+                  <span className="text-muted-foreground">Collision padding</span>
+                  <span className="tabular-nums font-medium text-foreground">+{graphLayout.collidePadding}px</span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={28}
+                  step={1}
+                  value={graphLayout.collidePadding}
+                  onChange={(e) =>
+                    setGraphLayout((L) => ({ ...L, collidePadding: Number(e.target.value) }))
+                  }
+                  className="w-full h-2 accent-primary cursor-pointer"
+                />
+                <p className="text-[10px] text-muted-foreground leading-snug">
+                  Minimum gap beyond each node’s radius.
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <div className="flex justify-between gap-2 text-xs">
+                  <span className="text-muted-foreground">Center gravity</span>
+                  <span className="tabular-nums font-medium text-foreground">
+                    {graphLayout.centerGravity.toFixed(3)}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={0.12}
+                  step={0.005}
+                  value={graphLayout.centerGravity}
+                  onChange={(e) =>
+                    setGraphLayout((L) => ({ ...L, centerGravity: Number(e.target.value) }))
+                  }
+                  className="w-full h-2 accent-primary cursor-pointer"
+                />
+                <p className="text-[10px] text-muted-foreground leading-snug">
+                  Pull toward the middle. Higher keeps the graph more clustered on screen.
+                </p>
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full h-8 text-xs"
+              onClick={() => setGraphLayout({ ...DEFAULT_KNOWLEDGE_GRAPH_LAYOUT })}
+            >
+              Reset to defaults
+            </Button>
+          </PopoverContent>
+        </Popover>
 
         {graphMode === "memories" ? (
           <>
@@ -809,6 +1363,36 @@ export function KnowledgeGraph() {
         )}
       </div>
 
+      {selectedNode && (
+        <div className="flex flex-wrap items-center gap-x-1 gap-y-0.5 px-1 pb-2 text-[11px] text-muted-foreground shrink-0">
+          <button
+            type="button"
+            onClick={() => handleSelectNode(null)}
+            className="font-medium text-primary hover:underline"
+          >
+            Full graph
+          </button>
+          {[...selectionTrail, selectedNode].map((n, i, path) => (
+            <Fragment key={`${n.id}-bc-${i}`}>
+              <ChevronRight className="h-3 w-3 shrink-0 opacity-40" aria-hidden />
+              {i < path.length - 1 ? (
+                <button
+                  type="button"
+                  onClick={() => jumpToBreadcrumbIndex(i)}
+                  className="truncate max-w-[9rem] sm:max-w-[15rem] text-left hover:text-foreground text-foreground/75"
+                >
+                  {breadcrumbSnippet(n)}
+                </button>
+              ) : (
+                <span className="truncate max-w-[9rem] sm:max-w-[15rem] font-medium text-foreground">
+                  {breadcrumbSnippet(n)}
+                </span>
+              )}
+            </Fragment>
+          ))}
+        </div>
+      )}
+
       {/* Graph canvas + overlays */}
       <div className="relative flex-1 min-h-0">
         <KnowledgeGraphCanvas
@@ -816,6 +1400,9 @@ export function KnowledgeGraph() {
           edges={edges}
           searchTerm={searchQuery}
           selectedNodeId={selectedNodeId}
+          linkedNodeIds={linkedNodeIds}
+          showMemoryLabels={!!selectedNodeId}
+          layout={graphLayout}
           onSelectNode={handleSelectNode}
         />
 
@@ -853,10 +1440,21 @@ export function KnowledgeGraph() {
           )}
         </div>
 
-        {/* Zoom hint */}
-        <div className="absolute left-4 top-4 flex items-center gap-2 text-[10px] text-muted-foreground/60 z-10">
-          <ZoomIn className="h-3 w-3" />
-          <span>Scroll to zoom · Drag to pan · Click node for details</span>
+        {/* Zoom hint + neighborhood mode */}
+        <div className="absolute left-4 top-4 flex flex-wrap items-center gap-2 z-10 max-w-[min(100%,36rem)]">
+          {selectedNodeId && (
+            <span className="rounded-full bg-primary/15 text-primary px-2 py-0.5 text-[10px] font-medium border border-primary/25">
+              1-hop focus ({neighborhoodNodeCount} nodes · full graph faded)
+            </span>
+          )}
+          <div className="flex items-center gap-2 text-[10px] text-muted-foreground/60">
+            <ZoomIn className="h-3 w-3 shrink-0" />
+            <span>
+              {selectedNodeId
+                ? "View auto-frames your selection · Faint nodes = rest of graph · Click empty canvas or Full graph to exit"
+                : "Scroll to zoom · Drag to pan · Hover a memory for full text · Click node for details"}
+            </span>
+          </div>
         </div>
 
         {/* Empty state for files mode */}
@@ -877,6 +1475,9 @@ export function KnowledgeGraph() {
             node={selectedNode}
             agentMap={agentMap}
             prefix={prefix}
+            graphNodes={nodes}
+            graphEdges={edges}
+            onSelectNeighbor={handleSelectNode}
             onClose={() => handleSelectNode(null)}
           />
         )}
