@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
+import { cn } from "../../lib/utils";
 import type { AdapterConfigFieldsProps } from "../types";
 import {
   Field,
@@ -10,6 +11,13 @@ import {
   PayloadTemplateJsonField,
   RuntimeServicesJsonField,
 } from "../runtime-json-fields";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../../components/ui/select";
 
 const inputClass =
   "w-full rounded-md border border-border px-2.5 py-1.5 bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground/40";
@@ -151,15 +159,19 @@ export function OpenClawGatewayConfigFields({
           </Field>
 
           <Field label="Session strategy">
-            <select
+            <Select
               value={sessionStrategy}
-              onChange={(e) => mark("adapterConfig", "sessionKeyStrategy", e.target.value)}
-              className={inputClass}
+              onValueChange={(v) => mark("adapterConfig", "sessionKeyStrategy", v)}
             >
-              <option value="fixed">Fixed</option>
-              <option value="issue">Per issue</option>
-              <option value="run">Per run</option>
-            </select>
+              <SelectTrigger className={cn(inputClass, "w-full font-sans")}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="fixed">Fixed</SelectItem>
+                <SelectItem value="issue">Per issue</SelectItem>
+                <SelectItem value="run">Per run</SelectItem>
+              </SelectContent>
+            </Select>
           </Field>
 
           {sessionStrategy === "fixed" && (

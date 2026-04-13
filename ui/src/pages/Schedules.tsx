@@ -325,23 +325,26 @@ export function Schedules() {
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <label className="text-xs font-medium">Preset</label>
-                <select
-                  className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm"
+                <Select
                   value={presetValue}
-                  onChange={(e) => {
-                    const nextId = e.target.value;
+                  onValueChange={(nextId) => {
                     if (nextId === "__custom__") return;
                     const preset = cronPresetOptions.find((o) => o.id === nextId);
                     if (preset) setDraft((d) => ({ ...d, expression: preset.expression }));
                   }}
                 >
-                  <option value="__custom__">Custom expression</option>
-                  {cronPresetOptions.map((option) => (
-                    <option key={option.id} value={option.id}>
-                      {option.label} ({option.expression})
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger className="w-full text-sm">
+                    <SelectValue placeholder="Custom expression" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__custom__">Custom expression</SelectItem>
+                    {cronPresetOptions.map((option) => (
+                      <SelectItem key={option.id} value={option.id}>
+                        {option.label} ({option.expression})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-medium">Cron expression</label>
@@ -365,15 +368,19 @@ export function Schedules() {
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-medium">Issue behavior</label>
-                <select
-                  className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm"
+                <Select
                   value={draft.issueMode}
-                  onChange={(e) => setDraft((d) => ({ ...d, issueMode: e.target.value as TaskCronIssueMode }))}
+                  onValueChange={(v) => setDraft((d) => ({ ...d, issueMode: v as TaskCronIssueMode }))}
                 >
-                  <option value="create_new">Create a new issue each run</option>
-                  <option value="reopen_existing">Reopen issue when done</option>
-                  <option value="reuse_existing">Reuse existing issue</option>
-                </select>
+                  <SelectTrigger className="w-full text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="create_new">Create a new issue each run</SelectItem>
+                    <SelectItem value="reopen_existing">Reopen issue when done</SelectItem>
+                    <SelectItem value="reuse_existing">Reuse existing issue</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
           </div>
@@ -575,23 +582,26 @@ function ScheduleRow({
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-1">
           <label className="text-xs text-muted-foreground">Preset</label>
-          <select
-            className="w-full rounded-md border border-border bg-transparent px-2 py-1.5 text-sm"
+          <Select
             value={presetValue}
-            onChange={(e) => {
-              const nextId = e.target.value;
+            onValueChange={(nextId) => {
               if (nextId === "__custom__") return;
               const preset = cronPresetOptions.find((o) => o.id === nextId);
               if (preset) setExpression(preset.expression);
             }}
           >
-            <option value="__custom__">Custom expression</option>
-            {cronPresetOptions.map((option) => (
-              <option key={option.id} value={option.id}>
-                {option.label} ({option.expression})
-              </option>
-            ))}
-          </select>
+            <SelectTrigger className="w-full text-sm">
+              <SelectValue placeholder="Custom expression" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__custom__">Custom expression</SelectItem>
+              {cronPresetOptions.map((option) => (
+                <SelectItem key={option.id} value={option.id}>
+                  {option.label} ({option.expression})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <div className="space-y-1">
           <label className="text-xs text-muted-foreground">Cron expression</label>
@@ -605,15 +615,16 @@ function ScheduleRow({
       </div>
       <div className="space-y-1">
         <label className="text-xs text-muted-foreground">Issue behavior</label>
-        <select
-          className="w-full rounded-md border border-border bg-transparent px-2 py-1.5 text-sm sm:w-auto"
-          value={issueMode}
-          onChange={(e) => setIssueMode(e.target.value as TaskCronIssueMode)}
-        >
-          <option value="reopen_existing">Reopen this issue when done</option>
-          <option value="reuse_existing">Reuse this issue</option>
-          <option value="create_new">Create a new issue each run</option>
-        </select>
+        <Select value={issueMode} onValueChange={(v) => setIssueMode(v as TaskCronIssueMode)}>
+          <SelectTrigger className="w-full text-sm sm:w-auto min-w-[12rem]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="reopen_existing">Reopen this issue when done</SelectItem>
+            <SelectItem value="reuse_existing">Reuse this issue</SelectItem>
+            <SelectItem value="create_new">Create a new issue each run</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
       <div className="flex items-center gap-2 pt-1">
         <Button

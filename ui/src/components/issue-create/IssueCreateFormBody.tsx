@@ -6,6 +6,13 @@ import { useProjectOrder } from "../../hooks/useProjectOrder";
 import { getRecentAssigneeIds, sortAgentsByRecency, trackRecentAssignee } from "../../lib/recent-assignees";
 import { Button } from "@/components/ui/button";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Popover,
   PopoverContent,
   PopoverTrigger,
@@ -1325,11 +1332,9 @@ export function IssueCreateFormBody({
                   <div className="grid gap-2 sm:grid-cols-2">
                     <div className="space-y-1.5">
                       <div className="text-xs text-muted-foreground">Preset</div>
-                      <select
-                        className="w-full rounded-md border border-border bg-transparent px-2 py-1 text-xs"
+                      <Select
                         value={recurringPresetValue}
-                        onChange={(e) => {
-                          const nextId = e.target.value;
+                        onValueChange={(nextId) => {
                           if (nextId === "__custom__") return;
                           const preset = cronPresetOptions.find((option) => option.id === nextId);
                           if (!preset) return;
@@ -1337,13 +1342,18 @@ export function IssueCreateFormBody({
                         }}
                         disabled={!recurringEnabled}
                       >
-                        <option value="__custom__">Custom expression</option>
-                        {cronPresetOptions.map((option) => (
-                          <option key={option.id} value={option.id}>
-                            {option.label} ({option.expression})
-                          </option>
-                        ))}
-                      </select>
+                        <SelectTrigger size="sm" className="w-full text-xs">
+                          <SelectValue placeholder="Custom expression" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__custom__">Custom expression</SelectItem>
+                          {cronPresetOptions.map((option) => (
+                            <SelectItem key={option.id} value={option.id}>
+                              {option.label} ({option.expression})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                     <div className="space-y-1.5">
                       <div className="text-xs text-muted-foreground">Cron expression</div>
@@ -1368,18 +1378,22 @@ export function IssueCreateFormBody({
                   </div>
                   <div className="space-y-1.5">
                     <div className="text-xs text-muted-foreground">Issue behavior</div>
-                    <select
-                      className="w-full rounded-md border border-border bg-transparent px-2 py-1 text-xs"
+                    <Select
                       value={recurringIssueMode}
-                      onChange={(e) =>
-                        setRecurringIssueMode(e.target.value as "create_new" | "reuse_existing" | "reopen_existing")
+                      onValueChange={(v) =>
+                        setRecurringIssueMode(v as "create_new" | "reuse_existing" | "reopen_existing")
                       }
                       disabled={!recurringEnabled}
                     >
-                      <option value="reopen_existing">Reopen this issue when done</option>
-                      <option value="reuse_existing">Reuse this issue</option>
-                      <option value="create_new">Create a new issue each run</option>
-                    </select>
+                      <SelectTrigger size="sm" className="w-full text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="reopen_existing">Reopen this issue when done</SelectItem>
+                        <SelectItem value="reuse_existing">Reuse this issue</SelectItem>
+                        <SelectItem value="create_new">Create a new issue each run</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                   {recurringEnabled && !assigneeId && (
                     <div className="text-[11px] text-amber-500">
