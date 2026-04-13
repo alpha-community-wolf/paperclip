@@ -34,7 +34,8 @@ interface CompanyContextValue {
 
 const STORAGE_KEY = "paperclip.selectedCompanyId";
 
-const CompanyContext = createContext<CompanyContextValue | null>(null);
+/** Board UI provides this; mini app and other hosts may omit it (see MarkdownEditor). */
+export const CompanyContext = createContext<CompanyContextValue | null>(null);
 
 export function CompanyProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();

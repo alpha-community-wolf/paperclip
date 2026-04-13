@@ -1,5 +1,12 @@
 import type { ReactNode } from "react";
 import { TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useSidebar } from "../context/SidebarContext";
 
 export interface PageTabItem {
@@ -19,17 +26,18 @@ export function PageTabBar({ items, value, onValueChange, align = "center" }: Pa
 
   if (isMobile && value !== undefined && onValueChange) {
     return (
-      <select
-        value={value}
-        onChange={(e) => onValueChange(e.target.value)}
-        className="h-9 rounded-md border border-border bg-background px-2 py-1 text-base focus:outline-none focus:ring-1 focus:ring-ring"
-      >
-        {items.map((item) => (
-          <option key={item.value} value={item.value}>
-            {typeof item.label === "string" ? item.label : item.value}
-          </option>
-        ))}
-      </select>
+      <Select value={value} onValueChange={onValueChange}>
+        <SelectTrigger className="h-9 w-full min-w-[10rem] text-base">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {items.map((item) => (
+            <SelectItem key={item.value} value={item.value}>
+              {typeof item.label === "string" ? item.label : item.value}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     );
   }
 

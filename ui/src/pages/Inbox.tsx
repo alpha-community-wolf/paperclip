@@ -306,11 +306,6 @@ export function Inbox() {
     enabled: !!selectedCompanyId,
   });
 
-  const { data: issues, isLoading: isIssuesLoading } = useQuery({
-    queryKey: queryKeys.issues.list(selectedCompanyId!),
-    queryFn: () => issuesApi.list(selectedCompanyId!),
-    enabled: !!selectedCompanyId,
-  });
   const {
     data: touchedIssuesRaw = [],
     isLoading: isTouchedIssuesLoading,
@@ -358,9 +353,10 @@ export function Inbox() {
 
   const issueById = useMemo(() => {
     const map = new Map<string, Issue>();
-    for (const issue of issues ?? []) map.set(issue.id, issue);
+    for (const issue of touchedIssuesRaw) map.set(issue.id, issue);
+    for (const item of feedItems) map.set(item.issue.id, item.issue);
     return map;
-  }, [issues]);
+  }, [feedItems, touchedIssuesRaw]);
 
   const failedRuns = useMemo(
     () =>
@@ -554,7 +550,6 @@ export function Inbox() {
     !isJoinRequestsLoading &&
     !isApprovalsLoading &&
     !isDashboardLoading &&
-    !isIssuesLoading &&
     !isTouchedIssuesLoading &&
     !isFeedLoading &&
     !isRunsLoading;

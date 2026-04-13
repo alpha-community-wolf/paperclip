@@ -12,6 +12,7 @@ import { usePanel } from "../context/PanelContext";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
+import { usePaginatedIssues } from "../hooks/usePaginatedIssues";
 import { ProjectProperties, type ProjectConfigFieldKey, type ProjectFieldSaveState } from "../components/ProjectProperties";
 import { InlineEditor } from "../components/InlineEditor";
 import { StatusBadge } from "../components/StatusBadge";
@@ -189,11 +190,14 @@ function ProjectIssuesList({ projectId, companyId }: { projectId: string; compan
     return map;
   }, [failedRuns, liveIssueIds]);
 
-  const { data: issues, isLoading, error } = useQuery({
-    queryKey: queryKeys.issues.listByProject(companyId, projectId),
-    queryFn: () => issuesApi.list(companyId, { projectId }),
-    enabled: !!companyId,
-  });
+  const {
+    issues,
+    isLoading,
+    error,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  } = usePaginatedIssues(companyId, { projectId }, Boolean(companyId));
 
   const updateIssue = useMutation({
     mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) =>
@@ -215,6 +219,9 @@ function ProjectIssuesList({ projectId, companyId }: { projectId: string; compan
       projectId={projectId}
       viewStateKey={`paperclip:project-view:${projectId}`}
       onUpdateIssue={(id, data) => updateIssue.mutate({ id, data })}
+      hasMore={hasNextPage}
+      isLoadingMore={isFetchingNextPage}
+      onLoadMore={() => fetchNextPage().then(() => undefined)}
     />
   );
 }

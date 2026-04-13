@@ -8,6 +8,7 @@ import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
 import { createIssueDetailLocationState } from "../lib/issueDetailBreadcrumb";
+import { usePaginatedIssues } from "../hooks/usePaginatedIssues";
 import { EmptyState } from "../components/EmptyState";
 import { IssuesList } from "../components/IssuesList";
 import { ClipboardCheck } from "lucide-react";
@@ -101,11 +102,14 @@ export function Reviews() {
     setBreadcrumbs([{ label: "Reviews" }]);
   }, [setBreadcrumbs]);
 
-  const { data: issues, isLoading, error } = useQuery({
-    queryKey: [...queryKeys.issues.list(selectedCompanyId!), "reviews"],
-    queryFn: () => issuesApi.list(selectedCompanyId!, { status: "in_review" }),
-    enabled: !!selectedCompanyId,
-  });
+  const {
+    issues,
+    isLoading,
+    error,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  } = usePaginatedIssues(selectedCompanyId ?? undefined, { status: "in_review" });
 
   const updateIssue = useMutation({
     mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) =>
@@ -133,6 +137,9 @@ export function Reviews() {
         initialSearch={initialSearch}
         onSearchChange={handleSearchChange}
         onUpdateIssue={(id, data) => updateIssue.mutate({ id, data })}
+        hasMore={hasNextPage}
+        isLoadingMore={isFetchingNextPage}
+        onLoadMore={() => fetchNextPage().then(() => undefined)}
       />
     </div>
   );

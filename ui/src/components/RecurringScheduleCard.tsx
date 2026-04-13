@@ -4,6 +4,13 @@ import type { TaskCronSchedule, TaskCronIssueMode } from "@paperclipai/shared";
 import { cronPresetOptions } from "../lib/cron-presets";
 import { relativeTime } from "../lib/utils";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Clock3, ExternalLink, Pencil, Save, Trash2, X } from "lucide-react";
 
 type ScheduleUpdate = Partial<{
@@ -159,23 +166,26 @@ export function RecurringScheduleCard({
       <div className="grid gap-2 sm:grid-cols-2">
         <div className="space-y-1">
           <label className="text-xs text-muted-foreground">Preset</label>
-          <select
-            className="w-full rounded-md border border-border bg-transparent px-2 py-1 text-xs"
+          <Select
             value={presetValue}
-            onChange={(e) => {
-              const nextId = e.target.value;
+            onValueChange={(nextId) => {
               if (nextId === "__custom__") return;
               const preset = cronPresetOptions.find((o) => o.id === nextId);
               if (preset) setExpression(preset.expression);
             }}
           >
-            <option value="__custom__">Custom expression</option>
-            {cronPresetOptions.map((option) => (
-              <option key={option.id} value={option.id}>
-                {option.label} ({option.expression})
-              </option>
-            ))}
-          </select>
+            <SelectTrigger size="sm" className="w-full text-xs">
+              <SelectValue placeholder="Custom expression" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__custom__">Custom expression</SelectItem>
+              {cronPresetOptions.map((option) => (
+                <SelectItem key={option.id} value={option.id}>
+                  {option.label} ({option.expression})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <div className="space-y-1">
           <label className="text-xs text-muted-foreground">Cron expression</label>
@@ -189,15 +199,16 @@ export function RecurringScheduleCard({
       </div>
       <div className="space-y-1">
         <label className="text-xs text-muted-foreground">Issue behavior</label>
-        <select
-          className="w-full rounded-md border border-border bg-transparent px-2 py-1 text-xs sm:w-auto"
-          value={issueMode}
-          onChange={(e) => setIssueMode(e.target.value as TaskCronIssueMode)}
-        >
-          <option value="reopen_existing">Reopen this issue when done</option>
-          <option value="reuse_existing">Reuse this issue</option>
-          <option value="create_new">Create a new issue each run</option>
-        </select>
+        <Select value={issueMode} onValueChange={(v) => setIssueMode(v as TaskCronIssueMode)}>
+          <SelectTrigger size="sm" className="w-full text-xs sm:w-auto min-w-[10rem]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="reopen_existing">Reopen this issue when done</SelectItem>
+            <SelectItem value="reuse_existing">Reuse this issue</SelectItem>
+            <SelectItem value="create_new">Create a new issue each run</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
       {schedule.issueId && (
         <div className="flex items-center gap-2 text-xs text-muted-foreground">

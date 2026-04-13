@@ -22,6 +22,13 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { FolderOpen, Heart, ChevronDown, X } from "lucide-react";
 import { cn } from "../lib/utils";
 import { extractModelName, extractProviderId } from "../lib/model-utils";
@@ -163,6 +170,9 @@ const agentModeOptions = [
   { id: "", label: "Default (Act)" },
   { id: "plan", label: "Plan (read-only)" },
 ] as const;
+
+/** Radix SelectItem cannot use `value=""`; use this sentinel and map to "" in form state. */
+const AGENT_MODE_SELECT_DEFAULT = "__agent_mode_default__";
 
 const ADAPTERS_WITH_PLAN_MODE = new Set(["claude_local", "codex_local", "opencode_local"]);
 
@@ -750,25 +760,34 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
 
               {ADAPTERS_WITH_PLAN_MODE.has(adapterType) && (
                 <Field label="Mode" hint={help.mode}>
-                  <select
-                    value={
-                      isCreate
+                  <Select
+                    value={(() => {
+                      const raw = isCreate
                         ? val!.mode
-                        : eff("adapterConfig", "mode", String(config.mode ?? ""))
-                    }
-                    onChange={(e) =>
+                        : eff("adapterConfig", "mode", String(config.mode ?? ""));
+                      return raw ? raw : AGENT_MODE_SELECT_DEFAULT;
+                    })()}
+                    onValueChange={(v) => {
+                      const next = v === AGENT_MODE_SELECT_DEFAULT ? "" : v;
                       isCreate
-                        ? set!({ mode: e.target.value })
-                        : mark("adapterConfig", "mode", e.target.value || undefined)
-                    }
-                    className={inputClass}
+                        ? set!({ mode: next })
+                        : mark("adapterConfig", "mode", next || undefined);
+                    }}
                   >
-                    {agentModeOptions.map((opt) => (
-                      <option key={opt.id} value={opt.id}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
+                    <SelectTrigger className={cn(inputClass, "w-full font-sans")}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {agentModeOptions.map((opt) => (
+                        <SelectItem
+                          key={opt.id || AGENT_MODE_SELECT_DEFAULT}
+                          value={opt.id ? opt.id : AGENT_MODE_SELECT_DEFAULT}
+                        >
+                          {opt.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </Field>
               )}
 
@@ -962,15 +981,21 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                     />
                   </Field>
                   <Field label="Issue behavior" hint={help.taskCronIssueMode}>
-                    <select
+                    <Select
                       value={val!.taskCronIssueMode}
-                      onChange={(e) => set!({ taskCronIssueMode: e.target.value as CreateConfigValues["taskCronIssueMode"] })}
-                      className={inputClass}
+                      onValueChange={(v) =>
+                        set!({ taskCronIssueMode: v as CreateConfigValues["taskCronIssueMode"] })
+                      }
                     >
-                      <option value="create_new">Create a new issue each run</option>
-                      <option value="reuse_existing">Reuse one issue</option>
-                      <option value="reopen_existing">Reopen existing issue when done</option>
-                    </select>
+                      <SelectTrigger className={cn(inputClass, "w-full font-sans")}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="create_new">Create a new issue each run</SelectItem>
+                        <SelectItem value="reuse_existing">Reuse one issue</SelectItem>
+                        <SelectItem value="reopen_existing">Reopen existing issue when done</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </Field>
                   <Field label="Issue title template" hint={help.taskCron}>
                     <DraftInput
@@ -1048,17 +1073,21 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                       />
                     </Field>
                     <Field label="Issue behavior" hint={help.taskCronIssueMode}>
-                      <select
+                      <Select
                         value={String(editTaskCronDefaults.issueMode ?? "create_new")}
-                        onChange={(e) =>
-                          setEditTaskCronField("issueMode", e.target.value as CreateConfigValues["taskCronIssueMode"])
+                        onValueChange={(v) =>
+                          setEditTaskCronField("issueMode", v as CreateConfigValues["taskCronIssueMode"])
                         }
-                        className={inputClass}
                       >
-                        <option value="create_new">Create a new issue each run</option>
-                        <option value="reuse_existing">Reuse one issue</option>
-                        <option value="reopen_existing">Reopen existing issue when done</option>
-                      </select>
+                        <SelectTrigger className={cn(inputClass, "w-full font-sans")}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="create_new">Create a new issue each run</SelectItem>
+                          <SelectItem value="reuse_existing">Reuse one issue</SelectItem>
+                          <SelectItem value="reopen_existing">Reopen existing issue when done</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </Field>
                     <Field label="Issue title template" hint={help.taskCron}>
                       <DraftInput
@@ -1412,33 +1441,41 @@ function EnvVarEditor({
               value={row.key}
               onChange={(e) => updateRow(i, { key: e.target.value })}
             />
-            <select
-              className={cn(inputClass, "flex-[1] bg-background")}
+            <Select
               value={row.source}
-              onChange={(e) =>
+              onValueChange={(v) =>
                 updateRow(i, {
-                  source: e.target.value === "secret" ? "secret" : "plain",
-                  ...(e.target.value === "plain" ? { secretId: "" } : {}),
+                  source: v === "secret" ? "secret" : "plain",
+                  ...(v === "plain" ? { secretId: "" } : {}),
                 })
               }
             >
-              <option value="plain">Plain</option>
-              <option value="secret">Secret</option>
-            </select>
+              <SelectTrigger className={cn(inputClass, "flex-[1] min-w-0 bg-background font-sans")}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="plain">Plain</SelectItem>
+                <SelectItem value="secret">Secret</SelectItem>
+              </SelectContent>
+            </Select>
             {row.source === "secret" ? (
               <>
-                <select
-                  className={cn(inputClass, "flex-[3] bg-background")}
-                  value={row.secretId}
-                  onChange={(e) => updateRow(i, { secretId: e.target.value })}
+                <Select
+                  value={row.secretId || "__none__"}
+                  onValueChange={(v) => updateRow(i, { secretId: v === "__none__" ? "" : v })}
                 >
-                  <option value="">Select secret...</option>
-                  {secrets.map((secret) => (
-                    <option key={secret.id} value={secret.id}>
-                      {secret.name}
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger className={cn(inputClass, "flex-[3] min-w-0 bg-background font-sans")}>
+                    <SelectValue placeholder="Select secret..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">Select secret...</SelectItem>
+                    {secrets.map((secret) => (
+                      <SelectItem key={secret.id} value={secret.id}>
+                        {secret.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <button
                   type="button"
                   className="inline-flex items-center rounded-md border border-border px-2 py-0.5 text-xs text-muted-foreground hover:bg-accent/50 transition-colors shrink-0"
