@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect, useRef, Fragment } from "react";
+import { useState, useMemo, useCallback, useEffect, Fragment } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@/lib/router";
 import {
@@ -656,82 +656,6 @@ function loadStoredGraphLayout(): KnowledgeGraphLayoutParams {
   }
 }
 
-const GRAPH_UI_SESSION_VERSION = 1;
-
-type StoredGraphUISession = {
-  v: typeof GRAPH_UI_SESSION_VERSION;
-  graphMode: GraphMode;
-  searchQuery: string;
-  currentId: string | null;
-  trailIds: string[];
-  scopeFilter: string;
-  categoryFilter: string;
-  agentFilter: string;
-  fileAgentFilter: string;
-  fileHideOrphans: boolean;
-};
-
-function graphUISessionKey(companyId: string) {
-  return `paperclip:knowledge-graph-ui:${companyId}`;
-}
-
-const VALID_SCOPES = new Set(["__all__", "company", "project"]);
-
-function safeSessionScope(v: unknown): string {
-  const s = typeof v === "string" ? v : "__all__";
-  return VALID_SCOPES.has(s) ? s : "__all__";
-}
-
-const MEMORY_CATEGORY_VALUES = new Set([
-  "__all__",
-  "fact",
-  "decision",
-  "procedure",
-  "preference",
-  "lesson_learned",
-  "context",
-]);
-
-function safeSessionCategory(v: unknown): string {
-  const s = typeof v === "string" ? v : "__all__";
-  return MEMORY_CATEGORY_VALUES.has(s) ? s : "__all__";
-}
-
-function loadGraphUISession(companyId: string): StoredGraphUISession | null {
-  try {
-    const raw = sessionStorage.getItem(graphUISessionKey(companyId));
-    if (!raw) return null;
-    const p = JSON.parse(raw) as Partial<StoredGraphUISession>;
-    if (p.v !== GRAPH_UI_SESSION_VERSION) return null;
-    const trailIds = Array.isArray(p.trailIds)
-      ? p.trailIds.filter((x): x is string => typeof x === "string").slice(0, 48)
-      : [];
-    return {
-      v: GRAPH_UI_SESSION_VERSION,
-      graphMode: p.graphMode === "files" ? "files" : "memories",
-      searchQuery: typeof p.searchQuery === "string" ? p.searchQuery.slice(0, 500) : "",
-      currentId: typeof p.currentId === "string" ? p.currentId : null,
-      trailIds,
-      scopeFilter: safeSessionScope(p.scopeFilter),
-      categoryFilter: safeSessionCategory(p.categoryFilter),
-      agentFilter: typeof p.agentFilter === "string" ? p.agentFilter : "__all__",
-      fileAgentFilter: typeof p.fileAgentFilter === "string" ? p.fileAgentFilter : "__all__",
-      fileHideOrphans: Boolean(p.fileHideOrphans),
-    };
-  } catch {
-    return null;
-  }
-}
-
-function saveGraphUISession(companyId: string, payload: Omit<StoredGraphUISession, "v">) {
-  try {
-    const data: StoredGraphUISession = { v: GRAPH_UI_SESSION_VERSION, ...payload };
-    sessionStorage.setItem(graphUISessionKey(companyId), JSON.stringify(data));
-  } catch {
-    /* quota / private mode */
-  }
-}
-
 function breadcrumbSnippet(n: GraphNode, maxLen = 32): string {
   if (n.type === "memory" && n.meta && typeof n.meta === "object" && "content" in n.meta) {
     const c = (n.meta as { content?: unknown }).content;
@@ -768,12 +692,6 @@ export function KnowledgeGraph() {
   // Files mode filters
   const [fileAgentFilter, setFileAgentFilter] = useState<string>("__all__");
   const [fileHideOrphans, setFileHideOrphans] = useState(false);
-
-  /** `undefined` = company session not loaded yet; `null` = nothing to restore; object = pending id resolution */
-  const restoreSelectionRef = useRef<
-    { currentId: string | null; trailIds: string[] } | null | undefined
-  >(undefined);
-  const [sessionPersistReady, setSessionPersistReady] = useState(false);
 
   const prefix = selectedCompany?.issuePrefix ?? "";
 
@@ -916,90 +834,6 @@ export function KnowledgeGraph() {
     setGraphSelection({ current: null, trail: [] });
     setSearchQuery("");
   }, []);
-
-  // Restore tab session (filters, mode, search, selection ids) when company or remount changes
-  useEffect(() => {
-    if (!selectedCompanyId) return;
-    setGraphSelection({ current: null, trail: [] });
-    setSessionPersistReady(false);
-    const saved = loadGraphUISession(selectedCompanyId);
-    if (saved) {
-      setGraphMode(saved.graphMode);
-      setSearchQuery(saved.searchQuery);
-      setScopeFilter(saved.scopeFilter);
-      setCategoryFilter(saved.categoryFilter);
-      setAgentFilter(saved.agentFilter);
-      setFileAgentFilter(saved.fileAgentFilter);
-      setFileHideOrphans(saved.fileHideOrphans);
-      restoreSelectionRef.current = { currentId: saved.currentId, trailIds: saved.trailIds };
-    } else {
-      setGraphMode("memories");
-      setSearchQuery("");
-      setScopeFilter("__all__");
-      setCategoryFilter("__all__");
-      setAgentFilter("__all__");
-      setFileAgentFilter("__all__");
-      setFileHideOrphans(false);
-      restoreSelectionRef.current = null;
-    }
-  }, [selectedCompanyId]);
-
-  // Resolve saved node ids to graph nodes once `nodes` matches current mode / data
-  useEffect(() => {
-    if (!selectedCompanyId) return;
-    const pending = restoreSelectionRef.current;
-    if (pending === undefined) return;
-
-    if (pending === null) {
-      setGraphSelection({ current: null, trail: [] });
-      restoreSelectionRef.current = undefined;
-      setSessionPersistReady(true);
-      return;
-    }
-
-    if (nodes.length === 0) return;
-
-    const map = new Map(nodes.map((n) => [n.id, n]));
-    const current = pending.currentId ? map.get(pending.currentId) ?? null : null;
-    const trail = pending.trailIds
-      .map((id) => map.get(id))
-      .filter((n): n is GraphNode => n != null);
-
-    if (current) {
-      setGraphSelection({ current, trail });
-    } else {
-      setGraphSelection({ current: null, trail: [] });
-    }
-    restoreSelectionRef.current = undefined;
-    setSessionPersistReady(true);
-  }, [selectedCompanyId, nodes, graphMode]);
-
-  useEffect(() => {
-    if (!selectedCompanyId || !sessionPersistReady) return;
-    saveGraphUISession(selectedCompanyId, {
-      graphMode,
-      searchQuery,
-      currentId: selectedNode?.id ?? null,
-      trailIds: selectionTrail.map((n) => n.id),
-      scopeFilter,
-      categoryFilter,
-      agentFilter,
-      fileAgentFilter,
-      fileHideOrphans,
-    });
-  }, [
-    selectedCompanyId,
-    sessionPersistReady,
-    graphMode,
-    searchQuery,
-    selectedNodeId,
-    selectionTrail,
-    scopeFilter,
-    categoryFilter,
-    agentFilter,
-    fileAgentFilter,
-    fileHideOrphans,
-  ]);
 
   useEffect(() => {
     try {
@@ -1403,6 +1237,7 @@ export function KnowledgeGraph() {
           linkedNodeIds={linkedNodeIds}
           showMemoryLabels={!!selectedNodeId}
           layout={graphLayout}
+          persistenceKey={selectedCompanyId ? `${selectedCompanyId}:${graphMode}` : null}
           onSelectNode={handleSelectNode}
         />
 
@@ -1451,7 +1286,7 @@ export function KnowledgeGraph() {
             <ZoomIn className="h-3 w-3 shrink-0" />
             <span>
               {selectedNodeId
-                ? "View auto-frames your selection · Faint nodes = rest of graph · Click empty canvas or Full graph to exit"
+                ? "Scroll to zoom · Drag to pan · Faint nodes = rest of graph · Click empty canvas or Full graph to exit"
                 : "Scroll to zoom · Drag to pan · Hover a memory for full text · Click node for details"}
             </span>
           </div>
