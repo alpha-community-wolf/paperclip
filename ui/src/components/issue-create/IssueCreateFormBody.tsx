@@ -157,6 +157,15 @@ export function IssueCreateFormBody({
 
   const selectedTemplate = workflowTemplates?.find((t) => t.id === selectedTemplateId) ?? null;
 
+  const workflowTemplateOptions = useMemo<InlineEntityOption[]>(() => {
+    if (!workflowTemplates?.length) return [];
+    return workflowTemplates.map((t) => ({
+      id: t.id,
+      label: t.name,
+      searchText: [t.name, ...(t.steps?.map((s) => s.key) ?? [])].join(" "),
+    }));
+  }, [workflowTemplates]);
+
   const { data: projects } = useQuery({
     queryKey: scopedQueryKey(cacheScope, queryKeys.projects.list(companyId!)),
     queryFn: () => clients.listProjects(companyId!),
@@ -1033,71 +1042,75 @@ export function IssueCreateFormBody({
             )}
 
             {/* Reviewer & Approver */}
-            <div className="space-y-1">
-              <div className="text-xs font-medium">Reviewer</div>
-              <InlineEntitySelector
-                value={reviewerId}
-                options={assigneeOptions}
-                placeholder="No reviewer"
-                disablePortal
-                noneLabel="No reviewer"
-                searchPlaceholder="Search agents..."
-                emptyMessage="No agents found."
-                onChange={setReviewerId}
-                renderTriggerValue={(option) => {
-                  if (!option) return <span className="text-muted-foreground">No reviewer</span>;
-                  const agent = (agents ?? []).find((a) => a.id === option.id);
-                  return (
-                    <>
-                      <AgentIcon icon={agent?.icon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                      <span className="truncate">{option.label}</span>
-                    </>
-                  );
-                }}
-                renderOption={(option) => {
-                  if (!option.id) return <span className="truncate">{option.label}</span>;
-                  const agent = (agents ?? []).find((a) => a.id === option.id);
-                  return (
-                    <>
-                      <AgentIcon icon={agent?.icon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                      <span className="truncate">{option.label}</span>
-                    </>
-                  );
-                }}
-              />
-            </div>
-            <div className="space-y-1">
-              <div className="text-xs font-medium">Approver</div>
-              <InlineEntitySelector
-                value={approverId}
-                options={assigneeOptions}
-                placeholder="No approver"
-                disablePortal
-                noneLabel="No approver"
-                searchPlaceholder="Search agents..."
-                emptyMessage="No agents found."
-                onChange={setApproverId}
-                renderTriggerValue={(option) => {
-                  if (!option) return <span className="text-muted-foreground">No approver</span>;
-                  const agent = (agents ?? []).find((a) => a.id === option.id);
-                  return (
-                    <>
-                      <AgentIcon icon={agent?.icon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                      <span className="truncate">{option.label}</span>
-                    </>
-                  );
-                }}
-                renderOption={(option) => {
-                  if (!option.id) return <span className="truncate">{option.label}</span>;
-                  const agent = (agents ?? []).find((a) => a.id === option.id);
-                  return (
-                    <>
-                      <AgentIcon icon={agent?.icon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                      <span className="truncate">{option.label}</span>
-                    </>
-                  );
-                }}
-              />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="min-w-0 space-y-1">
+                <div className="text-xs font-medium">Reviewer</div>
+                <InlineEntitySelector
+                  className="w-full min-w-0 justify-between"
+                  value={reviewerId}
+                  options={assigneeOptions}
+                  placeholder="No reviewer"
+                  disablePortal
+                  noneLabel="No reviewer"
+                  searchPlaceholder="Search agents..."
+                  emptyMessage="No agents found."
+                  onChange={setReviewerId}
+                  renderTriggerValue={(option) => {
+                    if (!option) return <span className="text-muted-foreground">No reviewer</span>;
+                    const agent = (agents ?? []).find((a) => a.id === option.id);
+                    return (
+                      <>
+                        <AgentIcon icon={agent?.icon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        <span className="truncate">{option.label}</span>
+                      </>
+                    );
+                  }}
+                  renderOption={(option) => {
+                    if (!option.id) return <span className="truncate">{option.label}</span>;
+                    const agent = (agents ?? []).find((a) => a.id === option.id);
+                    return (
+                      <>
+                        <AgentIcon icon={agent?.icon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        <span className="truncate">{option.label}</span>
+                      </>
+                    );
+                  }}
+                />
+              </div>
+              <div className="min-w-0 space-y-1">
+                <div className="text-xs font-medium">Approver</div>
+                <InlineEntitySelector
+                  className="w-full min-w-0 justify-between"
+                  value={approverId}
+                  options={assigneeOptions}
+                  placeholder="No approver"
+                  disablePortal
+                  noneLabel="No approver"
+                  searchPlaceholder="Search agents..."
+                  emptyMessage="No agents found."
+                  onChange={setApproverId}
+                  renderTriggerValue={(option) => {
+                    if (!option) return <span className="text-muted-foreground">No approver</span>;
+                    const agent = (agents ?? []).find((a) => a.id === option.id);
+                    return (
+                      <>
+                        <AgentIcon icon={agent?.icon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        <span className="truncate">{option.label}</span>
+                      </>
+                    );
+                  }}
+                  renderOption={(option) => {
+                    if (!option.id) return <span className="truncate">{option.label}</span>;
+                    const agent = (agents ?? []).find((a) => a.id === option.id);
+                    return (
+                      <>
+                        <AgentIcon icon={agent?.icon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        <span className="truncate">{option.label}</span>
+                      </>
+                    );
+                  }}
+                />
+              </div>
             </div>
 
             {/* Execution workspace */}
@@ -1231,21 +1244,39 @@ export function IssueCreateFormBody({
                     </div>
                   </div>
                 ) : (
-                  <select
-                    className="w-full rounded-md border border-border bg-transparent px-2 py-1 text-xs"
-                    value=""
-                    onChange={(e) => {
-                      const tmpl = workflowTemplates.find((t) => t.id === e.target.value);
-                      if (tmpl) {
-                        setSelectedTemplateId(tmpl.id);
-                                          }
+                  <InlineEntitySelector
+                    className="w-full min-w-0 justify-between text-xs"
+                    value={selectedTemplateId ?? ""}
+                    options={workflowTemplateOptions}
+                    placeholder="None (no workflow)"
+                    disablePortal
+                    noneLabel="None (no workflow)"
+                    searchPlaceholder="Search templates..."
+                    emptyMessage="No templates found."
+                    onChange={(id) => setSelectedTemplateId(id ? id : null)}
+                    renderTriggerValue={(option) => {
+                      if (!option) {
+                        return <span className="text-muted-foreground">None (no workflow)</span>;
+                      }
+                      return (
+                        <>
+                          <Workflow className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                          <span className="truncate">{option.label}</span>
+                        </>
+                      );
                     }}
-                  >
-                    <option value="">None (no workflow)</option>
-                    {workflowTemplates.map((tmpl) => (
-                      <option key={tmpl.id} value={tmpl.id}>{tmpl.name}</option>
-                    ))}
-                  </select>
+                    renderOption={(option) => {
+                      if (!option.id) {
+                        return <span className="truncate">{option.label}</span>;
+                      }
+                      return (
+                        <>
+                          <Workflow className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                          <span className="truncate">{option.label}</span>
+                        </>
+                      );
+                    }}
+                  />
                 )}
               </div>
             )}
