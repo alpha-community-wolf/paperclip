@@ -1,6 +1,7 @@
 import {
   forwardRef,
   useCallback,
+  useContext,
   useEffect,
   useImperativeHandle,
   useMemo,
@@ -33,7 +34,7 @@ import { buildProjectMentionHref, parseProjectMentionHref, type Command } from "
 import { X } from "lucide-react";
 import { cn } from "../lib/utils";
 import { commandsApi } from "../api/commands";
-import { useCompany } from "../context/CompanyContext";
+import { CompanyContext } from "../context/CompanyContext";
 import { useModalPortalRoot } from "../context/ModalPortalRootContext";
 import { queryKeys } from "../lib/queryKeys";
 import { SlashCommandPicker } from "./SlashCommandPicker";
@@ -293,7 +294,8 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
   onSubmit,
   onSlashCommandApplied,
 }: MarkdownEditorProps, forwardedRef) {
-  const { selectedCompanyId } = useCompany();
+  const companyContext = useContext(CompanyContext);
+  const selectedCompanyId = companyContext?.selectedCompanyId ?? null;
   const modalPortalRoot = useModalPortalRoot();
   const containerRef = useRef<HTMLDivElement>(null);
   const ref = useRef<MDXEditorMethods>(null);
