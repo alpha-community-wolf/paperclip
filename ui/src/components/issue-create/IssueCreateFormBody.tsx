@@ -691,7 +691,13 @@ export function IssueCreateFormBody({
   const showInlineCreateButton = !(variant === "mini-app" && typeof window !== "undefined" && window.Telegram?.WebApp);
 
   return (
-    <div className={cn("flex flex-col flex-1 min-h-0 outline-none", variant === "mini-app" && "pb-2")} onKeyDown={handleKeyDown}>
+    <div
+      className={cn(
+        "flex flex-col flex-1 min-h-0 outline-none",
+        variant === "mini-app" && "pb-2",
+      )}
+      onKeyDown={handleKeyDown}
+    >
         {/* Title */}
         <div className="px-4 pt-4 pb-2 shrink-0">
           <textarea
@@ -914,7 +920,15 @@ export function IssueCreateFormBody({
         </div>
 
         {/* Stage 1: Description */}
-        <div className={cn("px-4 pb-2 overflow-y-auto min-h-0 border-t border-border/60 pt-3", expanded ? "flex-1" : "")}>
+        <div
+          className={cn(
+            "px-4 pb-2 overflow-y-auto min-h-0 pt-3",
+            variant === "mini-app"
+              ? "mx-3 mb-1 mt-2 rounded-lg border border-border bg-muted/25 px-3 py-2"
+              : "border-t border-border/60",
+            expanded ? "flex-1" : "",
+          )}
+        >
           <MarkdownEditor
             ref={descriptionEditorRef}
             value={description}
