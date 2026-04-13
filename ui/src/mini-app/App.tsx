@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
+import { Home, List, Plus, CheckSquare, Lock } from "lucide-react";
 import { useTelegram } from "./providers/TelegramProvider";
 import { TabBar } from "./components/TabBar";
 import { ScreenLoader } from "./components/LoadingSpinner";
@@ -16,10 +17,10 @@ type Screen =
   | { type: "issue-detail"; issueId: string };
 
 const TABS = [
-  { key: "dashboard", label: "Home", icon: <HomeIcon /> },
-  { key: "issues", label: "Issues", icon: <ListIcon /> },
-  { key: "create", label: "Create", icon: <PlusIcon /> },
-  { key: "approvals", label: "Approvals", icon: <CheckIcon /> },
+  { key: "dashboard", label: "Home", icon: <Home className="size-5" /> },
+  { key: "issues", label: "Issues", icon: <List className="size-5" /> },
+  { key: "create", label: "Create", icon: <Plus className="size-5" /> },
+  { key: "approvals", label: "Approvals", icon: <CheckSquare className="size-5" /> },
 ];
 
 export function MiniApp() {
@@ -65,9 +66,9 @@ export function MiniApp() {
   if (!isAuthenticated) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
-        <div className="text-4xl mb-4">🔒</div>
+        <Lock className="size-10 text-muted-foreground mb-4" />
         <h2 className="text-lg font-semibold mb-2">Authentication Required</h2>
-        <p className="text-sm text-[var(--tg-theme-hint-color)]">
+        <p className="text-sm text-muted-foreground">
           {error || "Open this app from a Telegram bot to get started."}
         </p>
       </div>
@@ -97,51 +98,11 @@ export function MiniApp() {
   }
 
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex flex-col min-h-screen bg-background">
       <div className="flex-1 pb-16 overflow-y-auto">
         {renderScreen()}
       </div>
       <TabBar tabs={TABS} activeTab={activeTab} onTabChange={handleTabChange} />
     </div>
-  );
-}
-
-// Simple SVG icons for the tab bar
-function HomeIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
-    </svg>
-  );
-}
-
-function ListIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <line x1="8" y1="6" x2="21" y2="6" />
-      <line x1="8" y1="12" x2="21" y2="12" />
-      <line x1="8" y1="18" x2="21" y2="18" />
-      <line x1="3" y1="6" x2="3.01" y2="6" />
-      <line x1="3" y1="12" x2="3.01" y2="12" />
-      <line x1="3" y1="18" x2="3.01" y2="18" />
-    </svg>
-  );
-}
-
-function PlusIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <line x1="12" y1="5" x2="12" y2="19" />
-      <line x1="5" y1="12" x2="19" y2="12" />
-    </svg>
-  );
-}
-
-function CheckIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <polyline points="9 11 12 14 22 4" />
-      <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
-    </svg>
   );
 }

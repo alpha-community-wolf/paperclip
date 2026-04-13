@@ -1,4 +1,5 @@
 import { type ReactNode } from "react";
+import { cn } from "@/lib/utils";
 
 interface Tab {
   key: string;
@@ -14,7 +15,7 @@ interface TabBarProps {
 
 export function TabBar({ tabs, activeTab, onTabChange }: TabBarProps) {
   return (
-    <nav className="fixed bottom-0 left-0 right-0 bg-[var(--tg-theme-secondary-bg-color)] border-t border-white/10 px-2 pb-[env(safe-area-inset-bottom)]">
+    <nav className="mini-app-tab-bar fixed bottom-0 left-0 right-0 bg-card border-t border-border px-2">
       <div className="flex items-center justify-around h-14">
         {tabs.map((tab) => {
           const isActive = tab.key === activeTab;
@@ -22,11 +23,12 @@ export function TabBar({ tabs, activeTab, onTabChange }: TabBarProps) {
             <button
               key={tab.key}
               onClick={() => onTabChange(tab.key)}
-              className={`flex flex-col items-center justify-center gap-0.5 flex-1 h-full transition-colors ${
+              className={cn(
+                "flex flex-col items-center justify-center gap-0.5 flex-1 h-full transition-colors",
                 isActive
-                  ? "text-[var(--tg-theme-button-color)]"
-                  : "text-[var(--tg-theme-hint-color)]"
-              }`}
+                  ? "text-primary"
+                  : "text-muted-foreground",
+              )}
             >
               <span className="text-lg">{tab.icon}</span>
               <span className="text-[10px] font-medium">{tab.label}</span>

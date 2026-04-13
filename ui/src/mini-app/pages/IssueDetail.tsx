@@ -1,8 +1,14 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Send } from "lucide-react";
 import { miniAppApi } from "../api/client";
 import { StatusBadge, PriorityBadge } from "../components/StatusBadge";
 import { LoadingSpinner } from "../components/LoadingSpinner";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
+import { relativeTime } from "@/lib/utils";
 
 interface IssueDetailProps {
   issueId: string;
@@ -67,7 +73,7 @@ export function IssueDetail({ issueId }: IssueDetailProps) {
   });
 
   if (loadingIssue) return <LoadingSpinner />;
-  if (!issue) return <div className="p-4 text-center text-[var(--tg-theme-hint-color)]">Issue not found</div>;
+  if (!issue) return <div className="p-4 text-center text-muted-foreground">Issue not found</div>;
 
   const comments = commentsData?.comments ?? (commentsData as unknown as Comment[]) ?? [];
 
@@ -76,7 +82,7 @@ export function IssueDetail({ issueId }: IssueDetailProps) {
       {/* Header */}
       <div>
         <div className="flex items-center gap-2 mb-1">
-          <span className="text-xs text-[var(--tg-theme-hint-color)]">{issue.identifier}</span>
+          <span className="text-xs text-muted-foreground">{issue.identifier}</span>
           <PriorityBadge priority={issue.priority} />
         </div>
         <h1 className="text-lg font-semibold">{issue.title}</h1>
@@ -91,8 +97,8 @@ export function IssueDetail({ issueId }: IssueDetailProps) {
           <StatusBadge status={issue.status} />
         </button>
         {issue.assigneeAgent && (
-          <span className="text-xs text-[var(--tg-theme-hint-color)]">
-            → {issue.assigneeAgent.name}
+          <span className="text-xs text-muted-foreground">
+            {issue.assigneeAgent.name}
           </span>
         )}
       </div>
@@ -101,31 +107,31 @@ export function IssueDetail({ issueId }: IssueDetailProps) {
       {showStatusPicker && (
         <div className="flex gap-1 flex-wrap">
           {STATUS_OPTIONS.map((s) => (
-            <button
+            <Button
               key={s}
+              variant={issue.status === s ? "default" : "secondary"}
+              size="xs"
+              className="rounded-full"
               onClick={() => updateStatus.mutate(s)}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                issue.status === s
-                  ? "bg-[var(--tg-theme-button-color)] text-[var(--tg-theme-button-text-color)]"
-                  : "bg-[var(--tg-theme-secondary-bg-color)] text-[var(--tg-theme-hint-color)]"
-              }`}
             >
               {s.replace(/_/g, " ")}
-            </button>
+            </Button>
           ))}
         </div>
       )}
 
       {/* Description */}
       {issue.description && (
-        <div className="bg-[var(--tg-theme-secondary-bg-color)] rounded-lg p-3">
-          <p className="text-sm whitespace-pre-wrap">{issue.description}</p>
-        </div>
+        <Card className="py-3 gap-0">
+          <CardContent className="px-3 py-0">
+            <p className="text-sm whitespace-pre-wrap">{issue.description}</p>
+          </CardContent>
+        </Card>
       )}
 
       {/* Comments */}
       <section>
-        <h2 className="text-sm font-medium text-[var(--tg-theme-hint-color)] mb-2">
+        <h2 className="text-sm font-medium text-muted-foreground mb-2">
           Comments {!loadingComments && `(${comments.length})`}
         </h2>
 
@@ -133,58 +139,45 @@ export function IssueDetail({ issueId }: IssueDetailProps) {
 
         <div className="space-y-2 mb-3">
           {comments.map((comment) => (
-            <div key={comment.id} className="bg-[var(--tg-theme-secondary-bg-color)] rounded-lg p-3">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs font-medium text-[var(--tg-theme-button-color)]">
-                  {comment.authorAgent?.name ?? comment.authorUser?.name ?? "System"}
-                </span>
-                <span className="text-[10px] text-[var(--tg-theme-hint-color)]">
-                  {formatTime(comment.createdAt)}
-                </span>
-              </div>
-              <p className="text-sm whitespace-pre-wrap">{comment.body}</p>
-            </div>
+            <Card key={comment.id} className="py-3 gap-0">
+              <CardContent className="px-3 py-0">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-medium text-primary">
+                    {comment.authorAgent?.name ?? comment.authorUser?.name ?? "System"}
+                  </span>
+                  <span className="text-[10px] text-muted-foreground">
+                    {relativeTime(comment.createdAt)}
+                  </span>
+                </div>
+                <p className="text-sm whitespace-pre-wrap">{comment.body}</p>
+              </CardContent>
+            </Card>
           ))}
         </div>
 
         {/* Add comment */}
         <div className="flex gap-2">
-          <input
-            type="text"
+          <Input
             value={newComment}
             onChange={(e) => setNewComment(e.target.value)}
             placeholder="Add a comment..."
-            className="flex-1 bg-[var(--tg-theme-secondary-bg-color)] rounded-lg px-3 py-2 text-sm outline-none placeholder:text-[var(--tg-theme-hint-color)]/50 focus:ring-1 focus:ring-[var(--tg-theme-button-color)]"
             onKeyDown={(e) => {
               if (e.key === "Enter" && newComment.trim()) {
                 addComment.mutate(newComment.trim());
               }
             }}
           />
-          <button
+          <Button
+            size="icon"
             onClick={() => {
               if (newComment.trim()) addComment.mutate(newComment.trim());
             }}
             disabled={!newComment.trim() || addComment.isPending}
-            className="bg-[var(--tg-theme-button-color)] text-[var(--tg-theme-button-text-color)] px-4 rounded-lg text-sm font-medium disabled:opacity-50"
           >
-            Send
-          </button>
+            <Send className="size-4" />
+          </Button>
         </div>
       </section>
     </div>
   );
-}
-
-function formatTime(iso: string): string {
-  const date = new Date(iso);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMin = Math.floor(diffMs / 60000);
-  if (diffMin < 1) return "now";
-  if (diffMin < 60) return `${diffMin}m ago`;
-  const diffHrs = Math.floor(diffMin / 60);
-  if (diffHrs < 24) return `${diffHrs}h ago`;
-  const diffDays = Math.floor(diffHrs / 24);
-  return `${diffDays}d ago`;
 }

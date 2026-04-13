@@ -1,6 +1,9 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Check, X, CheckCircle } from "lucide-react";
 import { miniAppApi } from "../api/client";
 import { LoadingSpinner } from "../components/LoadingSpinner";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 
 interface ApprovalsProps {
   companyId: string;
@@ -57,49 +60,54 @@ export function Approvals({ companyId }: ApprovalsProps) {
       <h1 className="text-lg font-semibold">Approvals</h1>
 
       {approvals.length === 0 && (
-        <div className="text-center py-12 text-[var(--tg-theme-hint-color)]">
-          <div className="text-3xl mb-2">✓</div>
+        <div className="text-center py-12 text-muted-foreground">
+          <CheckCircle className="size-8 mx-auto mb-2 text-muted-foreground/50" />
           <p className="text-sm">No pending approvals</p>
         </div>
       )}
 
       <div className="space-y-2">
         {approvals.map((approval) => (
-          <div
-            key={approval.id}
-            className="bg-[var(--tg-theme-secondary-bg-color)] rounded-lg p-3 space-y-2"
-          >
-            <div>
-              <h3 className="text-sm font-medium">{approval.title}</h3>
-              {approval.requestingAgent && (
-                <p className="text-xs text-[var(--tg-theme-hint-color)] mt-0.5">
-                  Requested by {approval.requestingAgent.name}
-                </p>
-              )}
-              {approval.description && (
-                <p className="text-xs text-[var(--tg-theme-hint-color)] mt-1 line-clamp-2">
-                  {approval.description}
-                </p>
-              )}
-            </div>
+          <Card key={approval.id} className="py-3 gap-0">
+            <CardContent className="px-3 py-0 space-y-2">
+              <div>
+                <h3 className="text-sm font-medium">{approval.title}</h3>
+                {approval.requestingAgent && (
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Requested by {approval.requestingAgent.name}
+                  </p>
+                )}
+                {approval.description && (
+                  <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                    {approval.description}
+                  </p>
+                )}
+              </div>
 
-            <div className="flex gap-2">
-              <button
-                onClick={() => handleResolve(approval.id, "approved")}
-                disabled={resolveMutation.isPending}
-                className="flex-1 bg-green-600/80 text-white rounded-lg py-2 text-sm font-medium active:opacity-70 disabled:opacity-50"
-              >
-                Approve
-              </button>
-              <button
-                onClick={() => handleResolve(approval.id, "rejected")}
-                disabled={resolveMutation.isPending}
-                className="flex-1 bg-red-600/80 text-white rounded-lg py-2 text-sm font-medium active:opacity-70 disabled:opacity-50"
-              >
-                Reject
-              </button>
-            </div>
-          </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="default"
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => handleResolve(approval.id, "approved")}
+                  disabled={resolveMutation.isPending}
+                >
+                  <Check className="size-4" />
+                  Approve
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => handleResolve(approval.id, "rejected")}
+                  disabled={resolveMutation.isPending}
+                >
+                  <X className="size-4" />
+                  Reject
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
         ))}
       </div>
     </div>
