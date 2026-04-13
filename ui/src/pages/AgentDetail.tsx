@@ -264,10 +264,10 @@ export function AgentDetail() {
   const heartbeats = (heartbeatsResult?.runs ?? []).filter((r): r is HeartbeatRun => r != null);
   const heartbeatsDegraded = heartbeatsResult?.degraded ?? false;
 
-  const { data: allIssues } = useQuery({
-    queryKey: queryKeys.issues.list(resolvedCompanyId!),
-    queryFn: () => issuesApi.list(resolvedCompanyId!),
-    enabled: !!resolvedCompanyId,
+  const { data: assignedIssuesResult } = useQuery({
+    queryKey: [...queryKeys.issues.list(resolvedCompanyId!), "agent-detail", agent?.id ?? routeAgentRef],
+    queryFn: () => issuesApi.list(resolvedCompanyId!, { assigneeAgentId: agent!.id }),
+    enabled: !!resolvedCompanyId && !!agent?.id,
   });
 
   const { data: allAgents } = useQuery({
@@ -306,8 +306,7 @@ export function AgentDetail() {
     },
   });
 
-  const assignedIssues = (allIssues ?? [])
-    .filter((i) => i.assigneeAgentId === agent?.id)
+  const assignedIssues = (assignedIssuesResult ?? [])
     .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
   const reportsToAgent = (allAgents ?? []).find((a) => a.id === agent?.reportsTo);
   const directReports = (allAgents ?? []).filter((a) => a.reportsTo === agent?.id && a.status !== "terminated");

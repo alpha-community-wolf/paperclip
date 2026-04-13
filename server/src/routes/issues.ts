@@ -188,6 +188,18 @@ export function issueRoutes(db: Db, storage: StorageService) {
   router.get("/companies/:companyId/issues", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
+    const limitRaw = typeof req.query.limit === "string" ? req.query.limit.trim() : undefined;
+    const cursor = typeof req.query.cursor === "string" && req.query.cursor.trim().length > 0
+      ? req.query.cursor.trim()
+      : undefined;
+    let limit: number | undefined;
+    if (limitRaw) {
+      limit = Number.parseInt(limitRaw, 10);
+      if (!Number.isFinite(limit) || limit < 1) {
+        res.status(400).json({ error: "limit must be a positive integer" });
+        return;
+      }
+    }
     const assigneeUserFilterRaw = req.query.assigneeUserId as string | undefined;
     const touchedByUserFilterRaw = req.query.touchedByUserId as string | undefined;
     const unreadForUserFilterRaw = req.query.unreadForUserId as string | undefined;
@@ -217,7 +229,7 @@ export function issueRoutes(db: Db, storage: StorageService) {
       return;
     }
 
-    const result = await svc.list(companyId, {
+    const filters = {
       status: req.query.status as string | undefined,
       assigneeAgentId: req.query.assigneeAgentId as string | undefined,
       assigneeUserId,
@@ -229,7 +241,20 @@ export function issueRoutes(db: Db, storage: StorageService) {
       reviewerAgentId: req.query.reviewerAgentId as string | undefined,
       approverAgentId: req.query.approverAgentId as string | undefined,
       q: req.query.q as string | undefined,
-    });
+    };
+
+    if (limit !== undefined || cursor) {
+      const page = await svc.listPage(companyId, filters, { limit, cursor });
+      if (page.nextCursor) {
+        res.setHeader("X-Next-Cursor", page.nextCursor);
+      } else {
+        res.removeHeader("X-Next-Cursor");
+      }
+      res.json(page.items);
+      return;
+    }
+
+    const result = await svc.list(companyId, filters);
     res.json(result);
   });
 

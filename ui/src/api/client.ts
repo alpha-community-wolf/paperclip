@@ -13,6 +13,14 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const { data } = await requestWithHeaders<T>(path, init);
+  return data;
+}
+
+async function requestWithHeaders<T>(
+  path: string,
+  init?: RequestInit,
+): Promise<{ data: T; headers: Headers }> {
   const headers = new Headers(init?.headers ?? undefined);
   const body = init?.body;
   if (!(body instanceof FormData) && !headers.has("Content-Type")) {
@@ -32,11 +40,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       errorBody,
     );
   }
-  return res.json();
+  return {
+    data: await res.json(),
+    headers: res.headers,
+  };
 }
 
 export const api = {
   get: <T>(path: string) => request<T>(path),
+  getWithHeaders: <T>(path: string) => requestWithHeaders<T>(path),
   post: <T>(path: string, body: unknown) =>
     request<T>(path, { method: "POST", body: JSON.stringify(body) }),
   postForm: <T>(path: string, body: FormData) =>

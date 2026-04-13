@@ -204,6 +204,9 @@ export interface IssuesListProps {
   initialSearch?: string;
   onSearchChange?: (search: string) => void;
   onUpdateIssue: (id: string, data: Record<string, unknown>) => void;
+  hasMore?: boolean;
+  isLoadingMore?: boolean;
+  onLoadMore?: () => void;
 }
 
 export function IssuesList({
@@ -220,6 +223,9 @@ export function IssuesList({
   initialSearch,
   onSearchChange,
   onUpdateIssue,
+  hasMore = false,
+  isLoadingMore = false,
+  onLoadMore,
 }: IssuesListProps) {
   const { selectedCompanyId } = useCompany();
   const { openNewIssue } = useDialog();
@@ -1070,6 +1076,20 @@ export function IssuesList({
             ))
           )}
         </>
+      )}
+
+      {normalizedIssueSearch.length === 0 && (hasMore || isLoadingMore) && onLoadMore && (
+        <div className="flex justify-center pt-2">
+          <Button
+            variant="outline"
+            onClick={onLoadMore}
+            disabled={isLoadingMore}
+            className="min-w-36"
+          >
+            {isLoadingMore && <Loader2 className="h-4 w-4 animate-spin" />}
+            {isLoadingMore ? "Loading more" : "Load more issues"}
+          </Button>
+        </div>
       )}
 
       {/* Floating bulk action bar */}

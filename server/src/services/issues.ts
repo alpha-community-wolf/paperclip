@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
   agents,
@@ -71,6 +71,16 @@ export interface IssueFilters {
   q?: string;
 }
 
+interface IssueListPageOptions {
+  cursor?: string;
+  limit?: number;
+}
+
+interface IssueListPageResult<TIssue> {
+  items: TIssue[];
+  nextCursor: string | null;
+}
+
 type IssueRow = typeof issues.$inferSelect;
 type IssueLabelRow = typeof labels.$inferSelect;
 type IssueActiveRunRow = {
@@ -85,6 +95,7 @@ type IssueActiveRunRow = {
 };
 type IssueWithLabels = IssueRow & { labels: IssueLabelRow[]; labelIds: string[] };
 type IssueWithLabelsAndRun = IssueWithLabels & { activeRun: IssueActiveRunRow | null };
+type IssueListRow = Awaited<ReturnType<typeof withIssueLinkSummaries<IssueWithLabelsAndRun>>>[number];
 type IssueUserCommentStats = {
   issueId: string;
   myLastCommentAt: Date | null;
@@ -103,9 +114,48 @@ function sameRunLock(checkoutRunId: string | null, actorRunId: string | null) {
 }
 
 const TERMINAL_HEARTBEAT_RUN_STATUSES = new Set(["succeeded", "failed", "cancelled", "timed_out"]);
+const DEFAULT_ISSUE_PAGE_SIZE = 100;
+const MAX_ISSUE_PAGE_SIZE = 200;
 
 function escapeLikePattern(value: string): string {
   return value.replace(/[\\%_]/g, "\\$&");
+}
+
+function normalizeIssuePageLimit(limit?: number): number {
+  return Math.min(Math.max(limit ?? DEFAULT_ISSUE_PAGE_SIZE, 1), MAX_ISSUE_PAGE_SIZE);
+}
+
+function encodeIssuePageCursor(row: { updatedAt: Date | string; id: string }): string {
+  const updatedAt = row.updatedAt instanceof Date ? row.updatedAt.toISOString() : new Date(row.updatedAt).toISOString();
+  return Buffer.from(JSON.stringify({ updatedAt, id: row.id }), "utf8").toString("base64url");
+}
+
+function decodeIssuePageCursor(cursor: string): { updatedAt: Date; id: string } {
+  try {
+    const decoded = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8")) as {
+      updatedAt?: unknown;
+      id?: unknown;
+    };
+    if (typeof decoded.updatedAt !== "string" || typeof decoded.id !== "string") {
+      throw new Error("Invalid shape");
+    }
+    const updatedAt = new Date(decoded.updatedAt);
+    if (Number.isNaN(updatedAt.getTime()) || decoded.id.trim().length === 0) {
+      throw new Error("Invalid values");
+    }
+    return { updatedAt, id: decoded.id };
+  } catch {
+    throw unprocessable("Invalid issues cursor");
+  }
+}
+
+function pageAfterCursorCondition(cursor: { updatedAt: Date; id: string }): SQL<boolean> {
+  return sql<boolean>`
+    (
+      ${issues.updatedAt} < ${cursor.updatedAt}
+      OR (${issues.updatedAt} = ${cursor.updatedAt} AND ${issues.id} < ${cursor.id})
+    )
+  `;
 }
 
 function touchedByUserCondition(companyId: string, userId: string) {
@@ -372,8 +422,179 @@ async function withIssueLinkSummaries<T extends { id: string }>(
   });
 }
 
+interface IssueListQueryContext {
+  conditions: SQL<unknown>[];
+  contextUserId: string | undefined;
+  hasSearch: boolean;
+  priorityOrder: SQL<unknown>;
+  searchOrder: SQL<number>;
+  empty: boolean;
+}
+
 export function issueService(db: Db) {
   const reviewBundlesSvc = reviewBundleService(db);
+
+  async function buildIssueListQueryContext(companyId: string, filters?: IssueFilters): Promise<IssueListQueryContext> {
+    const conditions: SQL<unknown>[] = [eq(issues.companyId, companyId)];
+    const touchedByUserId = filters?.touchedByUserId?.trim() || undefined;
+    const unreadForUserId = filters?.unreadForUserId?.trim() || undefined;
+    const contextUserId = unreadForUserId ?? touchedByUserId;
+    const rawSearch = filters?.q?.trim() ?? "";
+    const hasSearch = rawSearch.length > 0;
+    const escapedSearch = hasSearch ? escapeLikePattern(rawSearch) : "";
+    const startsWithPattern = `${escapedSearch}%`;
+    const containsPattern = `%${escapedSearch}%`;
+    const titleStartsWithMatch = sql<boolean>`${issues.title} ILIKE ${startsWithPattern} ESCAPE '\\'`;
+    const titleContainsMatch = sql<boolean>`${issues.title} ILIKE ${containsPattern} ESCAPE '\\'`;
+    const identifierStartsWithMatch = sql<boolean>`${issues.identifier} ILIKE ${startsWithPattern} ESCAPE '\\'`;
+    const identifierContainsMatch = sql<boolean>`${issues.identifier} ILIKE ${containsPattern} ESCAPE '\\'`;
+    const descriptionContainsMatch = sql<boolean>`${issues.description} ILIKE ${containsPattern} ESCAPE '\\'`;
+    const commentContainsMatch = sql<boolean>`
+      EXISTS (
+        SELECT 1
+        FROM ${issueComments}
+        WHERE ${issueComments.issueId} = ${issues.id}
+          AND ${issueComments.companyId} = ${companyId}
+          AND ${issueComments.body} ILIKE ${containsPattern} ESCAPE '\\'
+      )
+    `;
+
+    if (filters?.status) {
+      const statuses = filters.status.split(",").map((s) => s.trim());
+      conditions.push(statuses.length === 1 ? eq(issues.status, statuses[0]) : inArray(issues.status, statuses));
+    }
+    if (filters?.assigneeAgentId) {
+      conditions.push(eq(issues.assigneeAgentId, filters.assigneeAgentId));
+    }
+    if (filters?.assigneeUserId) {
+      conditions.push(eq(issues.assigneeUserId, filters.assigneeUserId));
+    }
+    if (touchedByUserId) {
+      conditions.push(touchedByUserCondition(companyId, touchedByUserId));
+    }
+    if (unreadForUserId) {
+      conditions.push(unreadForUserCondition(companyId, unreadForUserId));
+    }
+    if (filters?.projectId) conditions.push(eq(issues.projectId, filters.projectId));
+    if (filters?.parentId) conditions.push(eq(issues.parentId, filters.parentId));
+    if (filters?.reviewerAgentId) conditions.push(eq(issues.reviewerAgentId, filters.reviewerAgentId));
+    if (filters?.approverAgentId) conditions.push(eq(issues.approverAgentId, filters.approverAgentId));
+    if (filters?.labelId) {
+      const labeledIssueIds = await db
+        .select({ issueId: issueLabels.issueId })
+        .from(issueLabels)
+        .where(and(eq(issueLabels.companyId, companyId), eq(issueLabels.labelId, filters.labelId)));
+      if (labeledIssueIds.length === 0) {
+        return {
+          conditions,
+          contextUserId,
+          hasSearch,
+          priorityOrder: sql`0`,
+          searchOrder: sql<number>`0`,
+          empty: true,
+        };
+      }
+      conditions.push(inArray(issues.id, labeledIssueIds.map((row) => row.issueId)));
+    }
+    if (hasSearch) {
+      conditions.push(
+        or(
+          titleContainsMatch,
+          identifierContainsMatch,
+          descriptionContainsMatch,
+          commentContainsMatch,
+        )!,
+      );
+    }
+    conditions.push(isNull(issues.hiddenAt));
+
+    const priorityOrder = sql`CASE ${issues.priority} WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END`;
+    const searchOrder = sql<number>`
+      CASE
+        WHEN ${titleStartsWithMatch} THEN 0
+        WHEN ${titleContainsMatch} THEN 1
+        WHEN ${identifierStartsWithMatch} THEN 2
+        WHEN ${identifierContainsMatch} THEN 3
+        WHEN ${descriptionContainsMatch} THEN 4
+        WHEN ${commentContainsMatch} THEN 5
+        ELSE 6
+      END
+    `;
+
+    return {
+      conditions,
+      contextUserId,
+      hasSearch,
+      priorityOrder,
+      searchOrder,
+      empty: false,
+    };
+  }
+
+  async function enrichIssueListRows(
+    companyId: string,
+    rows: IssueRow[],
+    contextUserId?: string,
+  ): Promise<IssueListRow[]> {
+    const withLabels = await withIssueLabels(db, rows);
+    const withProjects = await withIssueProjects(db, withLabels);
+    const runMap = await activeRunMapForIssues(db, withProjects);
+    const withRuns = withActiveRuns(withProjects, runMap);
+    const enrichedWithLinks = await withIssueLinkSummaries(db, withRuns);
+
+    if (!contextUserId || enrichedWithLinks.length === 0) {
+      return enrichedWithLinks;
+    }
+
+    const issueIds = enrichedWithLinks.map((row) => row.id);
+    const statsRows = await db
+      .select({
+        issueId: issueComments.issueId,
+        myLastCommentAt: sql<Date | null>`
+          MAX(CASE WHEN ${issueComments.authorUserId} = ${contextUserId} THEN ${issueComments.createdAt} END)
+        `,
+        lastExternalCommentAt: sql<Date | null>`
+          MAX(
+            CASE
+              WHEN ${issueComments.authorUserId} IS NULL OR ${issueComments.authorUserId} <> ${contextUserId}
+              THEN ${issueComments.createdAt}
+            END
+          )
+        `,
+      })
+      .from(issueComments)
+      .where(
+        and(
+          eq(issueComments.companyId, companyId),
+          inArray(issueComments.issueId, issueIds),
+        ),
+      )
+      .groupBy(issueComments.issueId);
+    const readRows = await db
+      .select({
+        issueId: issueReadStates.issueId,
+        myLastReadAt: issueReadStates.lastReadAt,
+      })
+      .from(issueReadStates)
+      .where(
+        and(
+          eq(issueReadStates.companyId, companyId),
+          eq(issueReadStates.userId, contextUserId),
+          inArray(issueReadStates.issueId, issueIds),
+        ),
+      );
+    const statsByIssueId = new Map(statsRows.map((row) => [row.issueId, row]));
+    const readByIssueId = new Map(readRows.map((row) => [row.issueId, row.myLastReadAt]));
+
+    return enrichedWithLinks.map((row) => ({
+      ...row,
+      ...deriveIssueUserContext(row, contextUserId, {
+        myLastCommentAt: statsByIssueId.get(row.id)?.myLastCommentAt ?? null,
+        myLastReadAt: readByIssueId.get(row.id) ?? null,
+        lastExternalCommentAt: statsByIssueId.get(row.id)?.lastExternalCommentAt ?? null,
+      }),
+    }));
+  }
 
   async function assertAssignableAgent(companyId: string, agentId: string) {
     const assignee = await db
@@ -496,146 +717,47 @@ export function issueService(db: Db) {
 
   return {
     list: async (companyId: string, filters?: IssueFilters) => {
-      const conditions = [eq(issues.companyId, companyId)];
-      const touchedByUserId = filters?.touchedByUserId?.trim() || undefined;
-      const unreadForUserId = filters?.unreadForUserId?.trim() || undefined;
-      const contextUserId = unreadForUserId ?? touchedByUserId;
-      const rawSearch = filters?.q?.trim() ?? "";
-      const hasSearch = rawSearch.length > 0;
-      const escapedSearch = hasSearch ? escapeLikePattern(rawSearch) : "";
-      const startsWithPattern = `${escapedSearch}%`;
-      const containsPattern = `%${escapedSearch}%`;
-      const titleStartsWithMatch = sql<boolean>`${issues.title} ILIKE ${startsWithPattern} ESCAPE '\\'`;
-      const titleContainsMatch = sql<boolean>`${issues.title} ILIKE ${containsPattern} ESCAPE '\\'`;
-      const identifierStartsWithMatch = sql<boolean>`${issues.identifier} ILIKE ${startsWithPattern} ESCAPE '\\'`;
-      const identifierContainsMatch = sql<boolean>`${issues.identifier} ILIKE ${containsPattern} ESCAPE '\\'`;
-      const descriptionContainsMatch = sql<boolean>`${issues.description} ILIKE ${containsPattern} ESCAPE '\\'`;
-      const commentContainsMatch = sql<boolean>`
-        EXISTS (
-          SELECT 1
-          FROM ${issueComments}
-          WHERE ${issueComments.issueId} = ${issues.id}
-            AND ${issueComments.companyId} = ${companyId}
-            AND ${issueComments.body} ILIKE ${containsPattern} ESCAPE '\\'
-        )
-      `;
-      if (filters?.status) {
-        const statuses = filters.status.split(",").map((s) => s.trim());
-        conditions.push(statuses.length === 1 ? eq(issues.status, statuses[0]) : inArray(issues.status, statuses));
-      }
-      if (filters?.assigneeAgentId) {
-        conditions.push(eq(issues.assigneeAgentId, filters.assigneeAgentId));
-      }
-      if (filters?.assigneeUserId) {
-        conditions.push(eq(issues.assigneeUserId, filters.assigneeUserId));
-      }
-      if (touchedByUserId) {
-        conditions.push(touchedByUserCondition(companyId, touchedByUserId));
-      }
-      if (unreadForUserId) {
-        conditions.push(unreadForUserCondition(companyId, unreadForUserId));
-      }
-      if (filters?.projectId) conditions.push(eq(issues.projectId, filters.projectId));
-      if (filters?.parentId) conditions.push(eq(issues.parentId, filters.parentId));
-      if (filters?.reviewerAgentId) conditions.push(eq(issues.reviewerAgentId, filters.reviewerAgentId));
-      if (filters?.approverAgentId) conditions.push(eq(issues.approverAgentId, filters.approverAgentId));
-      if (filters?.labelId) {
-        const labeledIssueIds = await db
-          .select({ issueId: issueLabels.issueId })
-          .from(issueLabels)
-          .where(and(eq(issueLabels.companyId, companyId), eq(issueLabels.labelId, filters.labelId)));
-        if (labeledIssueIds.length === 0) return [];
-        conditions.push(inArray(issues.id, labeledIssueIds.map((row) => row.issueId)));
-      }
-      if (hasSearch) {
-        conditions.push(
-          or(
-            titleContainsMatch,
-            identifierContainsMatch,
-            descriptionContainsMatch,
-            commentContainsMatch,
-          )!,
+      const queryContext = await buildIssueListQueryContext(companyId, filters);
+      if (queryContext.empty) return [];
+      const rows = await db
+        .select()
+        .from(issues)
+        .where(and(...queryContext.conditions))
+        .orderBy(
+          queryContext.hasSearch ? asc(queryContext.searchOrder) : asc(queryContext.priorityOrder),
+          asc(queryContext.priorityOrder),
+          desc(issues.updatedAt),
         );
-      }
-      conditions.push(isNull(issues.hiddenAt));
+      return enrichIssueListRows(companyId, rows, queryContext.contextUserId);
+    },
 
-      const priorityOrder = sql`CASE ${issues.priority} WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END`;
-      const searchOrder = sql<number>`
-        CASE
-          WHEN ${titleStartsWithMatch} THEN 0
-          WHEN ${titleContainsMatch} THEN 1
-          WHEN ${identifierStartsWithMatch} THEN 2
-          WHEN ${identifierContainsMatch} THEN 3
-          WHEN ${descriptionContainsMatch} THEN 4
-          WHEN ${commentContainsMatch} THEN 5
-          ELSE 6
-        END
-      `;
+    listPage: async (
+      companyId: string,
+      filters?: IssueFilters,
+      options?: IssueListPageOptions,
+    ): Promise<IssueListPageResult<IssueListRow>> => {
+      const queryContext = await buildIssueListQueryContext(companyId, filters);
+      if (queryContext.empty) {
+        return { items: [], nextCursor: null };
+      }
+      const limit = normalizeIssuePageLimit(options?.limit);
+      const cursor = options?.cursor ? decodeIssuePageCursor(options.cursor) : null;
+      const conditions = [...queryContext.conditions];
+      if (cursor) {
+        conditions.push(pageAfterCursorCondition(cursor));
+      }
+
       const rows = await db
         .select()
         .from(issues)
         .where(and(...conditions))
-        .orderBy(hasSearch ? asc(searchOrder) : asc(priorityOrder), asc(priorityOrder), desc(issues.updatedAt));
-      const withLabels = await withIssueLabels(db, rows);
-      const withProjects = await withIssueProjects(db, withLabels);
-      const runMap = await activeRunMapForIssues(db, withProjects);
-      const withRuns = withActiveRuns(withProjects, runMap);
-
-      // Enrich with link summaries (incoming/outgoing counts + allUpstreamDone)
-      const enrichedWithLinks = await withIssueLinkSummaries(db, withRuns);
-
-      if (!contextUserId || enrichedWithLinks.length === 0) {
-        return enrichedWithLinks;
-      }
-
-      const issueIds = enrichedWithLinks.map((row) => row.id);
-      const statsRows = await db
-        .select({
-          issueId: issueComments.issueId,
-          myLastCommentAt: sql<Date | null>`
-            MAX(CASE WHEN ${issueComments.authorUserId} = ${contextUserId} THEN ${issueComments.createdAt} END)
-          `,
-          lastExternalCommentAt: sql<Date | null>`
-            MAX(
-              CASE
-                WHEN ${issueComments.authorUserId} IS NULL OR ${issueComments.authorUserId} <> ${contextUserId}
-                THEN ${issueComments.createdAt}
-              END
-            )
-          `,
-        })
-        .from(issueComments)
-        .where(
-          and(
-            eq(issueComments.companyId, companyId),
-            inArray(issueComments.issueId, issueIds),
-          ),
-        )
-        .groupBy(issueComments.issueId);
-      const readRows = await db
-        .select({
-          issueId: issueReadStates.issueId,
-          myLastReadAt: issueReadStates.lastReadAt,
-        })
-        .from(issueReadStates)
-        .where(
-          and(
-            eq(issueReadStates.companyId, companyId),
-            eq(issueReadStates.userId, contextUserId),
-            inArray(issueReadStates.issueId, issueIds),
-          ),
-        );
-      const statsByIssueId = new Map(statsRows.map((row) => [row.issueId, row]));
-      const readByIssueId = new Map(readRows.map((row) => [row.issueId, row.myLastReadAt]));
-
-      return enrichedWithLinks.map((row) => ({
-        ...row,
-        ...deriveIssueUserContext(row, contextUserId, {
-          myLastCommentAt: statsByIssueId.get(row.id)?.myLastCommentAt ?? null,
-          myLastReadAt: readByIssueId.get(row.id) ?? null,
-          lastExternalCommentAt: statsByIssueId.get(row.id)?.lastExternalCommentAt ?? null,
-        }),
-      }));
+        .orderBy(desc(issues.updatedAt), desc(issues.id))
+        .limit(limit + 1);
+      const hasMore = rows.length > limit;
+      const pageRows = hasMore ? rows.slice(0, limit) : rows;
+      const items = await enrichIssueListRows(companyId, pageRows, queryContext.contextUserId);
+      const nextCursor = hasMore ? encodeIssuePageCursor(pageRows[pageRows.length - 1]) : null;
+      return { items, nextCursor };
     },
 
     countUnreadTouchedByUser: async (companyId: string, userId: string, status?: string) => {

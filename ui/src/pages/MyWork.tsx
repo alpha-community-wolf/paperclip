@@ -275,10 +275,20 @@ export function MyWork() {
   });
   const currentUserId = session?.user?.id ?? session?.session?.userId ?? null;
 
-  // Assigned issues (assigned to current user, active statuses)
-  const { data: allIssues, isLoading: issuesLoading } = useQuery({
-    queryKey: queryKeys.issues.list(selectedCompanyId!),
-    queryFn: () => issuesApi.list(selectedCompanyId!),
+  const activeAssignedStatuses = "backlog,todo,in_progress,blocked";
+  const { data: assignedIssues, isLoading: assignedLoading } = useQuery({
+    queryKey: queryKeys.issues.listAssignedToMe(selectedCompanyId!),
+    queryFn: () =>
+      issuesApi.list(selectedCompanyId!, {
+        assigneeUserId: "me",
+        status: activeAssignedStatuses,
+      }),
+    enabled: !!selectedCompanyId,
+  });
+
+  const { data: inReviewIssues, isLoading: reviewLoading } = useQuery({
+    queryKey: [...queryKeys.issues.list(selectedCompanyId!), "my-work", "in-review"],
+    queryFn: () => issuesApi.list(selectedCompanyId!, { status: "in_review" }),
     enabled: !!selectedCompanyId,
   });
 
@@ -309,28 +319,15 @@ export function MyWork() {
     return <EmptyState icon={Briefcase} message="Select a company to view your work." />;
   }
 
-  const isLoading = issuesLoading || touchedLoading || approvalsLoading || runsLoading;
+  const isLoading = assignedLoading || reviewLoading || touchedLoading || approvalsLoading || runsLoading;
   if (isLoading) {
     return <PageSkeleton variant="list" />;
   }
 
-  // In Review: all issues in in_review status (these need human eyes)
-  const inReviewIssues = (allIssues ?? []).filter(
-    (i) => i.status === "in_review",
-  );
-
-  // Filter assigned issues: assigned to current user (by userId), active statuses only
-  // Exclude in_review (shown separately above)
-  const assignedIssues = (allIssues ?? []).filter(
-    (i) =>
-      i.assigneeUserId === currentUserId &&
-      !["done", "cancelled", "in_review"].includes(i.status),
-  );
-
   // Recently touched: exclude those already in other sections, limit to 20 most recent
   const shownIds = new Set([
-    ...inReviewIssues.map((i) => i.id),
-    ...assignedIssues.map((i) => i.id),
+    ...(inReviewIssues ?? []).map((i) => i.id),
+    ...(assignedIssues ?? []).map((i) => i.id),
   ]);
   const recentlyTouched = (touchedIssues ?? [])
     .filter((i) => !shownIds.has(i.id) && !["cancelled"].includes(i.status))
@@ -341,7 +338,11 @@ export function MyWork() {
   const groupedFailed = groupFailedRuns(failed);
 
   const totalItems =
-    groupedFailed.length + approvals.length + inReviewIssues.length + assignedIssues.length + recentlyTouched.length;
+    groupedFailed.length
+    + approvals.length
+    + (inReviewIssues?.length ?? 0)
+    + (assignedIssues?.length ?? 0)
+    + recentlyTouched.length;
 
   return (
     <div className="animate-page-enter max-w-4xl space-y-6">
@@ -371,13 +372,13 @@ export function MyWork() {
       )}
 
       {/* In Review — all issues needing human review */}
-      {inReviewIssues.length > 0 && (
+      {(inReviewIssues?.length ?? 0) > 0 && (
         <CollapsibleSection
           icon={Eye}
           label="In Review"
-          count={inReviewIssues.length}
+          count={inReviewIssues?.length ?? 0}
         >
-          {inReviewIssues.map((issue) => (
+          {(inReviewIssues ?? []).map((issue) => (
             <IssueRow key={issue.id} issue={issue} state={issueLinkState} />
           ))}
         </CollapsibleSection>
@@ -387,10 +388,10 @@ export function MyWork() {
       <CollapsibleSection
         icon={CircleDot}
         label="Assigned to Me"
-        count={assignedIssues.length}
+        count={assignedIssues?.length ?? 0}
         emptyMessage="No issues assigned to you."
       >
-        {assignedIssues.map((issue) => (
+        {(assignedIssues ?? []).map((issue) => (
           <IssueRow key={issue.id} issue={issue} />
         ))}
       </CollapsibleSection>

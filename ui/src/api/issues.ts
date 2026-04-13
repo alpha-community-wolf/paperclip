@@ -1,21 +1,28 @@
 import type { Approval, Issue, IssueAttachment, IssueComment, IssueLabel, IssueLinksByDirection } from "@paperclipai/shared";
 import { api } from "./client";
 
+export interface IssueListFilters {
+  status?: string;
+  projectId?: string;
+  assigneeAgentId?: string;
+  assigneeUserId?: string;
+  touchedByUserId?: string;
+  unreadForUserId?: string;
+  reviewerAgentId?: string;
+  approverAgentId?: string;
+  labelId?: string;
+  q?: string;
+}
+
+export interface IssueListPageResult {
+  issues: Issue[];
+  nextCursor: string | null;
+}
+
 export const issuesApi = {
   list: (
     companyId: string,
-    filters?: {
-      status?: string;
-      projectId?: string;
-      assigneeAgentId?: string;
-      assigneeUserId?: string;
-      touchedByUserId?: string;
-      unreadForUserId?: string;
-      reviewerAgentId?: string;
-      approverAgentId?: string;
-      labelId?: string;
-      q?: string;
-    },
+    filters?: IssueListFilters,
   ) => {
     const params = new URLSearchParams();
     if (filters?.status) params.set("status", filters.status);
@@ -30,6 +37,31 @@ export const issuesApi = {
     if (filters?.q) params.set("q", filters.q);
     const qs = params.toString();
     return api.get<Issue[]>(`/companies/${companyId}/issues${qs ? `?${qs}` : ""}`);
+  },
+  listPage: async (
+    companyId: string,
+    filters?: IssueListFilters,
+    options?: { limit?: number; cursor?: string | null },
+  ): Promise<IssueListPageResult> => {
+    const params = new URLSearchParams();
+    if (filters?.status) params.set("status", filters.status);
+    if (filters?.projectId) params.set("projectId", filters.projectId);
+    if (filters?.assigneeAgentId) params.set("assigneeAgentId", filters.assigneeAgentId);
+    if (filters?.assigneeUserId) params.set("assigneeUserId", filters.assigneeUserId);
+    if (filters?.touchedByUserId) params.set("touchedByUserId", filters.touchedByUserId);
+    if (filters?.unreadForUserId) params.set("unreadForUserId", filters.unreadForUserId);
+    if (filters?.reviewerAgentId) params.set("reviewerAgentId", filters.reviewerAgentId);
+    if (filters?.approverAgentId) params.set("approverAgentId", filters.approverAgentId);
+    if (filters?.labelId) params.set("labelId", filters.labelId);
+    if (filters?.q) params.set("q", filters.q);
+    if (options?.limit) params.set("limit", String(options.limit));
+    if (options?.cursor) params.set("cursor", options.cursor);
+    const qs = params.toString();
+    const { data, headers } = await api.getWithHeaders<Issue[]>(`/companies/${companyId}/issues${qs ? `?${qs}` : ""}`);
+    return {
+      issues: data,
+      nextCursor: headers.get("X-Next-Cursor"),
+    };
   },
   listLabels: (companyId: string) => api.get<IssueLabel[]>(`/companies/${companyId}/labels`),
   createLabel: (companyId: string, data: { name: string; color: string }) =>
