@@ -4,7 +4,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { agentApiKeys, agents, companyMemberships, instanceUserRoles } from "@paperclipai/db";
 import { verifyLocalAgentJwt } from "../agent-auth-jwt.js";
-import type { DeploymentMode } from "@paperclipai/shared";
+import { type DeploymentMode, isUuidLike } from "@paperclipai/shared";
 import type { BetterAuthSessionResult } from "../auth/better-auth.js";
 import { logger } from "./logger.js";
 
@@ -118,12 +118,14 @@ export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHa
         if (!companyIds.includes(claims.company_id)) {
           companyIds = [...companyIds, claims.company_id];
         }
+        // JWT run_id is a non-UUID placeholder (e.g. mini-app-<ts>); activity_log.run_id is uuid + FK to heartbeat_runs.
+        const headerRunId = runIdHeader?.trim();
         req.actor = {
           type: "board",
           userId,
           companyIds,
           isInstanceAdmin: Boolean(roleRow),
-          runId: runIdHeader ?? claims.run_id ?? undefined,
+          runId: headerRunId && isUuidLike(headerRunId) ? headerRunId : undefined,
           source: "mini_app_jwt",
         };
         next();
