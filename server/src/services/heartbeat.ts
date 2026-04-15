@@ -148,6 +148,14 @@ type ChoreCompletionInfo = {
   stdoutExcerpt: string;
 };
 const choreCompletionCallbacks = new Map<string, (info: ChoreCompletionInfo) => Promise<void>>();
+
+/**
+ * Durable completion actions — serialized into chore metadata, survive restarts.
+ * When a chore run finishes, finalizeRun() checks metadata.completionAction
+ * and dispatches to the appropriate handler.
+ */
+export type ChoreCompletionAction =
+  | { type: "update-session-title"; agentId: string; sessionId: string };
 const REPO_ONLY_CWD_SENTINEL = "/__paperclip_repo_only__";
 const CHAT_HISTORY_LIMIT = 40;
 
@@ -2557,7 +2565,7 @@ export function heartbeatService(db: Db) {
         }
       }
 
-      // Invoke chore completion callback if registered
+      // Invoke chore completion callback if registered (in-memory, not durable)
       const choreCallback = choreCompletionCallbacks.get(run.id);
       if (choreCallback) {
         choreCompletionCallbacks.delete(run.id);
@@ -2571,6 +2579,25 @@ export function heartbeatService(db: Db) {
           });
         } catch (cbErr) {
           logger.warn({ err: cbErr, runId: run.id }, "chore completion callback failed (non-fatal)");
+        }
+      }
+
+      // Durable completion action — persisted in metadata, survives restarts
+      const completionAction = (run.metadata as Record<string, unknown> | null)?.completionAction as
+        | ChoreCompletionAction
+        | undefined;
+      if (completionAction && outcome === "succeeded") {
+        try {
+          await executeCompletionAction(completionAction, {
+            stdoutExcerpt,
+            adapterType: agent.adapterType,
+            runId: run.id,
+          });
+        } catch (actionErr) {
+          logger.warn(
+            { err: actionErr, runId: run.id, action: completionAction.type },
+            "durable completion action failed (non-fatal)",
+          );
         }
       }
 
@@ -3372,6 +3399,87 @@ export function heartbeatService(db: Db) {
     contextSnapshot: sql<Record<string, unknown> | null>`NULL`.as("contextSnapshot"),
   } as const;
 
+  /**
+   * Execute a durable completion action persisted in chore metadata.
+   * Each action type has a dedicated handler. Errors propagate to the caller
+   * for logging — never fatal to the run itself.
+   */
+  async function executeCompletionAction(
+    action: ChoreCompletionAction,
+    ctx: { stdoutExcerpt: string; adapterType: string; runId: string },
+  ): Promise<void> {
+    switch (action.type) {
+      case "update-session-title": {
+        const titleText = extractTitleFromChoreStdout(ctx.stdoutExcerpt, ctx.adapterType);
+        if (!titleText) {
+          logger.info({ runId: ctx.runId, sessionId: action.sessionId }, "completion-action: no title extracted from chore output");
+          return;
+        }
+        const [updated] = await db
+          .update(chatSessions)
+          .set({ title: titleText, updatedAt: new Date() })
+          .where(
+            and(
+              eq(chatSessions.id, action.sessionId),
+              eq(chatSessions.agentId, action.agentId),
+            ),
+          )
+          .returning({ id: chatSessions.id });
+        if (updated) {
+          logger.info({ runId: ctx.runId, agentId: action.agentId, sessionId: action.sessionId, title: titleText }, "completion-action: auto-titled session");
+        } else {
+          logger.warn({ runId: ctx.runId, sessionId: action.sessionId }, "completion-action: session not found for title update");
+        }
+        break;
+      }
+      default:
+        logger.warn({ actionType: (action as { type: string }).type }, "completion-action: unknown action type");
+    }
+  }
+
+  /**
+   * Extract a clean title string from a chore run's raw stdout.
+   * Uses the adapter-specific stdout parser to find assistant text.
+   */
+  function extractTitleFromChoreStdout(stdoutExcerpt: string, adapterType: string): string | null {
+    if (!stdoutExcerpt?.trim()) return null;
+
+    const parser = resolveStdoutParser(adapterType);
+    const ts = new Date().toISOString();
+    const lines = stdoutExcerpt.split(/\r?\n/);
+
+    // Parse each stdout line through the adapter's parser to find assistant text
+    const assistantParts: string[] = [];
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      try {
+        for (const entry of parser(trimmed, ts)) {
+          if (entry.kind === "assistant" && entry.text.trim()) {
+            assistantParts.push(entry.text.trim());
+          }
+        }
+      } catch {
+        // Skip unparseable lines
+      }
+    }
+
+    if (assistantParts.length > 0) {
+      const title = assistantParts.join(" ").trim();
+      return title.length > 100 ? title.slice(0, 100) : title;
+    }
+
+    // Fallback: treat stdout as plain text, take the first non-empty line
+    const firstLine = lines
+      .map((l) => l.trim())
+      .find((l) => l.length > 0);
+    if (firstLine) {
+      return firstLine.length > 100 ? firstLine.slice(0, 100) : firstLine;
+    }
+
+    return null;
+  }
+
   const svc = {
     list: async (companyId: string, agentId?: string, limit?: number, projectId?: string, includeChores = false): Promise<{ runs: (typeof heartbeatRuns.$inferSelect)[]; degraded: boolean }> => {
       const conditions = [eq(heartbeatRuns.companyId, companyId)];
@@ -4043,6 +4151,8 @@ export function heartbeatService(db: Db) {
         actor?: { actorType?: "user" | "agent" | "system"; actorId?: string | null };
         /** Optional callback invoked when the chore run completes. Not durable across restarts. */
         onComplete?: (info: ChoreCompletionInfo) => Promise<void>;
+        /** Durable completion action — persisted in metadata, survives restarts. Preferred over onComplete. */
+        completionAction?: ChoreCompletionAction;
       },
     ) => {
       const agent = await getAgent(agentId);
@@ -4087,7 +4197,10 @@ export function heartbeatService(db: Db) {
           status: "queued",
           wakeupRequestId: wakeupRequest.id,
           contextSnapshot,
-          metadata: opts.metadata ?? null,
+          metadata: {
+            ...(opts.metadata ?? {}),
+            ...(opts.completionAction ? { completionAction: opts.completionAction } : {}),
+          },
         })
         .returning()
         .then((rows) => rows[0]);
