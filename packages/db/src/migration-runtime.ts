@@ -70,54 +70,109 @@ async function loadEmbeddedPostgresCtor(): Promise<EmbeddedPostgresCtor> {
   }
 }
 
+function isEmbeddedReuseRecoverableError(err: unknown): boolean {
+  if (err && typeof err === "object" && "code" in err) {
+    const code = (err as { code?: string }).code;
+    if (code === "57P03" || code === "57P01") return true;
+  }
+  const msg = err instanceof Error ? err.message : String(err);
+  return /shutting down/i.test(msg) || /connection refused/i.test(msg) || /ECONNREFUSED/i.test(msg);
+}
+
+function isPidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function waitForPidExit(pid: number, timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (isPidAlive(pid) && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 200));
+  }
+}
+
 async function ensureEmbeddedPostgresConnection(
   dataDir: string,
   preferredPort: number,
 ): Promise<MigrationConnection> {
   const EmbeddedPostgres = await loadEmbeddedPostgresCtor();
   const postmasterPidFile = path.resolve(dataDir, "postmaster.pid");
-  const runningPid = readRunningPostmasterPid(postmasterPidFile);
-  const runningPort = readPidFilePort(postmasterPidFile);
+  let reusePid = readRunningPostmasterPid(postmasterPidFile);
+  let port = preferredPort;
+  let instance: EmbeddedPostgresInstance | null = null;
 
-  if (runningPid) {
-    const port = runningPort ?? preferredPort;
-    const adminConnectionString = `postgres://paperclip:paperclip@127.0.0.1:${port}/postgres`;
-    await ensurePostgresDatabase(adminConnectionString, "paperclip");
-    return {
-      connectionString: `postgres://paperclip:paperclip@127.0.0.1:${port}/paperclip`,
-      source: `embedded-postgres@${port}`,
-      stop: async () => {},
-    };
+  for (let recoveryAttempt = 0; recoveryAttempt < 2; recoveryAttempt++) {
+    if (reusePid) {
+      port = readPidFilePort(postmasterPidFile) ?? preferredPort;
+      const adminConnectionString = `postgres://paperclip:paperclip@127.0.0.1:${port}/postgres`;
+      try {
+        await ensurePostgresDatabase(adminConnectionString, "paperclip");
+        return {
+          connectionString: `postgres://paperclip:paperclip@127.0.0.1:${port}/paperclip`,
+          source: `embedded-postgres@${port}`,
+          stop: async () => {},
+        };
+      } catch (err) {
+        const canRecover =
+          recoveryAttempt === 0 && reusePid !== null && isEmbeddedReuseRecoverableError(err);
+        if (!canRecover) throw err;
+        rmSync(postmasterPidFile, { force: true });
+        const stalePid = reusePid as number;
+        if (isPidAlive(stalePid)) {
+          try {
+            process.kill(stalePid, "SIGTERM");
+          } catch {
+            /* ignore */
+          }
+          await waitForPidExit(stalePid, 15_000);
+          if (isPidAlive(stalePid)) {
+            try {
+              process.kill(stalePid, "SIGKILL");
+            } catch {
+              /* ignore */
+            }
+            await waitForPidExit(stalePid, 5_000);
+          }
+        }
+        reusePid = null;
+      }
+    } else {
+      instance = new EmbeddedPostgres({
+        databaseDir: dataDir,
+        user: "paperclip",
+        password: "paperclip",
+        port: preferredPort,
+        persistent: true,
+        onLog: () => {},
+        onError: () => {},
+      });
+
+      if (!existsSync(path.resolve(dataDir, "PG_VERSION"))) {
+        await instance.initialise();
+      }
+      if (existsSync(postmasterPidFile)) {
+        rmSync(postmasterPidFile, { force: true });
+      }
+      await instance.start();
+
+      const adminConnectionString = `postgres://paperclip:paperclip@127.0.0.1:${preferredPort}/postgres`;
+      await ensurePostgresDatabase(adminConnectionString, "paperclip");
+
+      return {
+        connectionString: `postgres://paperclip:paperclip@127.0.0.1:${preferredPort}/paperclip`,
+        source: `embedded-postgres@${preferredPort}`,
+        stop: async () => {
+          await instance!.stop();
+        },
+      };
+    }
   }
 
-  const instance = new EmbeddedPostgres({
-    databaseDir: dataDir,
-    user: "paperclip",
-    password: "paperclip",
-    port: preferredPort,
-    persistent: true,
-    onLog: () => {},
-    onError: () => {},
-  });
-
-  if (!existsSync(path.resolve(dataDir, "PG_VERSION"))) {
-    await instance.initialise();
-  }
-  if (existsSync(postmasterPidFile)) {
-    rmSync(postmasterPidFile, { force: true });
-  }
-  await instance.start();
-
-  const adminConnectionString = `postgres://paperclip:paperclip@127.0.0.1:${preferredPort}/postgres`;
-  await ensurePostgresDatabase(adminConnectionString, "paperclip");
-
-  return {
-    connectionString: `postgres://paperclip:paperclip@127.0.0.1:${preferredPort}/paperclip`,
-    source: `embedded-postgres@${preferredPort}`,
-    stop: async () => {
-      await instance.stop();
-    },
-  };
+  throw new Error("Embedded PostgreSQL failed to start after recovery attempt");
 }
 
 export async function resolveMigrationConnection(): Promise<MigrationConnection> {
