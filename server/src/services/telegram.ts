@@ -5,7 +5,7 @@ import https from "node:https";
 import path from "node:path";
 import { Bot, InputFile } from "grammy";
 import { run as grammyRun, type RunnerHandle } from "@grammyjs/runner";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { agents, agentTelegramConfigs, authUsers, chatMessages, chatSessions, heartbeatRuns } from "@paperclipai/db";
 import type { AgentTelegramConfig, AgentTelegramTestResult, SendTelegramNotificationOptions, MiniAppAuthResponse } from "@paperclipai/shared";
@@ -421,7 +421,7 @@ export function telegramService(db: Db) {
     if (sessionTitle && sessionTitle !== DEFAULT_TELEGRAM_TITLE) return;
 
     try {
-      // Skip if an auto-title chore is already queued/running for this agent
+      // Skip if an auto-title chore is already queued/running for this session
       const [pendingChore] = await db
         .select({ id: heartbeatRuns.id })
         .from(heartbeatRuns)
@@ -430,6 +430,8 @@ export function telegramService(db: Db) {
             eq(heartbeatRuns.agentId, agentId),
             eq(heartbeatRuns.type, "chore"),
             inArray(heartbeatRuns.status, ["queued", "running"]),
+            sql`${heartbeatRuns.metadata}->>'purpose' = 'auto-title-session'`,
+            sql`${heartbeatRuns.metadata}->>'sessionId' = ${sessionId}`,
           ),
         )
         .limit(1);
@@ -481,70 +483,19 @@ export function telegramService(db: Db) {
         ...(truncatedReply ? [`Assistant: ${truncatedReply}`] : []),
       ].join("\n");
 
-      // Fire-and-forget: trigger a chore run with a completion callback
+      // Fire-and-forget: trigger a chore run with a durable completion action
+      // The action is persisted in run metadata and survives server restarts
       await heartbeat.triggerChore(agentId, {
         prompt: chorePrompt,
         metadata: { purpose: "auto-title-session", sessionId },
         actor: { actorType: "system" },
-        onComplete: async (info) => {
-          if (info.outcome !== "succeeded") return;
-
-          // Extract assistant text from the chore run's stdout
-          const titleText = extractTitleFromStdout(info.stdoutExcerpt, info.agentAdapterType);
-          if (titleText) {
-            await chat.updateSession({ agentId, sessionId, title: titleText });
-            logger.info({ agentId, sessionId, title: titleText }, "telegram: auto-titled session via chore");
-          }
-        },
+        completionAction: { type: "update-session-title", agentId, sessionId },
       }).catch((err) => {
         logger.warn({ err, agentId, sessionId }, "telegram: failed to trigger auto-title chore (non-fatal)");
       });
     } catch (err) {
       logger.warn({ err, agentId, sessionId }, "telegram: auto-title failed (non-fatal)");
     }
-  }
-
-  /**
-   * Extract a clean title string from a chore run's raw stdout excerpt.
-   * Uses the adapter-specific stdout parser to find assistant text.
-   */
-  function extractTitleFromStdout(stdoutExcerpt: string, adapterType: string): string | null {
-    if (!stdoutExcerpt.trim()) return null;
-
-    const parser = resolveStdoutParser(adapterType);
-    const ts = new Date().toISOString();
-    const lines = stdoutExcerpt.split(/\r?\n/);
-
-    // Parse each stdout line through the adapter's parser to find assistant text
-    const assistantParts: string[] = [];
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-      try {
-        for (const entry of parser(trimmed, ts)) {
-          if (entry.kind === "assistant" && entry.text.trim()) {
-            assistantParts.push(entry.text.trim());
-          }
-        }
-      } catch {
-        // Skip unparseable lines
-      }
-    }
-
-    if (assistantParts.length > 0) {
-      const title = assistantParts.join(" ").trim();
-      return title.length > 100 ? title.slice(0, 100) : title;
-    }
-
-    // Fallback: treat stdout as plain text, take the first non-empty line
-    const firstLine = lines
-      .map((l) => l.trim())
-      .find((l) => l.length > 0);
-    if (firstLine) {
-      return firstLine.length > 100 ? firstLine.slice(0, 100) : firstLine;
-    }
-
-    return null;
   }
 
   async function archiveTelegramSession(agentId: string, telegramChatId: string) {
