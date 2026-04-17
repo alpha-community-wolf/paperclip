@@ -63,6 +63,10 @@ function makeCtx(): ActionContext & {
         state.comments.push({ issueId, body });
         return { id: "comment-1", issueId, body };
       }),
+      getById: vi.fn(async (id: string) => {
+        // Default: return same-company issue for any ID
+        return { id, companyId: "company-1" };
+      }),
     },
     heartbeat: {
       wakeup: vi.fn(async (agentId: string, opts: Record<string, unknown>) => {
@@ -356,6 +360,42 @@ describe("processCompletionActions", () => {
       const result = await processCompletionActions(actions, issue, ctx);
       expect(result.executed).toBe(1);
     });
+
+    it("supports exists: false condition (field missing)", async () => {
+      const issue = makeIssue({ metadata: {} });
+      const ctx = makeCtx();
+      const actions: CompletionAction[] = [
+        {
+          type: "conditional",
+          condition: { field: "metadata.nonexistent", exists: false },
+          then: [
+            { type: "post_comment", targetIssueId: "parent-1", body: "Field absent" },
+          ],
+        },
+      ];
+
+      const result = await processCompletionActions(actions, issue, ctx);
+      expect(result.executed).toBe(1);
+      expect(ctx.comments[0].body).toBe("Field absent");
+    });
+
+    it("skips when exists: false but field is present", async () => {
+      const issue = makeIssue({ metadata: { outcome: "value" } });
+      const ctx = makeCtx();
+      const actions: CompletionAction[] = [
+        {
+          type: "conditional",
+          condition: { field: "metadata.outcome", exists: false },
+          then: [
+            { type: "post_comment", targetIssueId: "parent-1", body: "Should not fire" },
+          ],
+        },
+      ];
+
+      const result = await processCompletionActions(actions, issue, ctx);
+      expect(result.executed).toBe(0);
+      expect(ctx.comments).toHaveLength(0);
+    });
   });
 
   describe("chain depth guard", () => {
@@ -399,6 +439,106 @@ describe("processCompletionActions", () => {
 
       const result = await processCompletionActions(actions, issue, ctx);
       expect(result.errors).toBe(1);
+    });
+  });
+
+  describe("cross-company security guards", () => {
+    it("blocks update_issue targeting a different company", async () => {
+      const issue = makeIssue();
+      const ctx = makeCtx();
+      (ctx.issueService.getById as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        id: "foreign-issue",
+        companyId: "other-company",
+      });
+
+      const actions: CompletionAction[] = [
+        {
+          type: "update_issue",
+          targetIssueId: "foreign-issue",
+          patch: { status: "done" },
+        },
+      ];
+
+      const result = await processCompletionActions(actions, issue, ctx);
+      expect(result.errors).toBe(1);
+      expect(result.executed).toBe(0);
+      expect(ctx.updatedIssues).toHaveLength(0);
+    });
+
+    it("blocks update_issue when target not found", async () => {
+      const issue = makeIssue();
+      const ctx = makeCtx();
+      (ctx.issueService.getById as ReturnType<typeof vi.fn>).mockResolvedValueOnce(null);
+
+      const actions: CompletionAction[] = [
+        {
+          type: "update_issue",
+          targetIssueId: "nonexistent",
+          patch: { status: "done" },
+        },
+      ];
+
+      const result = await processCompletionActions(actions, issue, ctx);
+      expect(result.errors).toBe(1);
+      expect(result.executed).toBe(0);
+    });
+
+    it("blocks post_comment targeting a different company", async () => {
+      const issue = makeIssue();
+      const ctx = makeCtx();
+      (ctx.issueService.getById as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        id: "foreign-issue",
+        companyId: "other-company",
+      });
+
+      const actions: CompletionAction[] = [
+        {
+          type: "post_comment",
+          targetIssueId: "foreign-issue",
+          body: "Should not post",
+        },
+      ];
+
+      const result = await processCompletionActions(actions, issue, ctx);
+      expect(result.errors).toBe(1);
+      expect(result.executed).toBe(0);
+      expect(ctx.comments).toHaveLength(0);
+    });
+
+    it("blocks post_comment when target not found", async () => {
+      const issue = makeIssue();
+      const ctx = makeCtx();
+      (ctx.issueService.getById as ReturnType<typeof vi.fn>).mockResolvedValueOnce(null);
+
+      const actions: CompletionAction[] = [
+        {
+          type: "post_comment",
+          targetIssueId: "nonexistent",
+          body: "Should not post",
+        },
+      ];
+
+      const result = await processCompletionActions(actions, issue, ctx);
+      expect(result.errors).toBe(1);
+      expect(result.executed).toBe(0);
+    });
+
+    it("allows update_issue targeting same company", async () => {
+      const issue = makeIssue();
+      const ctx = makeCtx();
+      // getById default returns same company
+
+      const actions: CompletionAction[] = [
+        {
+          type: "update_issue",
+          targetIssueId: "{{parentId}}",
+          patch: { status: "in_review" },
+        },
+      ];
+
+      const result = await processCompletionActions(actions, issue, ctx);
+      expect(result.executed).toBe(1);
+      expect(result.errors).toBe(0);
     });
   });
 

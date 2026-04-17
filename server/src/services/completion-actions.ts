@@ -4,6 +4,16 @@
  * workflow templates.
  *
  * Action types: create_issue, update_issue, post_comment, wake_agent, conditional
+ *
+ * Security: update_issue and post_comment verify the target issue belongs to the
+ * same company as the completing issue before executing. wake_agent is protected
+ * by the heartbeat service's own company-scoped validation. create_issue always
+ * creates within the completing issue's company.
+ *
+ * Chain depth: MAX_CHAIN_DEPTH (5) guards recursive conditional actions within a
+ * single execution. Note: a create_issue action that creates an issue with its own
+ * completionActions starts a fresh chain at depth 0 when that child completes —
+ * this is by design (same as event-routing cross-event chaining).
  */
 
 import type { Logger } from "pino";
@@ -137,6 +147,7 @@ export interface ActionContext {
     create: (...args: any[]) => Promise<any>;
     update: (...args: any[]) => Promise<any>;
     addComment: (...args: any[]) => Promise<any>;
+    getById: (id: string) => Promise<{ id: string; companyId: string } | null>;
   };
   heartbeat: {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -309,6 +320,17 @@ export async function processCompletionActions(
             break;
           }
 
+          // Company scoping guard: verify target belongs to same company
+          const updateTarget = await ctx.issueService.getById(targetId);
+          if (!updateTarget || updateTarget.companyId !== issue.companyId) {
+            ctx.logger.warn(
+              { issueId: issue.id, targetIssueId: targetId },
+              "update_issue: target issue not found or belongs to different company, skipping",
+            );
+            errors++;
+            break;
+          }
+
           const resolvedPatch = deepInterpolate(action.patch, templateCtx);
           await ctx.issueService.update(targetId, resolvedPatch);
 
@@ -337,6 +359,17 @@ export async function processCompletionActions(
           const body = renderTemplate(action.body, templateCtx);
           if (!targetId || !body) {
             ctx.logger.warn({ issueId: issue.id }, "post_comment: empty target or body, skipping");
+            errors++;
+            break;
+          }
+
+          // Company scoping guard: verify target belongs to same company
+          const commentTarget = await ctx.issueService.getById(targetId);
+          if (!commentTarget || commentTarget.companyId !== issue.companyId) {
+            ctx.logger.warn(
+              { issueId: issue.id, targetIssueId: targetId },
+              "post_comment: target issue not found or belongs to different company, skipping",
+            );
             errors++;
             break;
           }
