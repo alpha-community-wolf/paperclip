@@ -1,3 +1,5 @@
+> **NOTICE:** Active development has moved to [`Community-Wolf-Limited/outpost`](https://github.com/Community-Wolf-Limited/outpost). This repository is read-only and will be archived after the migration completes. No new PRs should target this repo.
+
 <!--
   =============================================================================
   README HEADER — Outpost branding scaffold
