@@ -27,6 +27,7 @@ import { logger } from "../middleware/logger.js";
 import { forbidden, HttpError, unauthorized } from "../errors.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 import { shouldWakeAssigneeOnCheckout } from "./issues-checkout-wakeup.js";
+import { extractCompletionActions, processCompletionActions } from "../services/completion-actions.js";
 import { isAllowedContentType, MAX_ATTACHMENT_BYTES } from "../attachment-types.js";
 
 export function issueRoutes(db: Db, storage: StorageService) {
@@ -812,6 +813,40 @@ export function issueRoutes(db: Db, storage: StorageService) {
           }
         } catch (err) {
           logger.warn({ err, issueId: issue.id }, "failed to fire workflow root-done entry step triggers");
+        }
+
+        // Completion hooks: process completionActions from metadata
+        try {
+          const completionActions = extractCompletionActions(
+            (issue.metadata ?? {}) as Record<string, unknown>,
+          );
+          if (completionActions) {
+            const actionCtx: Parameters<typeof processCompletionActions>[2] = {
+              issueService: svc,
+              heartbeat,
+              logActivity: (details) => logActivity(db, details),
+              actor: {
+                actorType: actor.actorType as "agent" | "user" | "system",
+                actorId: actor.actorId,
+                agentId: actor.agentId,
+                runId: actor.runId,
+              },
+              logger,
+            };
+            const result = await processCompletionActions(
+              completionActions,
+              issue as Parameters<typeof processCompletionActions>[1],
+              actionCtx,
+            );
+            if (result.executed > 0 || result.errors > 0) {
+              logger.info(
+                { issueId: issue.id, identifier: issue.identifier, ...result },
+                "completion actions processed",
+              );
+            }
+          }
+        } catch (err) {
+          logger.warn({ err, issueId: issue.id }, "failed to process completion actions");
         }
       }
 
