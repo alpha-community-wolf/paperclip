@@ -483,6 +483,114 @@ curl -X POST /api/issues/$research_id/links -d '{"targetId":"'$implement_id'","l
 curl -X POST /api/issues/$implement_id/links -d '{"targetId":"'$test_id'","linkType":"triggers"}'
 ```
 
+## Workflows (Multi-Step Pipelines)
+
+Workflows let you run structured multi-step pipelines on an issue. A **workflow template** defines an ordered set of steps (each with a type, assignee, and dependencies), and when instantiated it creates:
+
+1. A **root issue** — the top-level workflow container (has `metadata.workflowTemplateId`)
+2. **Step issues** — child issues (one per step), each with `parentId` pointing to the root
+
+Steps are chained using `triggers` links (see Issue Links above). Entry steps (no dependencies) start immediately; downstream steps auto-trigger when upstream steps complete.
+
+### Workflow metadata fields
+
+When you are woken for a workflow-related issue, check `metadata` for these fields:
+
+| Field | Present on | Meaning |
+|-------|-----------|---------|
+| `workflowTemplateId` | Root + steps | The workflow template that created this issue |
+| `workflowTemplateVersion` | Root only | Template version at instantiation time |
+| `workflowRootIssueId` | Steps only | The root issue this step belongs to |
+| `workflowStepKey` | Steps only | This step's key in the template (e.g. `"explore"`, `"plan"`, `"build"`) |
+
+### How to behave on workflow issues
+
+**If you are assigned to a workflow ROOT issue** (has `workflowTemplateId` but NO `workflowStepKey`):
+
+- Do NOT do the work inline on the root issue.
+- The root issue is a container — the real work happens in the pipeline step issues (children).
+- Check the injected "Workflow Pipeline" context section for the list of child steps and their statuses.
+- If all steps are done, mark the root issue as done with a summary.
+- If steps are stuck or blocked, investigate and unblock them (reassign, comment, escalate).
+- You may update the root issue description or comment to summarize overall progress.
+
+**If you are assigned to a workflow STEP issue** (has `workflowStepKey` + `workflowRootIssueId`):
+
+- This is a normal task/plan/explore issue — do the work according to its `type`.
+- Respect the step type: `explore` → findings only, `plan` → plan document only, `task` → execute.
+- When you complete the step (mark it `done`), the server automatically triggers downstream steps via `triggers` links.
+- Output artifacts (e.g. `exploreDocumentPath`, `planDocumentPath`) are forwarded to downstream steps via metadata.
+
+### Runtime context injection
+
+The server automatically injects workflow context into your heartbeat when you are working on a workflow-related issue:
+
+- **Workflow root**: You'll see a "Workflow Pipeline" section listing all child steps with their status, type, step key, identifier, and assignee.
+- **Workflow step**: You'll see a "Workflow Step Context" section telling you which step you are, the root issue reference, and sibling step statuses.
+
+This context is injected automatically — you don't need to query for it.
+
+## Completion Hooks (`completionActions`)
+
+Issues can have `metadata.completionActions` — an array of actions that fire automatically when the issue transitions to `done`. This enables ad-hoc automation without workflow templates.
+
+### Action types
+
+| Type | What it does |
+|------|-------------|
+| `create_issue` | Creates a new issue from a template with `{{field}}` interpolation |
+| `update_issue` | Patches a target issue (same company) with interpolated fields |
+| `post_comment` | Posts a comment on a target issue (same company) |
+| `wake_agent` | Wakes another agent with an optional payload |
+| `conditional` | Evaluates a condition on the completing issue, then runs nested actions if true |
+
+### Template interpolation
+
+All string fields in action definitions support `{{field}}` interpolation against the completing issue:
+
+```
+{{identifier}}, {{title}}, {{description}}, {{status}}, {{priority}}, {{type}},
+{{parentId}}, {{projectId}}, {{goalId}}, {{assigneeAgentId}},
+{{metadata.someKey}}, {{ancestors.0.title}}, {{project.name}}
+```
+
+### Example: create a follow-up issue on completion
+
+```json
+{
+  "completionActions": [
+    {
+      "type": "create_issue",
+      "template": {
+        "title": "Review: {{title}}",
+        "description": "Review the work completed in {{identifier}}.",
+        "assigneeAgentId": "uuid-of-reviewer",
+        "parentId": "{{parentId}}",
+        "projectId": "{{projectId}}"
+      }
+    }
+  ]
+}
+```
+
+### Conditional actions
+
+```json
+{
+  "type": "conditional",
+  "condition": { "field": "metadata.needsReview", "eq": "true" },
+  "then": [
+    { "type": "wake_agent", "agentId": "uuid-of-reviewer", "reason": "review_needed" }
+  ]
+}
+```
+
+Conditions support `eq`, `neq`, and `exists` operators. Max chain depth is 5.
+
+### When you encounter completion hooks
+
+If the issue you're working on has `completionActions` in its metadata, do NOT manually execute those actions — they fire automatically when you mark the issue `done`. Just do your work and close normally.
+
 ## Recurring Schedules (Task Cron)
 
 Create recurring schedules to automatically re-trigger work on a cron expression. Schedules are scoped to an agent and optionally linked to an issue.

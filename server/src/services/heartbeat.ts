@@ -820,6 +820,118 @@ async function buildAgentSelfContext(
       }
     }
 
+    // Workflow context injection
+    if (meta) {
+      const isWorkflowRoot = meta.workflowTemplateId && !meta.workflowStepKey;
+      const isWorkflowStep = !!meta.workflowStepKey && !!meta.workflowRootIssueId;
+
+      if (isWorkflowRoot) {
+        // Fetch child pipeline step issues
+        const childSteps = await db
+          .select({
+            id: issues.id,
+            identifier: issues.identifier,
+            title: issues.title,
+            type: issues.type,
+            status: issues.status,
+            priority: issues.priority,
+            metadata: issues.metadata,
+            assigneeAgentId: issues.assigneeAgentId,
+          })
+          .from(issues)
+          .where(and(eq(issues.parentId, currentIssue.id), eq(issues.companyId, agent.companyId)))
+          .orderBy(asc(issues.createdAt));
+
+        // Filter to only workflow step children (have workflowStepKey)
+        const workflowSteps = childSteps.filter((s) => {
+          const m = s.metadata as Record<string, unknown> | null;
+          return m?.workflowStepKey;
+        });
+
+        if (workflowSteps.length > 0) {
+          // Resolve assignee agent names
+          const stepAgentIds = [...new Set(workflowSteps.map((s) => s.assigneeAgentId).filter((id): id is string => id != null))];
+          const stepAgentNames = new Map<string, string>();
+          if (stepAgentIds.length > 0) {
+            const stepAgents = await db
+              .select({ id: agents.id, name: agents.name })
+              .from(agents)
+              .where(inArray(agents.id, stepAgentIds));
+            for (const a of stepAgents) stepAgentNames.set(a.id, a.name);
+          }
+
+          lines.push("");
+          lines.push("## Workflow Pipeline");
+          lines.push("");
+          lines.push("This is a **workflow root issue**. Do NOT do the work inline — the real work happens in the pipeline steps below.");
+          lines.push("If all steps are done, mark this root issue as done with a summary. If steps are stuck, investigate and unblock them.");
+          lines.push("");
+          lines.push("| # | Step Key | Type | Status | Identifier | Assignee |");
+          lines.push("|---|----------|------|--------|------------|----------|");
+          for (let i = 0; i < workflowSteps.length; i++) {
+            const step = workflowSteps[i];
+            const stepMeta = step.metadata as Record<string, unknown>;
+            const stepKey = String(stepMeta.workflowStepKey ?? "");
+            const assigneeName = step.assigneeAgentId ? (stepAgentNames.get(step.assigneeAgentId) ?? "unknown") : "unassigned";
+            lines.push(`| ${i + 1} | ${stepKey} | ${step.type} | ${step.status} | ${step.identifier ?? step.id.slice(0, 8)} | ${assigneeName} |`);
+          }
+        }
+      } else if (isWorkflowStep) {
+        // Fetch root issue info and sibling steps
+        const rootIssueId = String(meta.workflowRootIssueId);
+        const [rootIssue, siblingSteps] = await Promise.all([
+          db
+            .select({ id: issues.id, identifier: issues.identifier, title: issues.title, status: issues.status })
+            .from(issues)
+            .where(eq(issues.id, rootIssueId))
+            .then((rows) => rows[0] ?? null),
+          db
+            .select({
+              id: issues.id,
+              identifier: issues.identifier,
+              type: issues.type,
+              status: issues.status,
+              metadata: issues.metadata,
+            })
+            .from(issues)
+            .where(and(eq(issues.parentId, rootIssueId), eq(issues.companyId, agent.companyId)))
+            .orderBy(asc(issues.createdAt)),
+        ]);
+
+        const siblings = siblingSteps.filter((s) => {
+          const m = s.metadata as Record<string, unknown> | null;
+          return m?.workflowStepKey;
+        });
+
+        const myStepKey = String(meta.workflowStepKey);
+        const myIndex = siblings.findIndex((s) => {
+          const m = s.metadata as Record<string, unknown> | null;
+          return m?.workflowStepKey === myStepKey;
+        });
+
+        lines.push("");
+        lines.push("## Workflow Step Context");
+        lines.push("");
+        lines.push(`You are executing **step ${myIndex + 1} of ${siblings.length}** (key: \`${myStepKey}\`) in a workflow pipeline.`);
+        if (rootIssue) {
+          lines.push(`Root workflow issue: **${rootIssue.identifier ?? rootIssue.id.slice(0, 8)}: ${rootIssue.title}** (status: ${rootIssue.status})`);
+        }
+        if (siblings.length > 1) {
+          lines.push("");
+          lines.push("Pipeline steps:");
+          for (let i = 0; i < siblings.length; i++) {
+            const sib = siblings[i];
+            const sibMeta = sib.metadata as Record<string, unknown>;
+            const sibKey = String(sibMeta.workflowStepKey ?? "");
+            const isCurrent = sibKey === myStepKey;
+            lines.push(`${i + 1}. \`${sibKey}\` (${sib.type}) — ${sib.status}${isCurrent ? " ← **you are here**" : ""}`);
+          }
+        }
+        lines.push("");
+        lines.push("Do the work for THIS step according to its type. When done, mark it `done` — downstream steps will auto-trigger.");
+      }
+    }
+
     if (recentComments.length > 0) {
       // Build agent-id → name lookup for comment authors
       const agentNameMap = new Map<string, string>();
