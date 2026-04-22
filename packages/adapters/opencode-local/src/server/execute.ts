@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import type { Dirent } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -80,6 +81,85 @@ async function buildSkillsDir(skills?: AdapterSkill[]): Promise<string> {
   return tmp;
 }
 
+type OpencodeSkillSource = { name: string; path: string };
+
+type EnsureOpencodeSkillsInjectedOptions = {
+  cwd: string;
+  skills?: AdapterSkill[];
+};
+
+/**
+ * opencode discovers skills by walking up from its cwd to the git worktree
+ * root, looking for .opencode/skills/, .claude/skills/, and .agents/skills/
+ * (see https://opencode.ai/docs/skills). It does NOT support a --add-dir flag
+ * like claude-code, so the tmpdir built by buildSkillsDir() is never reachable
+ * by the agent. This helper idempotently symlinks each resolved skill into
+ * <cwd>/.agents/skills/<name> so opencode can find it on discovery. Existing
+ * entries (e.g. user-authored skills or prior runs' symlinks) are left alone.
+ */
+export async function ensureOpencodeSkillsInjected(
+  onLog: AdapterExecutionContext["onLog"],
+  options: EnsureOpencodeSkillsInjectedOptions,
+): Promise<void> {
+  const { cwd, skills } = options;
+  const sources = await resolveSkillSources(skills);
+  if (sources.length === 0) return;
+
+  const skillsHome = path.join(cwd, ".agents", "skills");
+  try {
+    await fs.mkdir(skillsHome, { recursive: true });
+  } catch (err) {
+    await onLog(
+      "stderr",
+      `[paperclip] Failed to prepare opencode skills directory ${skillsHome}: ${err instanceof Error ? err.message : String(err)}\n`,
+    );
+    return;
+  }
+
+  for (const source of sources) {
+    const target = path.join(skillsHome, source.name);
+    const existing = await fs.lstat(target).catch(() => null);
+    if (existing) continue;
+    try {
+      await fs.symlink(source.path, target);
+      await onLog(
+        "stderr",
+        `[paperclip] Injected opencode skill "${source.name}" at ${target}\n`,
+      );
+    } catch (err) {
+      await onLog(
+        "stderr",
+        `[paperclip] Failed to inject opencode skill "${source.name}" into ${skillsHome}: ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+    }
+  }
+}
+
+async function resolveSkillSources(skills?: AdapterSkill[]): Promise<OpencodeSkillSource[]> {
+  if (skills && skills.length > 0) {
+    const resolved: OpencodeSkillSource[] = [];
+    for (const skill of skills) {
+      const stat = await fs.stat(skill.path).catch(() => null);
+      if (stat?.isDirectory()) {
+        resolved.push({ name: skill.name, path: skill.path });
+      }
+    }
+    return resolved;
+  }
+
+  const fallback = await resolvePaperclipSkillsDir();
+  if (!fallback) return [];
+  let entries: Dirent[];
+  try {
+    entries = await fs.readdir(fallback, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  return entries
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => ({ name: entry.name, path: path.join(fallback, entry.name) }));
+}
+
 export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult> {
   const { runId, agent, runtime, config, context, onLog, onMeta, authToken } = ctx;
 
@@ -108,6 +188,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const cwd = configuredCwd || process.cwd();
   await ensureAbsoluteDirectory(cwd, { createIfMissing: true });
   const skillsDir = await buildSkillsDir(ctx.skills);
+  await ensureOpencodeSkillsInjected(onLog, { cwd, skills: ctx.skills });
 
   const injectedEnv: Record<string, string> = { ...buildPaperclipEnv(agent) };
   injectedEnv.PAPERCLIP_RUN_ID = runId;
