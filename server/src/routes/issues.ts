@@ -516,8 +516,13 @@ export function issueRoutes(db: Db, storage: StorageService) {
       updateFields.hiddenAt = hiddenAtRaw ? new Date(hiddenAtRaw) : null;
     }
     let issue;
+    let previousStatus: string | undefined;
     try {
-      issue = await svc.update(id, updateFields);
+      const result = await svc.update(id, updateFields);
+      if (result) {
+        issue = result.issue;
+        previousStatus = result.previousStatus;
+      }
     } catch (err) {
       if (
         err instanceof HttpError &&
@@ -628,232 +633,280 @@ export function issueRoutes(db: Db, storage: StorageService) {
 
     const assigneeChanged = assigneeWillChange;
     const statusChangedFromBacklog =
-      existing.status === "backlog" &&
+      previousStatus === "backlog" &&
       issue.status !== "backlog" &&
       req.body.status !== undefined;
 
-    // Merge all wakeups from this update into one enqueue per agent to avoid duplicate runs.
+    // Fire side effects asynchronously but with structured error handling.
+    // Each section is individually caught so one failure doesn't block the rest.
+    // Failures are logged and surfaced as audit comments on the issue.
+    const sideEffectErrors: Array<{ phase: string; error: unknown }> = [];
     void (async () => {
-      const wakeups = new Map<string, Parameters<typeof heartbeat.wakeup>[1]>();
+      try {
+        const wakeups = new Map<string, Parameters<typeof heartbeat.wakeup>[1]>();
 
-      if (assigneeChanged && issue.assigneeAgentId && issue.status !== "backlog") {
-        wakeups.set(issue.assigneeAgentId, {
-          source: "assignment",
-          triggerDetail: "system",
-          reason: "issue_assigned",
-          payload: { issueId: issue.id, mutation: "update" },
-          requestedByActorType: actor.actorType,
-          requestedByActorId: actor.actorId,
-          contextSnapshot: { issueId: issue.id, source: "issue.update" },
-        });
-      }
-
-      if (!assigneeChanged && statusChangedFromBacklog && issue.assigneeAgentId) {
-        wakeups.set(issue.assigneeAgentId, {
-          source: "automation",
-          triggerDetail: "system",
-          reason: "issue_status_changed",
-          payload: { issueId: issue.id, mutation: "update" },
-          requestedByActorType: actor.actorType,
-          requestedByActorId: actor.actorId,
-          contextSnapshot: { issueId: issue.id, source: "issue.status_change" },
-        });
-      }
-
-      if (commentBody && comment) {
-        let mentionedIds: string[] = [];
-        try {
-          mentionedIds = await svc.findMentionedAgents(issue.companyId, commentBody);
-        } catch (err) {
-          logger.warn({ err, issueId: id }, "failed to resolve @-mentions");
-        }
-
-        for (const mentionedId of mentionedIds) {
-          if (wakeups.has(mentionedId)) continue;
-          if (actor.actorType === "agent" && actor.actorId === mentionedId) continue;
-          wakeups.set(mentionedId, {
-            source: "automation",
+        if (assigneeChanged && issue.assigneeAgentId && issue.status !== "backlog") {
+          wakeups.set(issue.assigneeAgentId, {
+            source: "assignment",
             triggerDetail: "system",
-            reason: "issue_comment_mentioned",
-            payload: { issueId: id, commentId: comment.id },
+            reason: "issue_assigned",
+            payload: { issueId: issue.id, mutation: "update" },
             requestedByActorType: actor.actorType,
             requestedByActorId: actor.actorId,
-            contextSnapshot: {
-              issueId: id,
-              taskId: id,
-              commentId: comment.id,
-              wakeCommentId: comment.id,
-              wakeReason: "issue_comment_mentioned",
-              source: "comment.mention",
-            },
+            contextSnapshot: { issueId: issue.id, source: "issue.update" },
           });
         }
-      }
 
-      // Dependency trigger: when status changes to "done", fire downstream linked issues
-      if (existing.status !== "done" && issue.status === "done") {
-        try {
-          const triggerLinks = await issueLinksSvc.findTriggersFromSource(issue.id);
-          for (const link of triggerLinks) {
-            const allDone = await issueLinksSvc.allUpstreamTriggersDone(link.targetId);
-            if (!allDone) continue;
-
-            const target = await svc.getById(link.targetId);
-            if (!target) continue;
-            if (target.status === "done" || target.status === "cancelled") continue;
-
-            // Transition target to "todo"
-            // For workflow steps, forward metadata from source (explore/plan outputs)
-            const updatePatch: Record<string, unknown> = {};
-            if (target.status === "backlog" || target.status === "blocked") {
-              updatePatch.status = "todo";
-            }
-            const targetMeta = (target.metadata ?? {}) as Record<string, unknown>;
-            if (targetMeta.workflowRootIssueId) {
-              const sourceMeta = (issue.metadata ?? {}) as Record<string, unknown>;
-              const forwardKeys = ["exploreDocumentPath", "planDocumentPath", "planIssueId", "planIssueIdentifier"];
-              const merged = { ...targetMeta };
-              for (const key of forwardKeys) {
-                if (sourceMeta[key] && !targetMeta[key]) {
-                  merged[key] = sourceMeta[key];
-                }
-              }
-              if (Object.keys(merged).length > Object.keys(targetMeta).length) {
-                updatePatch.metadata = merged;
-              }
-            }
-            if (Object.keys(updatePatch).length > 0) {
-              await svc.update(link.targetId, updatePatch);
-            }
-
-            await logActivity(db, {
-              companyId: issue.companyId,
-              actorType: "agent",
-              actorId: actor.actorId,
-              agentId: actor.agentId,
-              runId: actor.runId,
-              action: "issue.dependency_triggered",
-              entityType: "issue",
-              entityId: link.targetId,
-              details: {
-                triggeredByIssueId: issue.id,
-                triggeredByIdentifier: issue.identifier,
-                linkId: link.id,
-              },
-            });
-
-            // Wake the assigned agent if any
-            if (target.assigneeAgentId && !wakeups.has(target.assigneeAgentId)) {
-              wakeups.set(target.assigneeAgentId, {
-                source: "automation",
-                triggerDetail: "dependency_trigger",
-                reason: "dependency_triggered",
-                payload: {
-                  issueId: target.id,
-                  triggeredByIssueId: issue.id,
-                  linkId: link.id,
-                },
-                requestedByActorType: actor.actorType,
-                requestedByActorId: actor.actorId,
-                contextSnapshot: {
-                  issueId: target.id,
-                  taskId: target.id,
-                  issueIds: [issue.id],
-                  wakeReason: "dependency_triggered",
-                  source: "issue.dependency_trigger",
-                },
-              });
-            }
-          }
-        } catch (err) {
-          logger.warn({ err, issueId: issue.id }, "failed to fire dependency triggers");
+        if (!assigneeChanged && statusChangedFromBacklog && issue.assigneeAgentId) {
+          wakeups.set(issue.assigneeAgentId, {
+            source: "automation",
+            triggerDetail: "system",
+            reason: "issue_status_changed",
+            payload: { issueId: issue.id, mutation: "update" },
+            requestedByActorType: actor.actorType,
+            requestedByActorId: actor.actorId,
+            contextSnapshot: { issueId: issue.id, source: "issue.status_change" },
+          });
         }
 
-        // A2: Root-done fallback — when a workflow root issue is marked done,
-        // wake any entry steps (no incoming triggers) that haven't started yet
-        try {
-          const meta = (issue.metadata ?? {}) as Record<string, unknown>;
-          if (meta.workflowTemplateId && !meta.workflowStepKey) {
-            // This is a workflow root issue
-            const children = await svc.list(issue.companyId, { parentId: issue.id });
-            for (const child of children) {
-              const childMeta = (child.metadata ?? {}) as Record<string, unknown>;
-              if (!childMeta.workflowStepKey) continue;
-              if (child.status === "done" || child.status === "cancelled" || child.status === "in_progress") continue;
+        if (commentBody && comment) {
+          let mentionedIds: string[] = [];
+          try {
+            mentionedIds = await svc.findMentionedAgents(issue.companyId, commentBody);
+          } catch (err) {
+            logger.warn({ err, issueId: id }, "failed to resolve @-mentions");
+            sideEffectErrors.push({ phase: "mention_resolution", error: err });
+          }
 
-              // Check if this is an entry step (no incoming triggers)
-              const incomingTriggers = await issueLinksSvc.findTriggersToTarget(child.id);
-              if (incomingTriggers.length > 0) continue;
+          for (const mentionedId of mentionedIds) {
+            if (wakeups.has(mentionedId)) continue;
+            if (actor.actorType === "agent" && actor.actorId === mentionedId) continue;
+            wakeups.set(mentionedId, {
+              source: "automation",
+              triggerDetail: "system",
+              reason: "issue_comment_mentioned",
+              payload: { issueId: id, commentId: comment.id },
+              requestedByActorType: actor.actorType,
+              requestedByActorId: actor.actorId,
+              contextSnapshot: {
+                issueId: id,
+                taskId: id,
+                commentId: comment.id,
+                wakeCommentId: comment.id,
+                wakeReason: "issue_comment_mentioned",
+                source: "comment.mention",
+              },
+            });
+          }
+        }
 
-              // Transition backlog → todo if needed
-              if (child.status === "backlog" || child.status === "blocked") {
-                await svc.update(child.id, { status: "todo" });
+        // Dependency trigger: when status changes to "done", fire downstream linked issues
+        if (previousStatus !== "done" && issue.status === "done") {
+          try {
+            const triggerLinks = await issueLinksSvc.findTriggersFromSource(issue.id);
+            for (const link of triggerLinks) {
+              const allDone = await issueLinksSvc.allUpstreamTriggersDone(link.targetId);
+              if (!allDone) continue;
+
+              const target = await svc.getById(link.targetId);
+              if (!target) continue;
+              if (target.status === "done" || target.status === "cancelled") continue;
+
+              // Transition target to "todo"
+              // For workflow steps, forward metadata from source (explore/plan outputs)
+              const updatePatch: Record<string, unknown> = {};
+              if (target.status === "backlog" || target.status === "blocked") {
+                updatePatch.status = "todo";
+              }
+              const targetMeta = (target.metadata ?? {}) as Record<string, unknown>;
+              if (targetMeta.workflowRootIssueId) {
+                const sourceMeta = (issue.metadata ?? {}) as Record<string, unknown>;
+                const forwardKeys = ["exploreDocumentPath", "planDocumentPath", "planIssueId", "planIssueIdentifier"];
+                const merged = { ...targetMeta };
+                for (const key of forwardKeys) {
+                  if (sourceMeta[key] && !targetMeta[key]) {
+                    merged[key] = sourceMeta[key];
+                  }
+                }
+                if (Object.keys(merged).length > Object.keys(targetMeta).length) {
+                  updatePatch.metadata = merged;
+                }
+              }
+              if (Object.keys(updatePatch).length > 0) {
+                await svc.update(link.targetId, updatePatch);
               }
 
-              if (child.assigneeAgentId && !wakeups.has(child.assigneeAgentId)) {
-                wakeups.set(child.assigneeAgentId, {
+              await logActivity(db, {
+                companyId: issue.companyId,
+                actorType: "agent",
+                actorId: actor.actorId,
+                agentId: actor.agentId,
+                runId: actor.runId,
+                action: "issue.dependency_triggered",
+                entityType: "issue",
+                entityId: link.targetId,
+                details: {
+                  triggeredByIssueId: issue.id,
+                  triggeredByIdentifier: issue.identifier,
+                  linkId: link.id,
+                },
+              });
+
+              // Wake the assigned agent if any
+              if (target.assigneeAgentId && !wakeups.has(target.assigneeAgentId)) {
+                wakeups.set(target.assigneeAgentId, {
                   source: "automation",
                   triggerDetail: "dependency_trigger",
-                  reason: "workflow_root_done",
+                  reason: "dependency_triggered",
                   payload: {
-                    issueId: child.id,
-                    workflowRootIssueId: issue.id,
+                    issueId: target.id,
+                    triggeredByIssueId: issue.id,
+                    linkId: link.id,
                   },
                   requestedByActorType: actor.actorType,
                   requestedByActorId: actor.actorId,
                   contextSnapshot: {
-                    issueId: child.id,
-                    taskId: child.id,
-                    wakeReason: "workflow_root_done",
-                    source: "workflow.root_done",
+                    issueId: target.id,
+                    taskId: target.id,
+                    issueIds: [issue.id],
+                    wakeReason: "dependency_triggered",
+                    source: "issue.dependency_trigger",
                   },
                 });
               }
             }
+          } catch (err) {
+            logger.error({ err, issueId: issue.id, identifier: issue.identifier }, "failed to fire dependency triggers");
+            sideEffectErrors.push({ phase: "dependency_triggers", error: err });
           }
-        } catch (err) {
-          logger.warn({ err, issueId: issue.id }, "failed to fire workflow root-done entry step triggers");
-        }
 
-        // Completion hooks: process completionActions from metadata
-        try {
-          const completionActions = extractCompletionActions(
-            (issue.metadata ?? {}) as Record<string, unknown>,
-          );
-          if (completionActions) {
-            const actionCtx: Parameters<typeof processCompletionActions>[2] = {
-              issueService: svc,
-              heartbeat,
-              logActivity: (details) => logActivity(db, details),
-              actor: {
-                actorType: actor.actorType as "agent" | "user" | "system",
-                actorId: actor.actorId,
-                agentId: actor.agentId,
-                runId: actor.runId,
-              },
-              logger,
-            };
-            const result = await processCompletionActions(
-              completionActions,
-              issue as Parameters<typeof processCompletionActions>[1],
-              actionCtx,
-            );
-            if (result.executed > 0 || result.errors > 0) {
-              logger.info(
-                { issueId: issue.id, identifier: issue.identifier, ...result },
-                "completion actions processed",
-              );
+          // A2: Root-done fallback — when a workflow root issue is marked done,
+          // wake any entry steps (no incoming triggers) that haven't started yet
+          try {
+            const meta = (issue.metadata ?? {}) as Record<string, unknown>;
+            if (meta.workflowTemplateId && !meta.workflowStepKey) {
+              // This is a workflow root issue
+              const children = await svc.list(issue.companyId, { parentId: issue.id });
+              for (const child of children) {
+                const childMeta = (child.metadata ?? {}) as Record<string, unknown>;
+                if (!childMeta.workflowStepKey) continue;
+                if (child.status === "done" || child.status === "cancelled" || child.status === "in_progress") continue;
+
+                // Check if this is an entry step (no incoming triggers)
+                const incomingTriggers = await issueLinksSvc.findTriggersToTarget(child.id);
+                if (incomingTriggers.length > 0) continue;
+
+                // Transition backlog → todo if needed
+                if (child.status === "backlog" || child.status === "blocked") {
+                  await svc.update(child.id, { status: "todo" });
+                }
+
+                if (child.assigneeAgentId && !wakeups.has(child.assigneeAgentId)) {
+                  wakeups.set(child.assigneeAgentId, {
+                    source: "automation",
+                    triggerDetail: "dependency_trigger",
+                    reason: "workflow_root_done",
+                    payload: {
+                      issueId: child.id,
+                      workflowRootIssueId: issue.id,
+                    },
+                    requestedByActorType: actor.actorType,
+                    requestedByActorId: actor.actorId,
+                    contextSnapshot: {
+                      issueId: child.id,
+                      taskId: child.id,
+                      wakeReason: "workflow_root_done",
+                      source: "workflow.root_done",
+                    },
+                  });
+                }
+              }
             }
+          } catch (err) {
+            logger.error({ err, issueId: issue.id, identifier: issue.identifier }, "failed to fire workflow root-done entry step triggers");
+            sideEffectErrors.push({ phase: "workflow_root_done", error: err });
           }
-        } catch (err) {
-          logger.warn({ err, issueId: issue.id }, "failed to process completion actions");
-        }
-      }
 
-      for (const [agentId, wakeup] of wakeups.entries()) {
-        heartbeat
-          .wakeup(agentId, wakeup)
-          .catch((err) => logger.warn({ err, issueId: issue.id, agentId }, "failed to wake agent on issue update"));
+          // Completion hooks: process completionActions from metadata
+          try {
+            const completionActions = extractCompletionActions(
+              (issue.metadata ?? {}) as Record<string, unknown>,
+            );
+            if (completionActions) {
+              const actionCtx: Parameters<typeof processCompletionActions>[2] = {
+                issueService: svc,
+                heartbeat,
+                logActivity: (details) => logActivity(db, details),
+                actor: {
+                  actorType: actor.actorType as "agent" | "user" | "system",
+                  actorId: actor.actorId,
+                  agentId: actor.agentId,
+                  runId: actor.runId,
+                },
+                logger,
+              };
+              const result = await processCompletionActions(
+                completionActions,
+                issue as Parameters<typeof processCompletionActions>[1],
+                actionCtx,
+              );
+              if (result.executed > 0 || result.errors > 0) {
+                logger.info(
+                  { issueId: issue.id, identifier: issue.identifier, ...result },
+                  "completion actions processed",
+                );
+              }
+            }
+          } catch (err) {
+            logger.error({ err, issueId: issue.id, identifier: issue.identifier }, "failed to process completion actions");
+            sideEffectErrors.push({ phase: "completion_actions", error: err });
+          }
+        }
+
+        for (const [agentId, wakeup] of wakeups.entries()) {
+          try {
+            await heartbeat.wakeup(agentId, wakeup);
+          } catch (err) {
+            logger.error({ err, issueId: issue.id, agentId }, "failed to wake agent on issue update");
+            sideEffectErrors.push({ phase: `wakeup:${agentId}`, error: err });
+          }
+        }
+
+        // Post audit comment if any side effects failed
+        if (sideEffectErrors.length > 0) {
+          const phases = sideEffectErrors.map((e) => e.phase).join(", ");
+          logger.error(
+            { issueId: issue.id, identifier: issue.identifier, failedPhases: phases, errorCount: sideEffectErrors.length },
+            "side effects partially failed after status transition",
+          );
+          try {
+            await svc.addComment(issue.id,
+              `**⚠ Side-effect failures during status transition (${previousStatus} → ${issue.status})**\n\n` +
+              `${sideEffectErrors.length} side-effect phase(s) failed: ${phases}.\n` +
+              `Check server logs for details. Some downstream actions (trigger links, wakeups, completion hooks) may not have fired.`,
+              {},
+            );
+          } catch (commentErr) {
+            logger.error({ err: commentErr, issueId: issue.id }, "failed to post side-effect failure audit comment");
+          }
+        }
+      } catch (err) {
+        // Top-level catch for unexpected errors in the side-effect block
+        logger.error(
+          { err, issueId: issue.id, identifier: issue.identifier },
+          "unhandled error in post-update side effects",
+        );
+        try {
+          await svc.addComment(issue.id,
+            `**⚠ Critical side-effect failure during status transition (${previousStatus} → ${issue.status})**\n\n` +
+            `An unexpected error occurred in the post-update side-effect pipeline. ` +
+            `Downstream actions (trigger links, wakeups, completion hooks) may not have fired. ` +
+            `Check server logs for details.`,
+            {},
+          );
+        } catch {
+          // Last resort — already logged the primary error above
+        }
       }
     })();
 
@@ -1040,14 +1093,14 @@ export function issueRoutes(db: Db, storage: StorageService) {
     let currentIssue = issue;
 
     if (reopenRequested && isClosed) {
-      const reopenedIssue = await svc.update(id, { status: "todo" });
-      if (!reopenedIssue) {
+      const reopenResult = await svc.update(id, { status: "todo" });
+      if (!reopenResult) {
         res.status(404).json({ error: "Issue not found" });
         return;
       }
       reopened = true;
       reopenFromStatus = issue.status;
-      currentIssue = reopenedIssue;
+      currentIssue = reopenResult.issue;
 
       await logActivity(db, {
         companyId: currentIssue.companyId,

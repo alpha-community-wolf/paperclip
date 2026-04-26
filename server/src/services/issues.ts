@@ -32,10 +32,26 @@ import { reviewBundleService } from "./review-bundles.js";
 
 const ALL_ISSUE_STATUSES = ["backlog", "todo", "in_progress", "in_review", "blocked", "done", "cancelled"];
 
-function assertTransition(from: string, to: string) {
+export const ALLOWED_TRANSITIONS: Record<string, string[]> = {
+  backlog: ["todo", "cancelled"],
+  todo: ["in_progress", "backlog", "blocked", "cancelled"],
+  in_progress: ["done", "in_review", "blocked", "todo", "cancelled"],
+  in_review: ["done", "in_progress", "blocked", "todo", "cancelled"],
+  blocked: ["todo", "in_progress", "cancelled"],
+  done: ["todo"],
+  cancelled: ["todo", "backlog"],
+};
+
+export function assertTransition(from: string, to: string) {
   if (from === to) return;
   if (!ALL_ISSUE_STATUSES.includes(to)) {
     throw conflict(`Unknown issue status: ${to}`);
+  }
+  const allowed = ALLOWED_TRANSITIONS[from];
+  if (!allowed?.includes(to)) {
+    throw conflict(
+      `Invalid status transition: ${from} → ${to}. Allowed from ${from}: ${allowed?.join(", ") ?? "none"}`,
+    );
   }
 }
 
@@ -939,110 +955,109 @@ export function issueService(db: Db) {
       });
     },
 
-    update: async (id: string, data: Partial<typeof issues.$inferInsert> & { labelIds?: string[] }) => {
-      const existing = await db
-        .select()
-        .from(issues)
-        .where(eq(issues.id, id))
-        .then((rows) => rows[0] ?? null);
-      if (!existing) return null;
-
+    update: async (id: string, data: Partial<typeof issues.$inferInsert> & { labelIds?: string[] }): Promise<{ issue: Awaited<ReturnType<typeof withIssueLabels>>[number]; previousStatus: string } | null> => {
       const { labelIds: nextLabelIds, ...issueData } = data;
 
-      if (issueData.status) {
-        assertTransition(existing.status, issueData.status);
-      }
-
-      // Plan issues require metadata.planDocumentPath before completion
-      if (issueData.status === "done" && existing.status !== "done" && existing.type === "plan") {
-        const nextMetadata = issueData.metadata !== undefined
-          ? (issueData.metadata as Record<string, unknown> | null)
-          : (existing.metadata as Record<string, unknown> | null);
-        if (!nextMetadata?.planDocumentPath) {
-          throw unprocessable(
-            "Plan issues require metadata.planDocumentPath to be set before marking as done",
-            { requirement: "planDocumentPath" },
-          );
-        }
-      }
-
-      // Explore issues require metadata.exploreDocumentPath before completion
-      if (issueData.status === "done" && existing.status !== "done" && existing.type === "explore") {
-        const nextMetadata = issueData.metadata !== undefined
-          ? (issueData.metadata as Record<string, unknown> | null)
-          : (existing.metadata as Record<string, unknown> | null);
-        if (!nextMetadata?.exploreDocumentPath) {
-          throw unprocessable(
-            "Explore issues require metadata.exploreDocumentPath to be set before marking as done",
-            { requirement: "exploreDocumentPath" },
-          );
-        }
-      }
-
-      if (issueData.status === "done" && existing.status !== "done") {
-        const nextProjectId = issueData.projectId !== undefined ? issueData.projectId : existing.projectId;
-        const nextReviewBundleMode =
-          issueData.reviewBundleMode !== undefined ? String(issueData.reviewBundleMode) : existing.reviewBundleMode;
-        const completionCheck = await reviewBundlesSvc.isCompletionAllowedForIssue({
-          issueId: existing.id,
-          companyId: existing.companyId,
-          projectId: nextProjectId,
-          reviewBundleMode: nextReviewBundleMode,
-        });
-        if (!completionCheck.allowed) {
-          throw unprocessable("Issue requires an approved review bundle before it can be marked done", {
-            requirement: completionCheck.requirement,
-          });
-        }
-      }
-
-      const patch: Partial<typeof issues.$inferInsert> = {
-        ...issueData,
-        updatedAt: new Date(),
-      };
-
-      const nextAssigneeAgentId =
-        issueData.assigneeAgentId !== undefined ? issueData.assigneeAgentId : existing.assigneeAgentId;
-      const nextAssigneeUserId =
-        issueData.assigneeUserId !== undefined ? issueData.assigneeUserId : existing.assigneeUserId;
-
-      if (nextAssigneeAgentId && nextAssigneeUserId) {
-        throw unprocessable("Issue can only have one assignee");
-      }
-      if (patch.status === "in_progress" && !nextAssigneeAgentId && !nextAssigneeUserId) {
-        throw unprocessable("in_progress issues require an assignee");
-      }
-      if (issueData.assigneeAgentId) {
-        await assertAssignableAgent(existing.companyId, issueData.assigneeAgentId);
-      }
-      if (issueData.assigneeUserId) {
-        await assertAssignableUser(existing.companyId, issueData.assigneeUserId);
-      }
-
-      applyStatusSideEffects(issueData.status, patch);
-      if (issueData.status && issueData.status !== "done") {
-        patch.completedAt = null;
-      }
-      if (issueData.status && issueData.status !== "cancelled") {
-        patch.cancelledAt = null;
-      }
-      if (issueData.status && issueData.status !== "in_progress") {
-        patch.checkoutRunId = null;
-        patch.executionRunId = null;
-        patch.executionAgentNameKey = null;
-        patch.executionLockedAt = null;
-      }
-      if (
-        (issueData.assigneeAgentId !== undefined && issueData.assigneeAgentId !== existing.assigneeAgentId) ||
-        (issueData.assigneeUserId !== undefined && issueData.assigneeUserId !== existing.assigneeUserId)
-      ) {
-        patch.checkoutRunId = null;
-        patch.executionRunId = null;
-        patch.executionAgentNameKey = null;
-        patch.executionLockedAt = null;
-      }
-
       return db.transaction(async (tx) => {
+        // Lock the row for the duration of this transaction to prevent TOCTOU races
+        const [existing] = (await tx.execute(
+          sql`SELECT * FROM issues WHERE id = ${id} FOR UPDATE`,
+        )) as unknown as (typeof issues.$inferSelect)[];
+        if (!existing) return null;
+
+        if (issueData.status) {
+          assertTransition(existing.status, issueData.status);
+        }
+
+        // Plan issues require metadata.planDocumentPath before completion
+        if (issueData.status === "done" && existing.status !== "done" && existing.type === "plan") {
+          const nextMetadata = issueData.metadata !== undefined
+            ? (issueData.metadata as Record<string, unknown> | null)
+            : (existing.metadata as Record<string, unknown> | null);
+          if (!nextMetadata?.planDocumentPath) {
+            throw unprocessable(
+              "Plan issues require metadata.planDocumentPath to be set before marking as done",
+              { requirement: "planDocumentPath" },
+            );
+          }
+        }
+
+        // Explore issues require metadata.exploreDocumentPath before completion
+        if (issueData.status === "done" && existing.status !== "done" && existing.type === "explore") {
+          const nextMetadata = issueData.metadata !== undefined
+            ? (issueData.metadata as Record<string, unknown> | null)
+            : (existing.metadata as Record<string, unknown> | null);
+          if (!nextMetadata?.exploreDocumentPath) {
+            throw unprocessable(
+              "Explore issues require metadata.exploreDocumentPath to be set before marking as done",
+              { requirement: "exploreDocumentPath" },
+            );
+          }
+        }
+
+        if (issueData.status === "done" && existing.status !== "done") {
+          const nextProjectId = issueData.projectId !== undefined ? issueData.projectId : existing.projectId;
+          const nextReviewBundleMode =
+            issueData.reviewBundleMode !== undefined ? String(issueData.reviewBundleMode) : existing.reviewBundleMode;
+          const completionCheck = await reviewBundlesSvc.isCompletionAllowedForIssue({
+            issueId: existing.id,
+            companyId: existing.companyId,
+            projectId: nextProjectId,
+            reviewBundleMode: nextReviewBundleMode,
+          });
+          if (!completionCheck.allowed) {
+            throw unprocessable("Issue requires an approved review bundle before it can be marked done", {
+              requirement: completionCheck.requirement,
+            });
+          }
+        }
+
+        const patch: Partial<typeof issues.$inferInsert> = {
+          ...issueData,
+          updatedAt: new Date(),
+        };
+
+        const nextAssigneeAgentId =
+          issueData.assigneeAgentId !== undefined ? issueData.assigneeAgentId : existing.assigneeAgentId;
+        const nextAssigneeUserId =
+          issueData.assigneeUserId !== undefined ? issueData.assigneeUserId : existing.assigneeUserId;
+
+        if (nextAssigneeAgentId && nextAssigneeUserId) {
+          throw unprocessable("Issue can only have one assignee");
+        }
+        if (patch.status === "in_progress" && !nextAssigneeAgentId && !nextAssigneeUserId) {
+          throw unprocessable("in_progress issues require an assignee");
+        }
+        if (issueData.assigneeAgentId) {
+          await assertAssignableAgent(existing.companyId, issueData.assigneeAgentId);
+        }
+        if (issueData.assigneeUserId) {
+          await assertAssignableUser(existing.companyId, issueData.assigneeUserId);
+        }
+
+        applyStatusSideEffects(issueData.status, patch);
+        if (issueData.status && issueData.status !== "done") {
+          patch.completedAt = null;
+        }
+        if (issueData.status && issueData.status !== "cancelled") {
+          patch.cancelledAt = null;
+        }
+        if (issueData.status && issueData.status !== "in_progress") {
+          patch.checkoutRunId = null;
+          patch.executionRunId = null;
+          patch.executionAgentNameKey = null;
+          patch.executionLockedAt = null;
+        }
+        if (
+          (issueData.assigneeAgentId !== undefined && issueData.assigneeAgentId !== existing.assigneeAgentId) ||
+          (issueData.assigneeUserId !== undefined && issueData.assigneeUserId !== existing.assigneeUserId)
+        ) {
+          patch.checkoutRunId = null;
+          patch.executionRunId = null;
+          patch.executionAgentNameKey = null;
+          patch.executionLockedAt = null;
+        }
+
         const updated = await tx
           .update(issues)
           .set(patch)
@@ -1054,7 +1069,7 @@ export function issueService(db: Db) {
           await syncIssueLabels(updated.id, existing.companyId, nextLabelIds, tx);
         }
         const [enriched] = await withIssueLabels(tx, [updated]);
-        return enriched;
+        return { issue: enriched, previousStatus: existing.status };
       });
     },
 
