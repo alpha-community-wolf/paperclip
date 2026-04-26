@@ -250,8 +250,8 @@ export function taskCronService(db: Db) {
       const existing = await issuesSvc.getById(schedule.issueId);
       if (existing && existing.companyId === schedule.companyId) {
         if (mode === "reopen_existing" && (existing.status === "done" || existing.status === "cancelled")) {
-          const reopened = await issuesSvc.update(existing.id, { status: "todo" });
-          return reopened ?? existing;
+          const reopenResult = await issuesSvc.update(existing.id, { status: "todo" });
+          return reopenResult?.issue ?? existing;
         }
         return existing;
       }
